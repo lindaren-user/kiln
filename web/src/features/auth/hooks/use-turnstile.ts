@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import i18next from 'i18next'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 
 import { useStatus } from '@/hooks/use-status'
@@ -28,6 +28,14 @@ import { useStatus } from '@/hooks/use-status'
 export function useTurnstile() {
   const { status } = useStatus()
   const [turnstileToken, setTurnstileToken] = useState('')
+  // Bumped to remount the widget, which is the only reliable way to get a fresh
+  // token: a solved token is single-use, so the next submit needs a new one.
+  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
+
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken('')
+    setTurnstileWidgetKey((key) => key + 1)
+  }, [])
 
   const isTurnstileEnabled = !!(
     status?.turnstile_check && status?.turnstile_site_key
@@ -51,7 +59,9 @@ export function useTurnstile() {
     isTurnstileEnabled,
     turnstileSiteKey,
     turnstileToken,
+    turnstileWidgetKey,
     setTurnstileToken,
+    resetTurnstile,
     validateTurnstile,
   }
 }

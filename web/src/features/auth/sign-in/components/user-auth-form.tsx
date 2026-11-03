@@ -79,7 +79,6 @@ export function UserAuthForm({
   useEffect(() => () => passkeyOperation.current?.abort(), [])
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
-  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
   const loginFailedMessage = t('Login failed')
 
@@ -99,7 +98,9 @@ export function UserAuthForm({
     isTurnstileEnabled,
     turnstileSiteKey,
     turnstileToken,
+    turnstileWidgetKey,
     setTurnstileToken,
+    resetTurnstile,
     validateTurnstile,
   } = useTurnstile()
   const { handleLoginResult } = useAuthRedirect()
@@ -169,8 +170,7 @@ export function UserAuthForm({
 
     const submittedTurnstileToken = turnstileToken
     if (isTurnstileEnabled) {
-      setTurnstileToken('')
-      setTurnstileWidgetKey((current) => current + 1)
+      resetTurnstile()
     }
 
     setIsLoading(true)
@@ -395,16 +395,6 @@ export function UserAuthForm({
               )}
             />
 
-            {/* Submit Button */}
-            <Button
-              type='submit'
-              className='mt-2 w-full justify-center gap-2'
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
-              {t('Sign in')}
-            </Button>
-
             {/* Turnstile */}
             {isTurnstileEnabled && (
               <div className='mt-2'>
@@ -416,6 +406,16 @@ export function UserAuthForm({
                 />
               </div>
             )}
+
+            {/* Submit Button */}
+            <Button
+              type='submit'
+              className='mt-2 w-full justify-center gap-2'
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
+              {t('Sign in')}
+            </Button>
           </>
         )}
 
