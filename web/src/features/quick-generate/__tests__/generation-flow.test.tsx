@@ -123,9 +123,9 @@ beforeEach(() => {
 })
 
 async function submitPrompt(prompt: string) {
-  fireEvent.change(screen.getByLabelText('Prompt'), {
-    target: { value: prompt },
-  })
+  const editor = screen.getByRole('textbox', { name: 'Prompt' })
+  editor.textContent = prompt
+  fireEvent.input(editor)
   fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
 }
 
@@ -180,6 +180,7 @@ describe('quick generate', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Upstream is busy')
     )
     expect(screen.queryByAltText('a kiln at dusk')).toBeNull()
+    expect(guardMock.mock.lastCall?.[0].when).toBe(false)
   })
 
   it('reports a video task that fails upstream', async () => {
@@ -216,6 +217,35 @@ describe('quick generate', () => {
     expect(generateImagesMock.mock.calls[1]?.[0]).toEqual(
       generateImagesMock.mock.calls[0]?.[0]
     )
+  })
+
+  it('asks before a second send replaces a request that is still running', async () => {
+    let finish: (urls: string[]) => void = () => undefined
+    generateImagesMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+    await screen.findByText('Generating... 0:00')
+
+    expect(
+      screen.getByRole('textbox', { name: 'Prompt' }).closest('[data-slot=input-group]')
+    ).toHaveClass('bg-muted/50')
+
+    await submitPrompt('a second kiln')
+
+    expect(
+      await screen.findByText('Replace the current result?')
+    ).toBeInTheDocument()
+    expect(generateImagesMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate anyway' }))
+    await waitFor(() => expect(generateImagesMock).toHaveBeenCalledTimes(2))
+    finish(['https://cdn.example.com/one.png'])
   })
 
   it('asks before a second generation replaces the first', async () => {
@@ -270,6 +300,7 @@ describe('quick generate', () => {
   it('keeps the model, ratio, resolution, count and key in the composer', () => {
     render(<QuickGenerate />)
 
+    expect(screen.queryByText('No result yet')).toBeNull()
     expect(screen.getByLabelText('Model')).toHaveTextContent('z-image')
     expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('1:1')
     expect(screen.getByLabelText('Resolution')).toHaveTextContent('1K')

@@ -162,6 +162,91 @@ describe('generateImages', () => {
     ).rejects.toThrow('quota exceeded')
   })
 
+  it('sends gpt-image references as files on the edits endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ url: 'https://cdn.example.com/one.png' }] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const dataUrl = 'data:image/png;base64,aGk='
+
+    await generateImages({
+      apiKey: 'sk-abc123',
+      model: 'gpt-image-2.5',
+      prompt: '给两熊穿上衣服',
+      size: 'auto',
+      count: 1,
+      images: [dataUrl, dataUrl],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/v1/images/edits',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer sk-abc123' },
+      })
+    )
+    const init = fetchMock.mock.calls[0][1] as {
+      body: FormData
+      headers: Record<string, string>
+    }
+    expect(init.headers['Content-Type']).toBeUndefined()
+    expect(init.body.get('model')).toBe('gpt-image-2.5')
+    expect(init.body.get('prompt')).toBe('给两熊穿上衣服')
+    expect(init.body.get('n')).toBe('1')
+    expect(init.body.get('size')).toBe('auto')
+    const files = init.body.getAll('image')
+    expect(files).toHaveLength(2)
+    expect(files[0]).toBeInstanceOf(File)
+    expect((files[0] as File).type).toBe('image/png')
+  })
+
+  it('keeps a gpt-image prompt without references on generations', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ url: 'https://cdn.example.com/one.png' }] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateImages({
+      apiKey: 'sk-abc123',
+      model: 'gpt-image-2.5',
+      prompt: 'a kiln at dusk',
+      size: 'auto',
+      count: 1,
+    })
+
+    const generationCall = fetchMock.mock.calls[0]
+    expect(generationCall[0]).toBe('/v1/images/generations')
+    const body = JSON.parse((generationCall[1] as { body: string }).body)
+    expect(body).toMatchObject({ model: 'gpt-image-2.5', n: 1, size: 'auto' })
+    expect(body.images).toBeUndefined()
+    expect(body.image).toBeUndefined()
+  })
+
+  it('still sends other models reference images as generations JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ url: 'https://cdn.example.com/one.png' }] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const dataUrl = 'data:image/png;base64,aGk='
+
+    await generateImages({
+      apiKey: 'sk-abc123',
+      model: 'qwen-image-2.0',
+      prompt: 'a kiln at dusk',
+      size: '1024x1024',
+      count: 1,
+      images: [dataUrl],
+    })
+
+    const generationCall = fetchMock.mock.calls[0]
+    expect(generationCall[0]).toBe('/v1/images/generations')
+    const body = JSON.parse((generationCall[1] as { body: string }).body)
+    expect(body.images).toEqual([dataUrl])
+  })
+
   it('rejects a successful response that carries no images', async () => {
     vi.stubGlobal(
       'fetch',

@@ -216,6 +216,82 @@ describe('model capabilities', () => {
     ).toEqual({ size: '1792x1024', duration: 4 })
   })
 
+  it('offers reference images only on models that read them', () => {
+    expect(capabilityFor('dall-e-3', 'image').referenceImages).toBeNull()
+    expect(capabilityFor('qwen-image-max', 'image').referenceImages).toBeNull()
+    expect(capabilityFor('z-image-turbo', 'image').referenceImages).toBeNull()
+    expect(capabilityFor('doubao-seedream-4-5-251128', 'image').referenceImages).toEqual({
+      max: 14,
+      field: 'image',
+      encoding: 'dataUrl',
+    })
+    expect(capabilityFor('doubao-seedream-5-0-pro-260628', 'image').referenceImages?.max).toBe(10)
+    expect(capabilityFor('qwen-image-2.0', 'image').referenceImages).toEqual({
+      max: 3,
+      field: 'images',
+      encoding: 'dataUrl',
+    })
+    expect(capabilityFor('sora-2', 'video').referenceImages).toEqual({
+      max: 1,
+      field: 'images',
+      encoding: 'dataUrl',
+    })
+    expect(capabilityFor('kling-v2-5-turbo', 'video').referenceImages?.max).toBe(2)
+    expect(capabilityFor('jimeng-video', 'video').referenceImages).toEqual({
+      max: 4,
+      field: 'images',
+      encoding: 'base64',
+    })
+    expect(capabilityFor('wan2.2-s2v', 'video').referenceImages).toBeNull()
+    expect(capabilityFor('wan2.7-t2v', 'video').referenceImages).toBeNull()
+  })
+
+  it('warns when the model can take reference audio or video', () => {
+    expect(capabilityFor('sora-2', 'video').mediaNotice).toBe(false)
+    expect(capabilityFor('wan3.0-video', 'video').mediaNotice).toBe(true)
+    expect(capabilityFor('MiniMax-H3', 'video').mediaNotice).toBe(true)
+    expect(capabilityFor('doubao-seedance-2-5-260628', 'video').mediaNotice).toBe(true)
+    expect(capabilityFor('grok-imagine-video', 'video').mediaNotice).toBe(true)
+    expect(capabilityFor('kling-4.0', 'video').mediaNotice).toBe(true)
+    expect(capabilityFor('wan2.2-s2v', 'video').mediaNotice).toBe(true)
+    expect(capabilityFor('gpt-image-1', 'image').mediaNotice).toBe(false)
+  })
+
+  it('puts reference images on the field the model reads', () => {
+    const dataUrl = 'data:image/png;base64,aaa'
+    expect(
+      buildImageRequest({ size: '1024x1024', count: '1' }, 'doubao-seedream-4-0', [dataUrl])
+    ).toEqual({
+      size: '1024x1024',
+      count: 1,
+      image: [dataUrl],
+    })
+    expect(
+      buildImageRequest({ size: '1024x1024', count: '1' }, 'qwen-image-2.0', [dataUrl])
+    ).toEqual({
+      size: '1024x1024',
+      count: 1,
+      images: [dataUrl],
+    })
+    expect(
+      buildImageRequest({ size: '1024x1024', count: '1' }, 'dall-e-3', [dataUrl])
+    ).toEqual({ size: '1024x1024', count: 1 })
+    expect(
+      buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'sora-2', [dataUrl])
+    ).toEqual({
+      size: '1280x720',
+      duration: 5,
+      images: [dataUrl],
+    })
+    expect(
+      buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'jimeng-video', [dataUrl])
+    ).toMatchObject({ images: ['aaa'] })
+    expect(buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'sora-2')).toEqual({
+      size: '1280x720',
+      duration: 5,
+    })
+  })
+
   it('omits a duration that is not a positive number', () => {
     expect(buildVideoRequest({ ratio: '16:9', seconds: '' })).toEqual({
       size: '1280x720',

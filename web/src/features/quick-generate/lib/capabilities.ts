@@ -54,9 +54,27 @@ export type ParamField =
       suffix?: string
     }
 
+/**
+ * Reference images this model accepts on the generation request.
+ * `field` is the JSON key the model's adaptor reads. Jimeng stores the
+ * bytes as raw base64; everyone else keeps the data URL.
+ */
+export type ReferenceImages = {
+  max: number
+  field: 'images' | 'image'
+  encoding: 'dataUrl' | 'base64'
+}
+
 export type ModelCapability = {
   kind: GenerationKind
   fields: ParamField[]
+  /** Absent when the model is text-only or its image input is not a data URL. */
+  referenceImages: ReferenceImages | null
+  /**
+   * The model can also take reference audio or video. This page does not
+   * send those, and says so next to the prompt.
+   */
+  mediaNotice: boolean
 }
 
 const IMAGE_RATIO_FIELD: ParamField = {
@@ -218,25 +236,117 @@ function sizeOption(value: string): ParamOption {
   }
 }
 
+/** Reference-image cap plus the audio/video warning, with the usual data-URL `images` field. */
+function referenceMedia(
+  max: number | null,
+  mediaNotice = false,
+  spec: Partial<Pick<ReferenceImages, 'field' | 'encoding'>> = {}
+): Pick<ModelCapability, 'referenceImages' | 'mediaNotice'> {
+  if (max === null) return { referenceImages: null, mediaNotice }
+  return {
+    referenceImages: {
+      max,
+      field: spec.field ?? 'images',
+      encoding: spec.encoding ?? 'dataUrl',
+    },
+    mediaNotice,
+  }
+}
+
+/**
+ * How many reference images the model reads, and whether it also accepts
+ * audio or video that this page leaves out. Counts follow the task plugins:
+ * one frame, a first and last frame, or the plugin's reference-image cap.
+ * The first matching rule wins.
+ */
+function mediaFor(
+  model: string,
+  kind: GenerationKind
+): Pick<ModelCapability, 'referenceImages' | 'mediaNotice'> {
+  if (kind === 'video') {
+    // Speech-to-video needs an audio file this page does not send.
+    if (/wan2\.2-s2v/i.test(model)) return referenceMedia(null, true)
+    if (/wan2\.7-t2v/i.test(model)) return referenceMedia(null)
+    if (/wan2\.7-i2v|wan3/i.test(model)) return referenceMedia(2, true)
+    if (/seedance-1-0-lite-t2v/i.test(model)) return referenceMedia(null)
+    if (/seedance-2/i.test(model)) return referenceMedia(4, true)
+    if (/grok-imagine/i.test(model)) return referenceMedia(7, true)
+    if (/minimax-h3|hailuo.*h3|h3.*hailuo/i.test(model)) {
+      return referenceMedia(2, true)
+    }
+    if (/kling-4/i.test(model)) return referenceMedia(2, true)
+    if (/kling|hailuo|minimax/i.test(model)) return referenceMedia(2)
+    if (/vidu/i.test(model)) return referenceMedia(7)
+    if (/jimeng/i.test(model)) {
+      return referenceMedia(4, false, { encoding: 'base64' })
+    }
+    if (/seedance/i.test(model)) return referenceMedia(1)
+    // Sora, Veo and any other video model: one reference frame.
+    return referenceMedia(1)
+  }
+
+  if (/dall-e/i.test(model)) return referenceMedia(null)
+  if (/qwen-image-edit|qwen-image-(?:2\.0|3\.0)/i.test(model)) {
+    return referenceMedia(3)
+  }
+  if (/(?:^|\/)qwen-image(?:-plus|-max)?$/i.test(model)) return referenceMedia(null)
+  if (/z-image-turbo|wan2\.6-t2i/i.test(model)) return referenceMedia(null)
+  if (/wan2\.7-image/i.test(model)) return referenceMedia(9)
+  if (/wan2\.6-image/i.test(model)) return referenceMedia(4)
+  if (/seedream-5-0-(?:pro|flash)/i.test(model)) {
+    return referenceMedia(10, false, { field: 'image' })
+  }
+  if (/seedream/i.test(model)) return referenceMedia(14, false, { field: 'image' })
+  return referenceMedia(4)
+}
+
+function encodeReference(url: string, encoding: ReferenceImages['encoding']): string {
+  if (encoding === 'dataUrl') return url
+  const comma = url.indexOf(',')
+  if (url.startsWith('data:') && comma >= 0) return url.slice(comma + 1)
+  return url
+}
+
+/** Puts reference images on the field the model reads, and drops an empty list. */
+function withReferences<T extends ImageRequest | VideoRequest>(
+  request: T,
+  model: string,
+  kind: GenerationKind,
+  references: string[]
+): T {
+  const spec = mediaFor(model, kind).referenceImages
+  if (!spec || references.length === 0) return request
+  const encoded = references
+    .slice(0, spec.max)
+    .map((url) => encodeReference(url, spec.encoding))
+  if (kind === 'image' && spec.field === 'image') {
+    return { ...request, image: encoded }
+  }
+  return { ...request, images: encoded }
+}
+
 /** The controls a model shows: its endpoint type decides the shape, its name the options. */
 export function capabilityFor(
   model: string,
   kind: GenerationKind
 ): ModelCapability {
+  const media = mediaFor(model, kind)
   if (kind === 'video') {
     if (/sora-2-pro/i.test(model)) {
       return {
         kind,
+        ...media,
         fields: [VIDEO_RATIO_FIELD, SORA_PRO_RESOLUTION_FIELD, VIDEO_SECONDS_FIELD],
       }
     }
     // Sora 2 only accepts the 720p pair, so a resolution list would offer
     // sizes the model rejects.
     if (/sora/i.test(model)) {
-      return { kind, fields: [VIDEO_RATIO_FIELD, VIDEO_SECONDS_FIELD] }
+      return { kind, ...media, fields: [VIDEO_RATIO_FIELD, VIDEO_SECONDS_FIELD] }
     }
     return {
       kind,
+      ...media,
       fields: [VIDEO_RATIO_FIELD, VIDEO_RESOLUTION_FIELD, VIDEO_SECONDS_FIELD],
     }
   }
@@ -247,6 +357,7 @@ export function capabilityFor(
   if (rule) {
     return {
       kind,
+      ...media,
       fields: [
         {
           key: 'size',
@@ -269,12 +380,14 @@ export function capabilityFor(
   if (isNanoBanana(model)) {
     return {
       kind,
+      ...media,
       fields: [NANO_BANANA_RATIO_FIELD, IMAGE_RESOLUTION_FIELD, IMAGE_COUNT_FIELD],
     }
   }
 
   return {
     kind,
+    ...media,
     fields: [IMAGE_RATIO_FIELD, IMAGE_RESOLUTION_FIELD, IMAGE_COUNT_FIELD],
   }
 }
@@ -287,7 +400,14 @@ export function defaultValues(capability: ModelCapability): GenerationValues {
   return values
 }
 
-export type ImageRequest = { size: string; count: number; quality?: string }
+export type ImageRequest = {
+  size: string
+  count: number
+  quality?: string
+  /** Seedream reads `image`. Other image adaptors read `images`. */
+  image?: string[]
+  images?: string[]
+}
 
 /**
  * Image models either take an explicit size, or a ratio plus a resolution.
@@ -296,28 +416,36 @@ export type ImageRequest = { size: string; count: number; quality?: string }
  */
 export function buildImageRequest(
   values: GenerationValues,
-  model = ''
+  model = '',
+  references: string[] = []
 ): ImageRequest {
   const parsed = Number(values.count ?? 1)
   const count = Number.isFinite(parsed) ? parsed : 1
+  let request: ImageRequest
   if (isNanoBanana(model)) {
-    return {
+    request = {
       size: values.ratio ?? DEFAULT_IMAGE_RATIO,
       quality: (values.resolution ?? DEFAULT_IMAGE_RESOLUTION).toUpperCase(),
       count,
     }
+  } else if (values.size) {
+    request = { size: values.size, count }
+  } else {
+    const ratio = values.ratio ?? DEFAULT_IMAGE_RATIO
+    const resolution = (values.resolution ??
+      DEFAULT_IMAGE_RESOLUTION) as ImageResolution
+    request = { size: buildImageSize(ratio, resolution), count }
   }
-  if (values.size) return { size: values.size, count }
-
-  const ratio = values.ratio ?? DEFAULT_IMAGE_RATIO
-  const resolution = (values.resolution ??
-    DEFAULT_IMAGE_RESOLUTION) as ImageResolution
-  return { size: buildImageSize(ratio, resolution), count }
+  return withReferences(request, model, 'image', references)
 }
 
-export type VideoRequest = { size?: string; duration?: number }
+export type VideoRequest = { size?: string; duration?: number; images?: string[] }
 
-export function buildVideoRequest(values: GenerationValues): VideoRequest {
+export function buildVideoRequest(
+  values: GenerationValues,
+  model = '',
+  references: string[] = []
+): VideoRequest {
   const request: VideoRequest = {}
   const frames =
     VIDEO_PIXELS[values.resolution ?? ''] ?? VIDEO_PIXELS['720p']
@@ -328,7 +456,7 @@ export function buildVideoRequest(values: GenerationValues): VideoRequest {
   if (Number.isFinite(seconds) && seconds > 0) {
     request.duration = Math.round(seconds)
   }
-  return request
+  return withReferences(request, model, 'video', references)
 }
 
 /** One-line parameter summary for the result header. */

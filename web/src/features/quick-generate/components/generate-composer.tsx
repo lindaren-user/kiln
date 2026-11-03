@@ -16,18 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import {
   PromptInput,
+  PromptInputButton,
   PromptInputFooter,
   PromptInputSubmit,
-  PromptInputTextarea,
   PromptInputTools,
+  usePromptInputAttachments,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -39,6 +43,7 @@ import type { ApiKey } from '@/features/keys/types'
 
 import type { ModelCapability, ParamField } from '../lib/capabilities'
 import type { GenerationValues } from '../types'
+import { PromptMentionInput } from './prompt-mention-input'
 
 type GenerateComposerProps = {
   modelItems: { value: string; label: string }[]
@@ -52,12 +57,11 @@ type GenerateComposerProps = {
   selectedKeyId: number | null
   onKeyChange: (id: number) => void
   /** Returns false when the prompt was held back (e.g. waiting on a confirm). */
-  onSubmit: (prompt: string) => boolean
+  onSubmit: (prompt: string, images: string[]) => boolean
   busy: boolean
   disabled: boolean
 }
 
-/** Muted `Label:` prefix so each parameter reads as a labelled field. */
 function ParamLabel(props: { children: string }) {
   return (
     <span className='text-muted-foreground shrink-0'>{props.children}:</span>
@@ -135,6 +139,25 @@ function ParamNumber(props: ParamNumberProps) {
   )
 }
 
+const REFERENCE_IMAGE_TYPES = 'image/*'
+/** Keeps a data URL small enough for the JSON generation body. */
+const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** Opens the image picker. Dragging onto the prompt does the same. */
+function AddReferenceImage(props: { disabled?: boolean }) {
+  const { t } = useTranslation()
+  const attachments = usePromptInputAttachments()
+  return (
+    <PromptInputButton
+      aria-label={t('Add a reference image')}
+      disabled={props.disabled}
+      onClick={() => attachments.openFileDialog()}
+    >
+      <Plus aria-hidden='true' />
+    </PromptInputButton>
+  )
+}
+
 /** One capability field, labelled and drawn as a footer control. */
 function ParamFieldControl(props: {
   field: ParamField
@@ -195,36 +218,58 @@ export function GenerateComposer(props: GenerateComposerProps) {
   )
   const ready =
     !props.disabled &&
-    !props.busy &&
     props.model !== '' &&
     props.selectedKeyId !== null &&
     text.trim() !== ''
 
+  const referenceImages = props.capability.referenceImages
   const handleSubmit = (message: PromptInputMessage) => {
     const prompt = message.text?.trim() ?? ''
     if (!prompt || !ready) return
-    if (props.onSubmit(prompt)) setText('')
+    const images = (message.files ?? [])
+      .map((file) => file.url)
+      .filter((url): url is string => Boolean(url))
+    props.onSubmit(prompt, images)
+    // Keep the prompt and the files. PromptInput clears attachments when
+    // submit resolves, so this rejection leaves them in place.
+    return Promise.reject(new Error('keep'))
   }
 
   return (
     <PromptInput
+      key={props.model}
       className='relative'
-      groupClassName='bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]'
+      groupClassName={cn(
+        'bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]',
+        props.busy && 'bg-muted/50 focus-within:bg-background/95'
+      )}
+      accept={referenceImages ? REFERENCE_IMAGE_TYPES : undefined}
+      multiple={(referenceImages?.max ?? 0) > 1}
+      maxFiles={referenceImages?.max ?? 0}
+      maxFileSize={MAX_REFERENCE_IMAGE_BYTES}
+      onError={(error) => {
+        if (referenceImages) toast.error(error.message)
+      }}
       onSubmit={handleSubmit}
     >
-      <PromptInputTextarea
+      <PromptMentionInput
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={setText}
         placeholder={t('Describe what you want to create')}
-        aria-label={t('Prompt')}
+        label={t('Prompt')}
         disabled={props.disabled}
-        className='min-h-16'
       />
+      {props.capability.mediaNotice && (
+        <p className='text-warning px-3 pt-1 text-xs'>
+          {t('This version does not support reference video or audio.')}
+        </p>
+      )}
 
       {/* Every parameter shares one row and wraps only when the width runs
           out; the send button stays pinned to the bottom-right corner. */}
       <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 items-end gap-2 border-t px-3 py-2'>
         <PromptInputTools className='min-w-0 flex-1 flex-wrap items-center gap-1'>
+          {referenceImages && <AddReferenceImage disabled={props.disabled} />}
           <ParamSelect
             label={t('Model')}
             items={props.modelItems}

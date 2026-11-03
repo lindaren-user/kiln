@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Download, Loader2, RotateCcw, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -29,6 +30,30 @@ type ResultPanelProps = {
   onZoom: (index: number) => void
   onDownload: (index: number) => void
   onRetry: () => void
+}
+
+/** Elapsed time for the request currently on screen. A new run remounts it. */
+function RunningStatus(props: { progress?: string }) {
+  const { t } = useTranslation()
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    const started = Date.now()
+    const timer = window.setInterval(() => {
+      setSeconds(Math.floor((Date.now() - started) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const minutes = Math.floor(seconds / 60)
+  const remainder = String(seconds % 60).padStart(2, '0')
+  let label = `${t('Generating')}... ${minutes}:${remainder}`
+  if (props.progress) label += ` ${props.progress}`
+
+  return (
+    <div className='text-muted-foreground flex flex-col items-center gap-3'>
+      <Loader2 className='size-6 animate-spin' aria-hidden='true' />
+      <p className='text-sm'>{label}</p>
+    </div>
+  )
 }
 
 /**
@@ -59,14 +84,7 @@ export function ResultPanel(props: ResultPanelProps) {
       )}
 
       {generation?.status === 'running' && (
-        <div className='text-muted-foreground flex flex-col items-center gap-3'>
-          <Loader2 className='size-6 animate-spin' aria-hidden='true' />
-          <p className='text-sm'>
-            {generation.progress
-              ? `${t('Generating')} ${generation.progress}`
-              : t('Generating')}
-          </p>
-        </div>
+        <RunningStatus key={generation.id} progress={generation.progress} />
       )}
 
       {generation?.error && (

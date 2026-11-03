@@ -40,7 +40,6 @@ import {
   buildVideoRequest,
   capabilityFor,
   defaultValues,
-  summarizeValues,
 } from './lib/capabilities'
 import { downloadMedia, mediaFilename } from './lib/download-media'
 import { pollVideoTask } from './lib/poll-video'
@@ -72,7 +71,10 @@ export function QuickGenerate() {
   // an empty image, which used to look like a second dialog flashing open.
   const [zoomIndex, setZoomIndex] = useState<number | null>(null)
   const [zoomOpen, setZoomOpen] = useState(false)
-  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<{
+    prompt: string
+    images: string[]
+  } | null>(null)
   // Identifies the generation that may still write to state; a newer one, or
   // leaving the page, cancels the video poll of an older one.
   const activeRunRef = useRef('')
@@ -129,7 +131,7 @@ export function QuickGenerate() {
             apiKey,
             model: params.model,
             prompt,
-            request: buildVideoRequest(params.values),
+            request: buildVideoRequest(params.values, params.model, params.images),
           })
           const url = await pollVideoTask({
             apiKey,
@@ -155,7 +157,11 @@ export function QuickGenerate() {
           return
         }
 
-        const request = buildImageRequest(params.values, params.model)
+        const request = buildImageRequest(
+          params.values,
+          params.model,
+          params.images
+        )
         const images = await generateImages({
           apiKey,
           model: params.model,
@@ -163,6 +169,8 @@ export function QuickGenerate() {
           size: request.size,
           count: request.count,
           quality: request.quality,
+          image: request.image,
+          images: request.images,
         })
         if (isCancelled()) return
         setGeneration((current) =>
@@ -194,9 +202,14 @@ export function QuickGenerate() {
   )
 
   const generate = useCallback(
-    (prompt: string) =>
+    (prompt: string, images: string[]) =>
       runGeneration(
-        { model, kind, values: { ...defaultValues(capability), ...values } },
+        {
+          model,
+          kind,
+          values: { ...defaultValues(capability), ...values },
+          images,
+        },
         prompt
       ),
     [capability, kind, model, runGeneration, values]
@@ -210,6 +223,7 @@ export function QuickGenerate() {
         model: generation.model,
         kind: generation.kind,
         values: generation.values,
+        images: generation.images,
       },
       generation.prompt
     )
@@ -217,16 +231,20 @@ export function QuickGenerate() {
 
   /** Returns false when the prompt waits for the replace confirmation. */
   const submit = useCallback(
-    (prompt: string) => {
-      if (busy) return false
-      if (generation) {
-        setPendingPrompt(prompt)
+    (prompt: string, images: string[]) => {
+      const replacesResult =
+        generation?.status === 'running' ||
+        (generation?.status === 'done' &&
+          generation.media.length > 0 &&
+          !generation.saved)
+      if (replacesResult) {
+        setPendingPrompt({ prompt, images })
         return false
       }
-      void generate(prompt)
+      void generate(prompt, images)
       return true
     },
-    [busy, generate, generation]
+    [generate, generation]
   )
 
   const markSaved = useCallback(() => {
@@ -275,15 +293,13 @@ export function QuickGenerate() {
     [generation, saveMedia]
   )
 
-  const unsaved = generation !== null && !generation.saved
+  const unsaved =
+    generation?.status === 'running' ||
+    (generation?.status === 'done' &&
+      generation.media.length > 0 &&
+      !generation.saved)
   const zoomedImage =
     zoomIndex === null ? undefined : generation?.media[zoomIndex]?.url
-  const summary = generation
-    ? summarizeValues(
-        capabilityFor(generation.model, generation.kind),
-        generation.values
-      )
-    : ''
 
   return (
     <div className='mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col gap-3 p-4'>
@@ -309,34 +325,14 @@ export function QuickGenerate() {
       </div>
 
       <div className='flex min-h-0 flex-1 flex-col gap-2'>
-        <div className='flex shrink-0 items-start justify-between gap-3'>
-          <div className='min-w-0 flex-1'>
-            {generation ? (
-              <>
-                <p
-                  className='line-clamp-2 text-sm leading-5'
-                  title={generation.prompt}
-                >
-                  {generation.prompt}
-                </p>
-                <p className='text-muted-foreground mt-1 truncate text-xs'>
-                  {generation.model}
-                  {summary ? ` · ${summary}` : ''}
-                </p>
-              </>
-            ) : (
-              <p className='text-muted-foreground text-xs'>
-                {t('No result yet')}
-              </p>
-            )}
-          </div>
-          {generation && generation.media.length > 0 && (
+        {generation && generation.media.length > 0 && (
+          <div className='flex shrink-0 justify-end'>
             <Button variant='outline' size='sm' onClick={downloadAll}>
               <Download className='mr-2 size-4' aria-hidden='true' />
               {generation.kind === 'video' ? t('Download') : t('Download all')}
             </Button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className='min-h-0 flex-1'>
           <ResultPanel
@@ -414,9 +410,9 @@ export function QuickGenerate() {
         )}
         confirmText={t('Generate anyway')}
         handleConfirm={() => {
-          const prompt = pendingPrompt
+          const pending = pendingPrompt
           setPendingPrompt(null)
-          if (prompt) void generate(prompt)
+          if (pending) void generate(pending.prompt, pending.images)
         }}
       />
     </div>
