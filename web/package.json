@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "rsbuild dev",
     "build": "rsbuild build",
-    "build:check": "bun check -b && rsbuild build",
-    "typecheck": "bun check -b",
+    "build:check": "pnpm run typecheck && rsbuild build",
+    "typecheck": "tsc -b",
     "lint": "oxlint -c .oxlintrc.json .",
     "lint:fix": "oxlint -c .oxlintrc.json . --fix",
     "lint:plugins": "cd ../plugins && oxlint -c .oxlintrc.json .",
@@ -107,21 +107,24 @@
     "oxfmt": "^0.72.0",
     "oxlint": "^1.72.0",
     "shadcn": "^4.12.0",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.4"
   },
-  "overrides": {
-    "brace-expansion": "2.1.1",
-    "dompurify": "3.4.17",
-    "fast-uri": "3.1.2",
-    "hono": "4.12.22",
-    "ip-address": "10.2.0",
-    "js-cookie": "3.0.7",
-    "katex": "0.18.2",
-    "mermaid": "11.15.0",
-    "minimist": "1.2.8",
-    "postcss": "8.5.15",
-    "qs": "6.15.2",
-    "uuid": "14.0.0"
+  "pnpm": {
+    "overrides": {
+      "brace-expansion": "2.1.1",
+      "dompurify": "3.4.17",
+      "fast-uri": "3.1.2",
+      "hono": "4.12.22",
+      "ip-address": "10.2.0",
+      "js-cookie": "3.0.7",
+      "katex": "0.18.2",
+      "mermaid": "11.15.0",
+      "minimist": "1.2.8",
+      "postcss": "8.5.15",
+      "qs": "6.15.2",
+      "uuid": "14.0.0"
+    }
   },
-  "packageManager": "bun@1.4.4"
+  "packageManager": "pnpm@12.16.1"
 }

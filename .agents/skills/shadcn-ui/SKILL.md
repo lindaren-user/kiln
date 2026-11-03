@@ -37,7 +37,7 @@ npx skills add shadcn/ui
 That installs the skill where the `skills` CLI is available. **This repository** keeps the same intent under `.agents/skills/shadcn-ui/` (overview here + **vendored** upstream docs in [`vendor/shadcn/`](./vendor/shadcn/)) and runs the shadcn CLI from the frontend app root:
 
 ```bash
-cd web && bunx shadcn@latest info --json
+cd web && pnpm dlx shadcn@latest info --json
 ```
 
 Learn more about skills at [skills.sh](https://skills.sh).
@@ -48,7 +48,7 @@ Learn more about skills at [skills.sh](https://skills.sh).
 
 ### Project context
 
-Run **`shadcn info --json`** (here: `cd web && bunx shadcn@latest info --json`) for framework, Tailwind version, aliases, base (`radix` | `base`), icon library, installed components, and resolved paths.
+Run **`shadcn info --json`** (here: `cd web && pnpm dlx shadcn@latest info --json`) for framework, Tailwind version, aliases, base (`radix` | `base`), icon library, installed components, and resolved paths.
 
 ### CLI commands
 
