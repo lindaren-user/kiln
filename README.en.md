@@ -261,8 +261,8 @@ Build the frontend before starting the backend, which embeds `web/dist`:
 ```bash
 # Repository root
 cd web
-bun install --frozen-lockfile
-bun run build
+pnpm install --frozen-lockfile
+pnpm run build
 cd ..
 go run .
 ```
@@ -271,7 +271,7 @@ In a second terminal, start the frontend development server:
 
 ```bash
 cd web
-bun run dev -- --port 5173
+pnpm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173); the development server proxies API requests to the backend on port 3000. For a containerized development backend, see [docker-compose.dev.yml](./docker-compose.dev.yml) and the `make dev` target in [makefile](./makefile).
@@ -286,7 +286,7 @@ Open [http://localhost:5173](http://localhost:5173); the development server prox
 | `web/` | Web console; see [frontend conventions](./web/AGENTS.md) |
 | [electron/](./electron/README.md) | Desktop wrapper and packaging |
 
-Read [AGENTS.md](./AGENTS.md) before contributing. Run checks appropriate to your change, including `make test` for the Go modules and `bun check -b`, `bun run lint`, `bun run test`, and `bun run build` in `web/` for frontend changes. Changes to RelayKit must also pass `GOWORK=off go build ./...` from `relaykit/`.
+Read [AGENTS.md](./AGENTS.md) before contributing. Run checks appropriate to your change, including `make test` for the Go modules and `pnpm run typecheck`, `pnpm run lint`, `pnpm run test`, and `pnpm run build` in `web/` for frontend changes. Changes to RelayKit must also pass `GOWORK=off go build ./...` from `relaykit/`.
 
 <a id="documentation"></a>
 

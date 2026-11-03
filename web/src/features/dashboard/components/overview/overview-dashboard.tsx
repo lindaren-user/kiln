@@ -87,7 +87,7 @@ const SETUP_GUIDE_CODE_PATTERN = [
 type DashboardActionPath =
   | '/keys'
   | '/wallet'
-  | '/playground'
+  | '/canvas'
   | '/channels'
   | '/usage-logs'
   | '/pricing'
@@ -522,8 +522,8 @@ export function OverviewDashboard() {
       },
       {
         title: t('Send a request'),
-        description: t('Verify routing with Playground or your client'),
-        to: '/playground',
+        description: t('Verify routing with Canvas or your client'),
+        to: '/canvas',
         icon: TerminalSquare,
         completed: requestCount > 0,
       },

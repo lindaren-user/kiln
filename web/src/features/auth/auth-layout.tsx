@@ -19,7 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { BrandWordmarkImage } from '@/components/layout/components/brand-wordmark'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getBrandWordmark } from '@/config/brand'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
 type AuthLayoutProps = {
@@ -28,30 +30,15 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   const { t } = useTranslation()
-  const { systemName, logo, loading } = useSystemConfig()
 
   return (
     <div className='relative grid h-svh max-w-none'>
       <Link
         to='/'
+        aria-label={t('Go to home')}
         className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
       >
-        <div className='relative h-8 w-8'>
-          {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
-          ) : (
-            <img
-              src={logo}
-              alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
-            />
-          )}
-        </div>
-        {loading ? (
-          <Skeleton className='h-6 w-24' />
-        ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
-        )}
+        <AuthBrand />
       </Link>
       <div className='container flex items-center pt-16 sm:pt-0'>
         <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
@@ -59,5 +46,39 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * The bundled wordmark replaces the square icon and the system name, as it does
+ * in the public header and the console sidebar; an admin-set logo keeps them.
+ */
+function AuthBrand() {
+  const { t } = useTranslation()
+  const { systemName, logo, loading } = useSystemConfig()
+  const wordmark = getBrandWordmark(logo)
+
+  if (loading) {
+    return (
+      <>
+        {wordmark ? null : <Skeleton className='h-8 w-8 rounded-full' />}
+        <Skeleton className='h-6 w-24' />
+      </>
+    )
+  }
+
+  if (wordmark) {
+    return <BrandWordmarkImage wordmark={wordmark} className='h-6' />
+  }
+
+  return (
+    <>
+      <img
+        src={logo}
+        alt={t('Logo')}
+        className='h-8 w-8 rounded-full object-cover'
+      />
+      <h1 className='text-xl font-medium'>{systemName}</h1>
+    </>
   )
 }

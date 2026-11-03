@@ -27,7 +27,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { SystemUpdateAction } from '@/features/system-update/system-update-action'
+import { getBrandWordmark } from '@/config/brand'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { useTopNavLinks } from '@/hooks/use-top-nav-links'
@@ -36,6 +36,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
+import { BrandWordmarkImage } from './brand-wordmark'
 import { HeaderLogo } from './header-logo'
 
 const AUTH_PROMPT_SECONDS = 5
@@ -98,6 +99,10 @@ export function PublicHeader(props: PublicHeaderProps) {
   const isAuthenticated = !!user
   const displaySiteName = customSiteName || systemName
   const links = dynamicLinks.length > 0 ? dynamicLinks : navLinks
+  // A registered wordmark replaces the system name next to the icon; explicit
+  // logo/name overrides keep the plain text label.
+  const wordmark =
+    customLogo || customSiteName ? undefined : getBrandWordmark(systemLogo)
 
   let logoContent: ReactNode = (
     <HeaderLogo
@@ -109,6 +114,19 @@ export function PublicHeader(props: PublicHeaderProps) {
   )
   if (customLogo) logoContent = customLogo
   if (loading) logoContent = <Skeleton className='size-full rounded-lg' />
+
+  let labelContent: ReactNode = (
+    <span className='max-w-48 truncate text-sm font-semibold tracking-tight'>
+      {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
+    </span>
+  )
+  if (wordmark) {
+    labelContent = loading ? (
+      <Skeleton className='h-5 w-20 rounded-md' />
+    ) : (
+      <BrandWordmarkImage wordmark={wordmark} />
+    )
+  }
 
   let authContent = (
     <Button
@@ -215,26 +233,20 @@ export function PublicHeader(props: PublicHeaderProps) {
             )}
           >
             {/* Logo */}
-            <div className='@container/system-brand flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
+            <div className='flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
               <Link
                 to={homeUrl}
+                title={displaySiteName}
+                aria-label={displaySiteName}
                 className='group flex min-w-0 items-center gap-2.5'
               >
-                <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
-                  {logoContent}
-                </div>
-                <span
-                  className='max-w-48 truncate text-sm font-semibold tracking-tight'
-                  title={displaySiteName}
-                >
-                  {loading ? (
-                    <Skeleton className='h-4 w-16' />
-                  ) : (
-                    displaySiteName
-                  )}
-                </span>
+                {wordmark ? null : (
+                  <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
+                    {logoContent}
+                  </div>
+                )}
+                {labelContent}
               </Link>
-              <SystemUpdateAction presentation='version' />
             </div>
 
             {/* Desktop nav */}

@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Zap,
   Shield,
-  Globe,
+  Layers,
   Code,
   Gauge,
   DollarSign,
@@ -39,35 +39,40 @@ export function Features(_props: FeaturesProps) {
 
   const features = [
     {
-      id: 'fast',
+      id: 'models',
       num: '01',
-      title: t('Lightning Fast'),
+      title: t('Every Model, One Workspace'),
       desc: t(
-        'Optimized network architecture ensures millisecond response times'
+        'Generate video and images from several providers through one interface, with one balance and one usage log.'
       ),
       span: 'md:col-span-2',
       icon: <Zap className='size-4 text-blue-400' />,
       visual: (
         <div className='mt-4 grid grid-cols-3 gap-2'>
-          {['OpenAI', 'Claude', 'Gemini', 'DeepSeek', 'Qwen', 'Llama'].map(
-            (name) => (
-              <div
-                key={name}
-                className='border-border/30 bg-muted/20 text-muted-foreground flex items-center justify-center rounded-lg border px-3 py-2 text-xs transition-colors duration-300 hover:border-blue-500/30 hover:bg-blue-500/5'
-              >
-                {name}
-              </div>
-            )
-          )}
+          {[
+            t('Text to Video'),
+            t('Image to Video'),
+            t('Text to Image'),
+            t('Image to Image'),
+            t('Upscale'),
+            t('Inpaint'),
+          ].map((name) => (
+            <div
+              key={name}
+              className='border-border/30 bg-muted/20 text-muted-foreground flex items-center justify-center rounded-lg border px-3 py-2 text-xs transition-colors duration-300 hover:border-blue-500/30 hover:bg-blue-500/5'
+            >
+              {name}
+            </div>
+          ))}
         </div>
       ),
     },
     {
-      id: 'secure',
+      id: 'reliable',
       num: '02',
-      title: t('Secure & Reliable'),
+      title: t('Reliable Generation'),
       desc: t(
-        'Enterprise-grade security with comprehensive permission management'
+        'Queued tasks, automatic retries, and settled billing keep long generations dependable.'
       ),
       span: 'md:col-span-1',
       icon: <Shield className='size-4 text-emerald-400' />,
@@ -100,39 +105,41 @@ export function Features(_props: FeaturesProps) {
       ),
     },
     {
-      id: 'global',
+      id: 'canvas',
       num: '03',
-      title: t('Global Coverage'),
-      desc: t('Multi-region deployment for stable global access'),
+      title: t('Infinite Canvas'),
+      desc: t(
+        'Arrange assets, keep generating, and compare versions on one canvas.'
+      ),
       span: 'md:col-span-1',
-      icon: <Globe className='size-4 text-violet-400' />,
+      icon: <Layers className='size-4 text-violet-400' />,
       visual: (
         <div className='mt-4 space-y-2'>
-          {[t('Load Balancing'), t('Rate Limiting'), t('Cost Tracking')].map(
-            (step, i) => (
-              <div key={step} className='flex items-center gap-2'>
-                <div
-                  className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold ${
-                    i === 1
-                      ? 'border border-blue-500/30 bg-blue-500/20 text-blue-500'
-                      : 'border-border/40 bg-muted text-muted-foreground border'
-                  }`}
-                >
-                  {i + 1}
-                </div>
-                <div className='bg-border/40 h-px flex-1' />
-                <span className='text-muted-foreground text-xs'>{step}</span>
+          {[t('Place'), t('Generate'), t('Compare')].map((step, i) => (
+            <div key={step} className='flex items-center gap-2'>
+              <div
+                className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold ${
+                  i === 1
+                    ? 'border border-blue-500/30 bg-blue-500/20 text-blue-500'
+                    : 'border-border/40 bg-muted text-muted-foreground border'
+                }`}
+              >
+                {i + 1}
               </div>
-            )
-          )}
+              <div className='bg-border/40 h-px flex-1' />
+              <span className='text-muted-foreground text-xs'>{step}</span>
+            </div>
+          ))}
         </div>
       ),
     },
     {
-      id: 'developer',
+      id: 'creators',
       num: '04',
-      title: t('Developer Friendly'),
-      desc: t('Compatible API routes for common AI application workflows'),
+      title: t('Built for Creators and Developers'),
+      desc: t(
+        'Use the canvas in the browser or call the same models through the API.'
+      ),
       span: 'md:col-span-2',
       icon: <Code className='size-4 text-amber-400' />,
       visual: (
@@ -149,7 +156,7 @@ export function Features(_props: FeaturesProps) {
           </div>
           <div className='text-muted-foreground flex items-center gap-1.5 text-xs'>
             <Code className='size-3.5 text-blue-500' />
-            {t('Multi-protocol Compatible')}
+            {t('Multi-model Compatible')}
           </div>
         </div>
       ),
@@ -159,23 +166,25 @@ export function Features(_props: FeaturesProps) {
   const additionalFeatures = [
     {
       icon: <Gauge className='size-5' strokeWidth={1.5} />,
-      title: t('High Performance'),
-      desc: t('Support for high concurrency with automatic load balancing'),
+      title: t('Parallel Generation'),
+      desc: t(
+        'Generations run in parallel across providers without blocking your session.'
+      ),
     },
     {
       icon: <DollarSign className='size-5' strokeWidth={1.5} />,
       title: t('Transparent Billing'),
-      desc: t('Pay-as-you-go with real-time usage monitoring'),
+      desc: t('Pay per generation with real-time usage monitoring.'),
     },
     {
       icon: <Users className='size-5' strokeWidth={1.5} />,
-      title: t('Team Collaboration'),
-      desc: t('Multi-user management with flexible permission allocation'),
+      title: t('Team Workspace'),
+      desc: t('Manage members, quota and permissions in one place.'),
     },
     {
       icon: <HeartHandshake className='size-5' strokeWidth={1.5} />,
-      title: t('Open Source'),
-      desc: t('Community driven, self-hosted, and extensible'),
+      title: t('Self-Hosted'),
+      desc: t('Deploy on your own infrastructure and extend it as you grow.'),
     },
   ]
 
@@ -184,12 +193,12 @@ export function Features(_props: FeaturesProps) {
       <div className='mx-auto max-w-6xl'>
         <AnimateInView className='mb-16 max-w-lg'>
           <p className='text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase'>
-            {t('Core Features')}
+            {t('Creation Toolkit')}
           </p>
           <h2 className='text-2xl leading-tight font-bold tracking-tight md:text-3xl'>
-            {t('Built for developers,')}
+            {t('From first prompt to')}
             <br />
-            {t('designed for scale')}
+            {t('finished frame')}
           </h2>
         </AnimateInView>
 

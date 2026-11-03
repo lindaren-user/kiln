@@ -235,15 +235,15 @@ docker compose logs -f new-api
 
 ## 開発と拡張
 
-バックエンドは Go と Gin、管理画面は React 19、TypeScript、Rsbuild、TanStack、Tailwind CSS 4 を使用します。フロントエンドの依存関係とスクリプトには Bun を使います。Go 言語の基準バージョンは [go.mod](./go.mod)、コンテナのビルドツールチェーンは [Dockerfile](./Dockerfile) を参照してください。
+バックエンドは Go と Gin、管理画面は React 19、TypeScript、Rsbuild、TanStack、Tailwind CSS 4 を使用します。フロントエンドの依存関係とスクリプトには pnpm を使います。Go 言語の基準バージョンは [go.mod](./go.mod)、コンテナのビルドツールチェーンは [Dockerfile](./Dockerfile) を参照してください。
 
 バックエンドは `web/dist` を埋め込むため、先にフロントエンドをビルドします。
 
 ```bash
 # リポジトリのルート
 cd web
-bun install --frozen-lockfile
-bun run build
+pnpm install --frozen-lockfile
+pnpm run build
 cd ..
 go run .
 ```
@@ -252,7 +252,7 @@ go run .
 
 ```bash
 cd web
-bun run dev -- --port 5173
+pnpm run dev
 ```
 
 [http://localhost:5173](http://localhost:5173) を開きます。API リクエストはポート 3000 のバックエンドに転送されます。開発用バックエンドをコンテナで動かす場合は [docker-compose.dev.yml](./docker-compose.dev.yml) と [makefile](./makefile) の `make dev` を参照してください。
@@ -267,7 +267,7 @@ bun run dev -- --port 5173
 | `web/` | Web 管理画面。[フロントエンドの規約](./web/AGENTS.md)を参照 |
 | [electron/](./electron/README.md) | デスクトップアプリのラッパーとパッケージング |
 
-貢献前に [AGENTS.md](./AGENTS.md) を確認してください。変更に応じて、Go モジュールは `make test`、フロントエンドは `web/` で `bun check -b`、`bun run lint`、`bun run test`、`bun run build` を実行します。RelayKit を変更した場合は、`relaykit/` で `GOWORK=off go build ./...` も実行してください。
+貢献前に [AGENTS.md](./AGENTS.md) を確認してください。変更に応じて、Go モジュールは `make test`、フロントエンドは `web/` で `pnpm run typecheck`、`pnpm run lint`、`pnpm run test`、`pnpm run build` を実行します。RelayKit を変更した場合は、`relaykit/` で `GOWORK=off go build ./...` も実行してください。
 
 <a id="documentation"></a>
 
