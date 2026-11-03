@@ -27,6 +27,7 @@ import {
   PromptInputTools,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -34,25 +35,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  IMAGE_COUNT_ITEMS,
-  IMAGE_RATIO_ITEMS,
-  IMAGE_RESOLUTION_ITEMS,
-  type ImageResolution,
-} from '@/features/image-generation/constants'
-import type { ImageOption } from '@/features/image-generation/types'
 import type { ApiKey } from '@/features/keys/types'
 
+import type { ModelCapability, ParamField } from '../lib/capabilities'
+import type { GenerationValues } from '../types'
+
 type GenerateComposerProps = {
-  modelItems: ImageOption[]
+  modelItems: { value: string; label: string }[]
   model: string
   onModelChange: (value: string) => void
-  ratio: string
-  onRatioChange: (value: string) => void
-  resolution: ImageResolution
-  onResolutionChange: (value: ImageResolution) => void
-  count: number
-  onCountChange: (count: number) => void
+  /** The controls this model accepts; a different model shows a different set. */
+  capability: ModelCapability
+  values: GenerationValues
+  onValueChange: (key: string, value: string) => void
   keys: ApiKey[]
   selectedKeyId: number | null
   onKeyChange: (id: number) => void
@@ -71,7 +66,7 @@ function ParamLabel(props: { children: string }) {
 
 type ParamSelectProps = {
   label: string
-  items: ImageOption[]
+  items: { value: string; label: string }[]
   value: string
   onValueChange: (value: string) => void
   disabled?: boolean
@@ -107,21 +102,92 @@ function ParamSelect(props: ParamSelectProps) {
   )
 }
 
+type ParamNumberProps = {
+  label: string
+  value: string
+  min: number
+  max: number
+  suffix?: string
+  onValueChange: (value: string) => void
+  disabled?: boolean
+}
+
+/** A labelled numeric field for values with no fixed option list. */
+function ParamNumber(props: ParamNumberProps) {
+  return (
+    <label className='border-input flex h-8 items-center gap-1 rounded-lg border px-2 text-sm'>
+      <ParamLabel>{props.label}</ParamLabel>
+      <Input
+        type='number'
+        inputMode='numeric'
+        min={props.min}
+        max={props.max}
+        value={props.value}
+        onChange={(event) => props.onValueChange(event.target.value)}
+        disabled={props.disabled}
+        aria-label={props.label}
+        className='h-6 w-12 border-0 bg-transparent px-0 text-right text-sm shadow-none focus-visible:ring-0 dark:bg-transparent'
+      />
+      {props.suffix && (
+        <span className='text-muted-foreground text-xs'>{props.suffix}</span>
+      )}
+    </label>
+  )
+}
+
+/** One capability field, labelled and drawn as a footer control. */
+function ParamFieldControl(props: {
+  field: ParamField
+  value: string
+  onValueChange: (value: string) => void
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  if (props.field.type === 'select') {
+    return (
+      <ParamSelect
+        label={t(props.field.labelKey)}
+        items={props.field.options}
+        value={props.value}
+        onValueChange={props.onValueChange}
+        disabled={props.disabled}
+      />
+    )
+  }
+  return (
+    <ParamNumber
+      label={t(props.field.labelKey)}
+      value={props.value}
+      min={props.field.min}
+      max={props.field.max}
+      suffix={props.field.suffix}
+      onValueChange={props.onValueChange}
+      disabled={props.disabled}
+    />
+  )
+}
+
 /**
- * Prompt bar for the generation feed: the prompt on top, the model, size,
- * count and API key parameters underneath, send on the right.
+ * Prompt bar for the generation feed: the prompt on top, the model, its
+ * parameters and the API key underneath, send on the right.
  */
 export function GenerateComposer(props: GenerateComposerProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
-  // Option arrays depend on the translation or the key list, not on typing.
-  const ratioItems = useMemo(
+
+  // Option arrays depend on the model capability or the key list, not on typing.
+  const fields = useMemo<ParamField[]>(
     () =>
-      IMAGE_RATIO_ITEMS.map((item) => ({
-        value: item.value,
-        label: item.value === 'auto' ? t('Auto') : item.label,
-      })),
-    [t]
+      props.capability.fields.map((field) => {
+        if (field.type !== 'select') return field
+        return {
+          ...field,
+          options: field.options.map((option) =>
+            option.value === 'auto' ? { ...option, label: t('Auto') } : option
+          ),
+        }
+      }),
+    [props.capability, t]
   )
   const keyItems = useMemo(
     () => props.keys.map((key) => ({ value: String(key.id), label: key.name })),
@@ -155,59 +221,39 @@ export function GenerateComposer(props: GenerateComposerProps) {
         className='min-h-16'
       />
 
-      {/* Never wrap the footer itself: the tools take the wrapped rows, the
-          send button stays pinned to the inline end. */}
+      {/* Every parameter shares one row and wraps only when the width runs
+          out; the send button stays pinned to the bottom-right corner. */}
       <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 items-end gap-2 border-t px-3 py-2'>
-        <PromptInputTools className='min-w-0 flex-1 flex-col items-start gap-1.5'>
-          <div className='flex min-w-0 flex-wrap items-center gap-1'>
-            <ParamSelect
-              label={t('Aspect Ratio')}
-              items={ratioItems}
-              value={props.ratio}
-              onValueChange={props.onRatioChange}
+        <PromptInputTools className='min-w-0 flex-1 flex-wrap items-center gap-1'>
+          <ParamSelect
+            label={t('Model')}
+            items={props.modelItems}
+            value={props.model}
+            onValueChange={props.onModelChange}
+            disabled={props.disabled}
+            placeholder={t('Select a model')}
+            className='max-w-52 min-w-0'
+          />
+          <ParamSelect
+            label={t('API key')}
+            items={keyItems}
+            value={
+              props.selectedKeyId === null ? '' : String(props.selectedKeyId)
+            }
+            onValueChange={(value) => props.onKeyChange(Number(value))}
+            disabled={props.disabled || props.keys.length === 0}
+            placeholder={t('Select an API key')}
+            className='max-w-52 min-w-0'
+          />
+          {fields.map((field) => (
+            <ParamFieldControl
+              key={field.key}
+              field={field}
+              value={props.values[field.key] ?? String(field.defaultValue)}
+              onValueChange={(next) => props.onValueChange(field.key, next)}
               disabled={props.disabled}
             />
-            <ParamSelect
-              label={t('Resolution')}
-              items={IMAGE_RESOLUTION_ITEMS}
-              value={props.resolution}
-              onValueChange={(value) =>
-                props.onResolutionChange(value as ImageResolution)
-              }
-              disabled={props.disabled || props.ratio === 'auto'}
-            />
-            <ParamSelect
-              label={t('Count')}
-              items={IMAGE_COUNT_ITEMS}
-              value={String(props.count)}
-              onValueChange={(value) => props.onCountChange(Number(value))}
-              disabled={props.disabled}
-            />
-          </div>
-
-          {/* Model and key describe the connection, so they share a row. */}
-          <div className='flex min-w-0 flex-wrap items-center gap-1'>
-            <ParamSelect
-              label={t('Model')}
-              items={props.modelItems}
-              value={props.model}
-              onValueChange={props.onModelChange}
-              disabled={props.disabled}
-              placeholder={t('Select a model')}
-              className='max-w-52 min-w-0'
-            />
-            <ParamSelect
-              label={t('API key')}
-              items={keyItems}
-              value={
-                props.selectedKeyId === null ? '' : String(props.selectedKeyId)
-              }
-              onValueChange={(value) => props.onKeyChange(Number(value))}
-              disabled={props.disabled || props.keys.length === 0}
-              placeholder={t('Select an API key')}
-              className='max-w-52 min-w-0'
-            />
-          </div>
+          ))}
         </PromptInputTools>
 
         <PromptInputSubmit

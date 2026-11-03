@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Download, ImageIcon, Loader2, RotateCcw } from 'lucide-react'
+import { Download, Loader2, RotateCcw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -33,20 +33,24 @@ type ResultPanelProps = {
 
 /**
  * One fixed frame that holds every result, whatever its aspect ratio or count.
- * The frame fills the space the page gives it, so images never push the page
+ * The frame fills the space the page gives it, so media never pushes the page
  * into a scroll. Cells split it evenly; each image is contained, not cropped.
  */
 export function ResultPanel(props: ResultPanelProps) {
   const { t } = useTranslation()
   const generation = props.generation
-  const images = generation?.images ?? []
+  const media = generation?.media ?? []
+  const images = media.filter((item) => item.type === 'image')
+  const video = media.find((item) => item.type === 'video')
   const count = images.length
 
   return (
     <div className='bg-muted/20 border-border/70 relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-xl border'>
       {!generation && (
         <div className='text-muted-foreground flex max-w-xs flex-col items-center gap-2 px-6 text-center'>
-          <ImageIcon className='size-8 opacity-60' aria-hidden='true' />
+          {/* The frame holds images or a video, so the empty state stays
+              media-neutral instead of promising one of them. */}
+          <Sparkles className='size-8 opacity-60' aria-hidden='true' />
           <p className='text-sm font-medium'>{t('Your result appears here')}</p>
           <p className='text-xs leading-5'>
             {t('Describe what you want, pick a model, then generate.')}
@@ -57,7 +61,11 @@ export function ResultPanel(props: ResultPanelProps) {
       {generation?.status === 'running' && (
         <div className='text-muted-foreground flex flex-col items-center gap-3'>
           <Loader2 className='size-6 animate-spin' aria-hidden='true' />
-          <p className='text-sm'>{t('Generating')}</p>
+          <p className='text-sm'>
+            {generation.progress
+              ? `${t('Generating')} ${generation.progress}`
+              : t('Generating')}
+          </p>
         </div>
       )}
 
@@ -69,6 +77,28 @@ export function ResultPanel(props: ResultPanelProps) {
           <Button variant='outline' size='sm' onClick={props.onRetry}>
             <RotateCcw className='mr-2 size-4' aria-hidden='true' />
             {t('Retry')}
+          </Button>
+        </div>
+      )}
+
+      {video && (
+        <div className='group/cell relative size-full p-2'>
+          <video
+            src={video.url}
+            controls
+            playsInline
+            aria-label={generation?.prompt ?? ''}
+            className='size-full rounded-lg object-contain'
+          />
+          <Button
+            type='button'
+            size='icon-sm'
+            variant='secondary'
+            onClick={() => props.onDownload(0)}
+            aria-label={t('Download')}
+            className='absolute top-3 right-3 opacity-0 transition-opacity group-hover/cell:opacity-100 focus-visible:opacity-100'
+          >
+            <Download className='size-3.5' aria-hidden='true' />
           </Button>
         </div>
       )}
@@ -86,7 +116,7 @@ export function ResultPanel(props: ResultPanelProps) {
               image is far too big to use as a key. */}
           {images.map((image, index) => (
             <div
-              key={`${generation?.id}-${image.slice(-32)}`}
+              key={`${generation?.id}-${image.url.slice(-32)}`}
               className={cn(
                 'bg-muted/40 group/cell relative min-h-0 min-w-0 overflow-hidden rounded-lg',
                 count === 3 && index === 2 && 'col-span-2'
@@ -99,7 +129,7 @@ export function ResultPanel(props: ResultPanelProps) {
                 className='size-full cursor-zoom-in'
               >
                 <img
-                  src={image}
+                  src={image.url}
                   alt={generation?.prompt ?? ''}
                   className='size-full object-contain'
                 />

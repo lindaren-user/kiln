@@ -26,4 +26,6 @@ export type GenerateImageParams = {
   prompt: string
   size: string
   count: number
+  /** Nano Banana Pro image size, sent as `quality` (`1K`, `2K`, `4K`). */
+  quality?: string
 }

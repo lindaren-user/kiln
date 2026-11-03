@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-
 function saveHref(href: string, filename: string) {
   const link = document.createElement('a')
   link.href = href
@@ -27,11 +26,12 @@ function saveHref(href: string, filename: string) {
 }
 
 /**
- * Save an image to the device. Remote URLs are fetched first because browsers
- * ignore the `download` attribute on cross-origin links. Returns false when the
- * fetch is blocked (usually CORS) so the caller can open the image in a tab.
+ * Save an image or video to the device. Remote URLs are fetched first because
+ * browsers ignore the `download` attribute on cross-origin links. Returns
+ * false when the fetch is blocked (usually CORS) so the caller can open the
+ * media in a tab instead.
  */
-export async function downloadImage(
+export async function downloadMedia(
   url: string,
   filename: string
 ): Promise<boolean> {
@@ -53,9 +53,15 @@ export async function downloadImage(
   }
 }
 
-/** `kiln-<timestamp>-<index>.<ext>` — derived from the URL when it has one. */
-export function imageFilename(url: string, index: number): string {
-  const match = /\.(png|jpe?g|webp|gif)(?:\?|$)/i.exec(url)
-  const extension = match ? match[1].toLowerCase() : 'png'
+const EXTENSIONS = /\.(png|jpe?g|webp|gif|mp4|webm|mov|m4v)(?:\?|$)/i
+
+/** `kiln-<timestamp>-<index>.<ext>` — from the URL, else the caller's type. */
+export function mediaFilename(
+  url: string,
+  index: number,
+  fallback = 'png'
+): string {
+  const match = EXTENSIONS.exec(url)
+  const extension = match ? match[1].toLowerCase() : fallback
   return `kiln-${Date.now()}-${index + 1}.${extension}`
 }

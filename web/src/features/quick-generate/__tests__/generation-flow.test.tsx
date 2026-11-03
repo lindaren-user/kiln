@@ -22,12 +22,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
-import { useImageModels } from '@/features/image-generation/hooks/use-image-models'
 import type { ApiKey } from '@/features/keys/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { QuickGenerate } from '..'
-import { downloadImage } from '../lib/download-image'
+import { submitVideo } from '../api'
+import { useGenerationModels } from '../hooks/use-generation-models'
+import { downloadMedia } from '../lib/download-media'
+import { pollVideoTask } from '../lib/poll-video'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -43,17 +45,26 @@ vi.mock('@/features/image-generation/api', () => ({
   resolveApiKey: vi.fn(),
 }))
 
-vi.mock('@/features/image-generation/hooks/use-image-models', () => ({
-  useImageModels: vi.fn(),
-}))
-
 vi.mock('@/features/image-generation/hooks/use-image-api-keys', () => ({
   useImageApiKeys: vi.fn(),
 }))
 
-vi.mock('../lib/download-image', () => ({
-  downloadImage: vi.fn(),
-  imageFilename: vi.fn(() => 'kiln-1.png'),
+vi.mock('../hooks/use-generation-models', () => ({
+  useGenerationModels: vi.fn(),
+}))
+
+vi.mock('../api', () => ({
+  submitVideo: vi.fn(),
+  fetchVideoTask: vi.fn(),
+}))
+
+vi.mock('../lib/poll-video', () => ({
+  pollVideoTask: vi.fn(),
+}))
+
+vi.mock('../lib/download-media', () => ({
+  downloadMedia: vi.fn(),
+  mediaFilename: vi.fn(() => 'kiln-1.png'),
 }))
 
 // The real guard needs a router; the tests only care about its `when` flag.
@@ -62,11 +73,13 @@ vi.mock('@/features/system-settings/components/form-navigation-guard', () => ({
 }))
 
 const generateImagesMock = vi.mocked(generateImages)
+const submitVideoMock = vi.mocked(submitVideo)
+const pollVideoTaskMock = vi.mocked(pollVideoTask)
 const guardMock = vi.mocked(FormNavigationGuard)
 const resolveApiKeyMock = vi.mocked(resolveApiKey)
-const useImageModelsMock = vi.mocked(useImageModels)
+const useGenerationModelsMock = vi.mocked(useGenerationModels)
 const useImageApiKeysMock = vi.mocked(useImageApiKeys)
-const downloadImageMock = vi.mocked(downloadImage)
+const downloadMediaMock = vi.mocked(downloadMedia)
 
 const API_KEY: ApiKey = {
   id: 7,
@@ -88,13 +101,17 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-beforeEach(() => {
-  useImageModelsMock.mockReturnValue({
-    models: ['z-image'],
-    items: [{ value: 'z-image', label: 'z-image' }],
+function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
+  useGenerationModelsMock.mockReturnValue({
+    models,
+    items: models.map((model) => ({ value: model.name, label: model.name })),
     isLoading: false,
     error: null,
-  } as ReturnType<typeof useImageModels>)
+  } as ReturnType<typeof useGenerationModels>)
+}
+
+beforeEach(() => {
+  mockModels([{ name: 'z-image', kind: 'image' }])
   useImageApiKeysMock.mockReturnValue({
     keys: [API_KEY],
     selectedKeyId: API_KEY.id,
@@ -102,7 +119,7 @@ beforeEach(() => {
     isLoading: false,
   })
   resolveApiKeyMock.mockResolvedValue('sk-abc123')
-  downloadImageMock.mockResolvedValue(true)
+  downloadMediaMock.mockResolvedValue(true)
 })
 
 async function submitPrompt(prompt: string) {
@@ -113,7 +130,7 @@ async function submitPrompt(prompt: string) {
 }
 
 describe('quick generate', () => {
-  it('shows the result in the preview frame', async () => {
+  it('shows the image result in the preview frame', async () => {
     generateImagesMock.mockResolvedValue(['https://cdn.example.com/one.png'])
 
     render(<QuickGenerate />)
@@ -133,6 +150,26 @@ describe('quick generate', () => {
     })
   })
 
+  it('shows the video result in the preview frame', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    const video = await screen.findByLabelText('a kiln at dusk')
+    expect(video.tagName).toBe('VIDEO')
+    expect(video).toHaveAttribute('src', 'https://cdn.example.com/one.mp4')
+    expect(submitVideoMock).toHaveBeenCalledWith({
+      apiKey: 'sk-abc123',
+      model: 'sora-2',
+      prompt: 'a kiln at dusk',
+      request: { size: '1280x720', duration: 5 },
+    })
+    expect(generateImagesMock).not.toHaveBeenCalled()
+  })
+
   it('replaces the frame contents when generation fails', async () => {
     generateImagesMock.mockRejectedValue(new Error('Upstream is busy'))
 
@@ -143,6 +180,21 @@ describe('quick generate', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Upstream is busy')
     )
     expect(screen.queryByAltText('a kiln at dusk')).toBeNull()
+  })
+
+  it('reports a video task that fails upstream', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockRejectedValue(new Error('The prompt was rejected'))
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The prompt was rejected'
+      )
+    )
   })
 
   it('retries the failed request with the parameters it used', async () => {
@@ -195,7 +247,7 @@ describe('quick generate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
 
     await waitFor(() =>
-      expect(downloadImageMock).toHaveBeenCalledWith(
+      expect(downloadMediaMock).toHaveBeenCalledWith(
         'https://cdn.example.com/one.png',
         'kiln-1.png'
       )
@@ -215,7 +267,7 @@ describe('quick generate', () => {
     await waitFor(() => expect(guardMock.mock.lastCall?.[0].when).toBe(false))
   })
 
-  it('keeps the model, size, count and key in the composer', () => {
+  it('keeps the model, ratio, resolution, count and key in the composer', () => {
     render(<QuickGenerate />)
 
     expect(screen.getByLabelText('Model')).toHaveTextContent('z-image')
@@ -225,18 +277,46 @@ describe('quick generate', () => {
     expect(screen.getByLabelText('API key')).toHaveTextContent('Quick key')
   })
 
-  it('explains how to enable image models when none exist', () => {
-    useImageModelsMock.mockReturnValue({
-      models: [],
-      items: [],
-      isLoading: false,
-      error: null,
-    } as ReturnType<typeof useImageModels>)
+  it('shows the fixed size list for an OpenAI image model', () => {
+    mockModels([{ name: 'gpt-image-1', kind: 'image' }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByLabelText('Size')).toHaveTextContent('Auto')
+    expect(screen.getByLabelText('Count')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
+  })
+
+  it('shows a duration and no image-only controls for a video model', () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByLabelText('Duration')).toHaveValue(5)
+    expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
+    expect(screen.queryByLabelText('Count')).toBeNull()
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
+    expect(screen.queryByLabelText('Size')).toBeNull()
+  })
+
+  it('shows a resolution for a video model that accepts more than one', () => {
+    mockModels([{ name: 'veo-3.0-generate-001', kind: 'video' }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByLabelText('Resolution')).toHaveTextContent('720p')
+    expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
+    expect(screen.queryByLabelText('Count')).toBeNull()
+  })
+
+  it('explains how to enable models when none exist', () => {
+    mockModels([])
 
     render(<QuickGenerate />)
 
     expect(
-      screen.getByText('No image models are available')
+      screen.getByText('No generation models are available')
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
   })

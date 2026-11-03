@@ -73,6 +73,7 @@ export async function generateImages(
       prompt: params.prompt,
       n: params.count,
       size: params.size,
+      ...(params.quality ? { quality: params.quality } : {}),
     }),
   })
 
