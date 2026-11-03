@@ -16,6 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  migrateSidebarSections,
+  type SidebarModulesConfig,
+  type SidebarSectionConfig,
+} from '@/lib/nav-modules'
+
 export type HeaderNavAccessConfig = {
   enabled: boolean
   requireAuth: boolean
@@ -25,18 +31,11 @@ export type HeaderNavModulesConfig = {
   home: boolean
   console: boolean
   pricing: HeaderNavAccessConfig
-  rankings: HeaderNavAccessConfig
   docs: boolean
-  about: boolean
   [key: string]: boolean | HeaderNavAccessConfig
 }
 
-export type SidebarSectionConfig = {
-  enabled: boolean
-  [key: string]: boolean
-}
-
-export type SidebarModulesAdminConfig = Record<string, SidebarSectionConfig>
+export type SidebarModulesAdminConfig = SidebarModulesConfig
 
 export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
   home: true,
@@ -45,19 +44,13 @@ export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
     enabled: true,
     requireAuth: false,
   },
-  rankings: {
-    enabled: true,
-    requireAuth: false,
-  },
   docs: true,
-  about: true,
 }
 
 export const SIDEBAR_MODULES_DEFAULT: SidebarModulesAdminConfig = {
-  chat: {
+  create: {
     enabled: true,
-    playground: true,
-    chat: true,
+    canvas: true,
   },
   console: {
     enabled: true,
@@ -99,7 +92,6 @@ const toBoolean = (value: unknown, fallback: boolean): boolean => {
 const cloneHeaderNavDefault = (): HeaderNavModulesConfig => ({
   ...HEADER_NAV_DEFAULT,
   pricing: { ...HEADER_NAV_DEFAULT.pricing },
-  rankings: { ...HEADER_NAV_DEFAULT.rankings },
 })
 
 const parseAccessModule = (
@@ -147,16 +139,11 @@ export function parseHeaderNavModules(
     const result: HeaderNavModulesConfig = {
       ...base,
       pricing: { ...base.pricing },
-      rankings: { ...base.rankings },
     }
 
     Object.entries(parsed).forEach(([key, raw]) => {
       if (key === 'pricing') {
         result.pricing = parseAccessModule(raw, base.pricing)
-        return
-      }
-      if (key === 'rankings') {
-        result.rankings = parseAccessModule(raw, base.rankings)
         return
       }
 
@@ -218,20 +205,21 @@ export function parseSidebarModulesAdmin(
     })
 
     // Merge defaults to ensure expected sections exist
+    const migrated = migrateSidebarSections(result)
     Object.entries(defaults).forEach(([sectionKey, config]) => {
-      if (!result[sectionKey]) {
-        result[sectionKey] = { ...config }
+      if (!migrated[sectionKey]) {
+        migrated[sectionKey] = { ...config }
         return
       }
 
       Object.entries(config).forEach(([moduleKey, moduleValue]) => {
-        if (!(moduleKey in result[sectionKey])) {
-          result[sectionKey][moduleKey] = moduleValue
+        if (!(moduleKey in migrated[sectionKey])) {
+          migrated[sectionKey][moduleKey] = moduleValue
         }
       })
     })
 
-    return result
+    return migrated
   } catch {
     return defaults
   }

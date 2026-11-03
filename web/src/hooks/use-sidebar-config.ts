@@ -19,85 +19,23 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMemo } from 'react'
 
 import type { NavGroup, NavItem } from '@/components/layout/types'
+import {
+  parseSidebarModulesAdmin,
+  type SidebarModulesAdminConfig,
+} from '@/features/system-settings/maintenance/config'
 import { useStatus } from '@/hooks/use-status'
+import { parseSidebarModulesUser } from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
-
-type SidebarSectionConfig = {
-  enabled: boolean
-  [key: string]: boolean
-}
-
-type SidebarModulesAdminConfig = Record<string, SidebarSectionConfig>
 
 // User-layer config is shape-identical to admin, but may be null
 // to signal "no narrowing" (empty/invalid/legacy users).
 type SidebarModulesUserConfig = SidebarModulesAdminConfig | null
 
 /**
- * Default sidebar modules configuration
- */
-const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
-  chat: {
-    enabled: true,
-    playground: true,
-    chat: true,
-  },
-  console: {
-    enabled: true,
-    detail: true,
-    token: true,
-    log: true,
-    audit: true,
-    midjourney: true,
-    task: true,
-  },
-  personal: {
-    enabled: true,
-    topup: true,
-    personal: true,
-    security: true,
-  },
-  admin: {
-    enabled: true,
-    channel: true,
-    models: true,
-    redemption: true,
-    user: true,
-    setting: true,
-    subscription: true,
-  },
-}
-
-const mergeWithDefaultSidebarModules = (
-  config: SidebarModulesAdminConfig
-): SidebarModulesAdminConfig => {
-  const merged: SidebarModulesAdminConfig = { ...config }
-
-  Object.entries(DEFAULT_SIDEBAR_MODULES).forEach(
-    ([sectionKey, defaultSection]) => {
-      const existingSection = merged[sectionKey]
-      if (!existingSection) {
-        merged[sectionKey] = { ...defaultSection }
-        return
-      }
-
-      merged[sectionKey] = { ...defaultSection, ...existingSection }
-      Object.keys(defaultSection).forEach((moduleKey) => {
-        if (merged[sectionKey][moduleKey] === undefined) {
-          merged[sectionKey][moduleKey] = defaultSection[moduleKey]
-        }
-      })
-    }
-  )
-
-  return merged
-}
-
-/**
  * Mapping from URL to configuration keys
  */
 const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
-  '/playground': { section: 'chat', module: 'playground' },
+  '/canvas': { section: 'create', module: 'canvas' },
   '/dashboard': { section: 'console', module: 'detail' },
   '/dashboard/overview': { section: 'console', module: 'detail' },
   '/dashboard/models': { section: 'console', module: 'detail' },
@@ -120,47 +58,6 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/subscriptions': { section: 'admin', module: 'subscription' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
-}
-
-/**
- * Parse backend SidebarModulesAdmin configuration
- */
-function parseSidebarConfig(
-  value: string | null | undefined
-): SidebarModulesAdminConfig {
-  // If empty string, null, or undefined, use default config
-  if (!value || value.trim() === '') {
-    return DEFAULT_SIDEBAR_MODULES
-  }
-
-  try {
-    const parsed = JSON.parse(value) as SidebarModulesAdminConfig
-    return mergeWithDefaultSidebarModules(parsed)
-  } catch {
-    // eslint-disable-next-line no-console
-    console.error('Failed to parse sidebar modules configuration')
-    return DEFAULT_SIDEBAR_MODULES
-  }
-}
-
-/**
- * Parse user-level sidebar_modules. Returns null when the value is empty,
- * invalid, or otherwise unusable — the caller treats null as "do not narrow",
- * so legacy users with an empty sidebar_modules field keep the full admin view.
- */
-function parseUserSidebarConfig(
-  value: string | null | undefined
-): SidebarModulesUserConfig {
-  if (!value || value.trim() === '') {
-    return null
-  }
-  try {
-    const parsed = JSON.parse(value) as SidebarModulesAdminConfig
-    if (!parsed || typeof parsed !== 'object') return null
-    return parsed
-  } catch {
-    return null
-  }
 }
 
 /**
@@ -203,18 +100,6 @@ function isNavItemVisible(
   adminConfig: SidebarModulesAdminConfig,
   userConfig: SidebarModulesUserConfig
 ): boolean {
-  // Handle dynamic chat presets type — also runs the admin × user AND gate
-  if ('type' in item && item.type === 'chat-presets') {
-    const adminChat = adminConfig.chat
-    const adminAllowed = Boolean(adminChat?.enabled && adminChat.chat === true)
-    if (!adminAllowed) return false
-    if (!userConfig) return true
-    const userChat = userConfig.chat
-    if (!userChat) return true
-    if (userChat.enabled === false) return false
-    return userChat.chat !== false
-  }
-
   // Handle direct link type
   if ('url' in item && item.url) {
     const configUrls = item.configUrls ?? [item.url]
@@ -261,11 +146,46 @@ function filterNavItems(
 }
 
 /**
+ * Both sidebar_modules layers, parsed once per configuration change rather
+ * than once per render.
+ *
+ * The user overlay is skipped entirely when the backend marks the user as
+ * unable to configure the sidebar (e.g. root accounts): a stale historical
+ * value from a previous role would otherwise hide admin entries for someone
+ * who has no in-product UI to restore them.
+ */
+function useSidebarModuleConfigs(): [
+  SidebarModulesAdminConfig,
+  SidebarModulesUserConfig,
+] {
+  const { status } = useStatus()
+  const { auth } = useAuthStore()
+
+  const adminConfig = useMemo(
+    () =>
+      parseSidebarModulesAdmin(
+        status?.SidebarModulesAdmin as string | null | undefined
+      ),
+    [status?.SidebarModulesAdmin]
+  )
+
+  const userConfig = useMemo(
+    () =>
+      auth?.user?.permissions?.sidebar_settings === false
+        ? null
+        : parseSidebarModulesUser(auth?.user?.sidebar_modules),
+    [auth?.user?.permissions?.sidebar_settings, auth?.user?.sidebar_modules]
+  )
+
+  return [adminConfig, userConfig]
+}
+
+/**
  * Filter sidebar navigation groups by admin × user sidebar_modules config.
  *
  * Two layers, AND-combined:
  *   1. Admin (status.SidebarModulesAdmin) — authoritative, falls back to
- *      DEFAULT_SIDEBAR_MODULES when empty/invalid. Disabling here hides the
+ *      SIDEBAR_MODULES_DEFAULT when empty/invalid. Disabling here hides the
  *      item for everyone regardless of user preference.
  *   2. User (auth.user.sidebar_modules) — narrower overlay, null sentinel
  *      means "don't narrow". A section/module is only hidden if the user
@@ -277,28 +197,7 @@ function filterNavItems(
  *      UI to restore.
  */
 export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
-  const { status } = useStatus()
-  const { auth } = useAuthStore()
-
-  const adminConfig = useMemo(
-    () =>
-      parseSidebarConfig(
-        status?.SidebarModulesAdmin as string | null | undefined
-      ),
-    [status?.SidebarModulesAdmin]
-  )
-
-  const userConfig = useMemo(() => {
-    // If the backend marks the user as unable to configure the sidebar
-    // (e.g. root accounts), skip the user overlay entirely — a stale
-    // historical sidebar_modules value from a previous role would otherwise
-    // hide admin entries for someone who has no in-product UI to restore
-    // them.
-    if (auth?.user?.permissions?.sidebar_settings === false) {
-      return null
-    }
-    return parseUserSidebarConfig(auth?.user?.sidebar_modules)
-  }, [auth?.user?.permissions?.sidebar_settings, auth?.user?.sidebar_modules])
+  const [adminConfig, userConfig] = useSidebarModuleConfigs()
 
   const filteredNavGroups = useMemo(
     () =>
@@ -320,16 +219,7 @@ export function useSidebarConfig(navGroups: NavGroup[]): NavGroup[] {
  * dropdown's wallet link) so they honour the same "wallet display" toggle.
  */
 export function useIsSidebarModuleVisible(url: string): boolean {
-  const { status } = useStatus()
-  const { auth } = useAuthStore()
-
-  const adminConfig = parseSidebarConfig(
-    status?.SidebarModulesAdmin as string | null | undefined
-  )
-  const userConfig =
-    auth?.user?.permissions?.sidebar_settings === false
-      ? null
-      : parseUserSidebarConfig(auth?.user?.sidebar_modules)
+  const [adminConfig, userConfig] = useSidebarModuleConfigs()
 
   return isModuleEnabled(url, adminConfig, userConfig)
 }

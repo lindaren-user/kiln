@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { LayoutDashboard } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -35,14 +35,11 @@ import { parseSidebarModulesAdmin } from '@/features/system-settings/maintenance
 import { useStatus } from '@/hooks/use-status'
 import { api } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
+import {
+  parseSidebarModulesUser,
+  type SidebarModulesConfig,
+} from '@/lib/nav-modules'
 import { useAuthStore } from '@/stores/auth-store'
-
-type SidebarModuleConfig = {
-  enabled: boolean
-  [key: string]: boolean
-}
-
-type SidebarModulesConfig = Record<string, SidebarModuleConfig>
 
 type SectionDef = {
   key: string
@@ -59,87 +56,89 @@ export function SidebarModulesCard() {
   const currentUser = useAuthStore((s) => s.auth.user)
   const setUser = useAuthStore((s) => s.auth.setUser)
 
-  const sectionDefs: SectionDef[] = [
-    {
-      key: 'chat',
-      title: t('Chat Area'),
-      description: t('Playground and chat functions'),
-      modules: [
-        {
-          key: 'playground',
-          title: t('Playground'),
-          description: t('AI model testing environment'),
-        },
-        {
-          key: 'chat',
-          title: t('Chat'),
-          description: t('Chat session management'),
-        },
-      ],
-    },
-    {
-      key: 'console',
-      title: t('Console Area'),
-      description: t('Data management and log viewing'),
-      modules: [
-        {
-          key: 'detail',
-          title: t('Dashboard'),
-          description: t('System data statistics'),
-        },
-        {
-          key: 'token',
-          title: t('Token Management'),
-          description: t('API token management'),
-        },
-        {
-          key: 'log',
-          title: t('Usage Logs'),
-          description: t('API usage records'),
-        },
-        {
-          key: 'audit',
-          title: t('Audit Logs'),
-          description: t('Login, security and access records'),
-        },
-        {
-          key: 'midjourney',
-          title: t('Drawing Logs'),
-          description: t('Drawing task records'),
-        },
-        {
-          key: 'task',
-          title: t('Task Logs'),
-          description: t('System task records'),
-        },
-      ],
-    },
-    {
-      key: 'personal',
-      title: t('Personal Center Area'),
-      description: t('User personal functions'),
-      modules: [
-        {
-          key: 'topup',
-          title: t('Wallet Management'),
-          description: t('Balance and top-up management'),
-        },
-        {
-          key: 'personal',
-          title: t('Personal Settings'),
-          description: t('Personal info settings'),
-        },
-        {
-          key: 'security',
-          title: t('Security & Access'),
-          description: t('Manage your security settings and account access'),
-        },
-      ],
-    },
-  ]
+  const sectionDefs = useMemo<SectionDef[]>(
+    () => [
+      {
+        key: 'create',
+        title: t('Create Area'),
+        description: t('Generate images or video and check the result quickly.'),
+        modules: [
+          {
+            key: 'canvas',
+            title: t('Quick generate'),
+            description: t('Describe what you want and see the result right away.'),
+          },
+        ],
+      },
+      {
+        key: 'console',
+        title: t('Console Area'),
+        description: t('Data management and log viewing'),
+        modules: [
+          {
+            key: 'detail',
+            title: t('Dashboard'),
+            description: t('System data statistics'),
+          },
+          {
+            key: 'token',
+            title: t('Token Management'),
+            description: t('API token management'),
+          },
+          {
+            key: 'log',
+            title: t('Usage Logs'),
+            description: t('API usage records'),
+          },
+          {
+            key: 'audit',
+            title: t('Audit Logs'),
+            description: t('Login, security and access records'),
+          },
+          {
+            key: 'midjourney',
+            title: t('Drawing Logs'),
+            description: t('Drawing task records'),
+          },
+          {
+            key: 'task',
+            title: t('Task Logs'),
+            description: t('System task records'),
+          },
+        ],
+      },
+      {
+        key: 'personal',
+        title: t('Personal Center Area'),
+        description: t('User personal functions'),
+        modules: [
+          {
+            key: 'topup',
+            title: t('Wallet Management'),
+            description: t('Balance and top-up management'),
+          },
+          {
+            key: 'personal',
+            title: t('Personal Settings'),
+            description: t('Personal info settings'),
+          },
+          {
+            key: 'security',
+            title: t('Security & Access'),
+            description: t('Manage your security settings and account access'),
+          },
+        ],
+      },
+    ],
+    [t]
+  )
 
-  const adminConfig = parseSidebarModulesAdmin(
-    status?.SidebarModulesAdmin as string | null | undefined
+  const adminConfig = useMemo(
+    () =>
+      parseSidebarModulesAdmin(
+        status?.SidebarModulesAdmin as string | null | undefined
+      ),
+    [status?.SidebarModulesAdmin]
   )
   const visibleSectionDefs = status
     ? sectionDefs.flatMap((section) => {
@@ -157,9 +156,7 @@ export function SidebarModulesCard() {
     try {
       const res = await api.get('/api/user/self')
       if (res.data.success && res.data.data?.sidebar_modules) {
-        const raw = res.data.data.sidebar_modules
-        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-        setConfig(parsed)
+        setConfig(parseSidebarModulesUser(res.data.data.sidebar_modules) ?? {})
       } else {
         setConfig({})
       }

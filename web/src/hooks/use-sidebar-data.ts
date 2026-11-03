@@ -22,11 +22,10 @@ import {
   ClipboardList,
   CreditCard,
   FileText,
-  FlaskConical,
+  Frame,
   Key,
   LayoutDashboard,
   ListTodo,
-  MessageSquare,
   PlugZap,
   Radio,
   ServerCog,
@@ -54,18 +53,13 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
   return {
     navGroups: [
       {
-        id: 'chat',
-        title: t('Chat'),
+        id: 'create',
+        title: t('Create'),
         items: [
           {
-            title: t('Playground'),
-            url: '/playground',
-            icon: FlaskConical,
-          },
-          {
-            title: t('Chat'),
-            icon: MessageSquare,
-            type: 'chat-presets',
+            title: t('Quick generate'),
+            url: '/canvas',
+            icon: Frame,
           },
         ],
       },
