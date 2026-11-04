@@ -412,6 +412,8 @@
     "After enabling, the original request body is forwarded to the upstream without gateway rewriting:": "有効にすると、元のリクエストボディがゲートウェイで書き換えられずに上流へ送信されます：",
     "After enabling, the plan will be shown to users. Continue?": "有効化するとユーザーに表示されます。続行しますか？",
     "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?": "無効化するとこのサブスクリプションは即座に停止されます。履歴記録には影響しません。続行しますか？",
+    "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.": "上流が生成を受け付けた後は、クライアントを閉じたり HTTP リクエストをキャンセルしたりしても止まりません。再試行前にタスクログを確認してください。",
+    "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.": "上流が生成を受け付けた後は、このページを離れたりブラウザのリクエストを止めたりしてもキャンセルされません。再試行前にタスクログを確認してください。",
     "Agent ID": "エージェントID",
     "Agent ID *": "エージェントID *",
     "Aggregate tokens delivered across the platform": "プラットフォーム全体で提供された累計トークン",

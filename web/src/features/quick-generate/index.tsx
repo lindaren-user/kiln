@@ -341,6 +341,9 @@ export function QuickGenerate() {
           </span>{' '}
           {t(
             'Images are not saved. Videos can be opened from "Task logs → Artifacts". Download any image you want to keep before leaving or generating again.'
+          )}{' '}
+          {t(
+            'After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.'
           )}
         </p>
       </div>

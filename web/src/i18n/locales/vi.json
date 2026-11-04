@@ -412,6 +412,8 @@
     "After enabling, the original request body is forwarded to the upstream without gateway rewriting:": "Khi bật, nội dung yêu cầu gốc được chuyển đến thượng nguồn mà không bị cổng viết lại:",
     "After enabling, the plan will be shown to users. Continue?": "Sau khi kích hoạt, gói sẽ được hiển thị cho người dùng. Tiếp tục?",
     "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?": "Sau khi vô hiệu hóa, đăng ký này sẽ bị hủy kích hoạt ngay lập tức. Hồ sơ lịch sử không bị ảnh hưởng. Tiếp tục?",
+    "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.": "Sau khi upstream đã chấp nhận tạo nội dung, đóng client hoặc hủy HTTP request sẽ không dừng được. Kiểm tra nhật ký task trước khi thử lại.",
+    "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.": "Sau khi upstream đã chấp nhận tạo nội dung, rời trang hoặc dừng request trình duyệt sẽ không hủy được. Kiểm tra nhật ký task trước khi thử lại.",
     "Agent ID": "Mã đại lý",
     "Agent ID *": "Mã đại lý *",
     "Aggregate tokens delivered across the platform": "Tổng số token được phục vụ trên toàn hệ thống",

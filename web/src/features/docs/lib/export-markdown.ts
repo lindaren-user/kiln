@@ -38,6 +38,7 @@ export type DocsMarkdownLabels = {
   video: string
   imageSyncNote: string
   videoFlowNote: string
+  cancelNote: string
   examples: string
   sdkExample: string
   listModelsHeading: string
@@ -129,7 +130,13 @@ export function buildDocsMarkdown(input: DocsMarkdownInput): string {
     [labels.videoPoll, input.videoPollExample],
   ]
 
-  lines.push(labels.imageSyncNote, '', labels.videoFlowNote, '')
+  for (const note of [
+    labels.imageSyncNote,
+    labels.videoFlowNote,
+    labels.cancelNote,
+  ]) {
+    lines.push(note, '')
+  }
   lines.push(`## ${labels.examples}`, '')
   for (const [heading, code] of exampleBlocks) {
     lines.push(`### ${heading}`, '', fence(code), '')

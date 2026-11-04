@@ -412,6 +412,8 @@
     "After enabling, the original request body is forwarded to the upstream without gateway rewriting:": "開啟後，原始請求主體將直接傳送至上游，閘道不再改寫請求主體：",
     "After enabling, the plan will be shown to users. Continue?": "啟用後套餐將在用戶端展示。是否繼續？",
     "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?": "作廢後該訂閱將立即失效，歷史記錄不受影響。是否繼續？",
+    "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.": "上游一旦接受生成請求，關閉用戶端或取消 HTTP 請求都不會停止任務。重試前請先查看任務日誌。",
+    "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.": "上游一旦接受生成請求，離開本頁或停止瀏覽器請求都不會取消任務。再次嘗試前請先查看任務日誌。",
     "Agent ID": "代理 ID",
     "Agent ID *": "代理 ID *",
     "Aggregate tokens delivered across the platform": "平台累計輸出的 Token 量",

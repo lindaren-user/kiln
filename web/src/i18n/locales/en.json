@@ -412,6 +412,8 @@
     "After enabling, the original request body is forwarded to the upstream without gateway rewriting:": "After enabling, the original request body is forwarded to the upstream without gateway rewriting:",
     "After enabling, the plan will be shown to users. Continue?": "After enabling, the plan will be shown to users. Continue?",
     "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?": "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?",
+    "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.": "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.",
+    "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.": "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.",
     "Agent ID": "Agent ID",
     "Agent ID *": "Agent ID *",
     "Aggregate tokens delivered across the platform": "Aggregate tokens delivered across the platform",

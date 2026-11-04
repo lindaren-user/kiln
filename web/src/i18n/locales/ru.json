@@ -412,6 +412,8 @@
     "After enabling, the original request body is forwarded to the upstream without gateway rewriting:": "После включения исходное тело запроса передаётся вышестоящему сервису без изменений со стороны шлюза:",
     "After enabling, the plan will be shown to users. Continue?": "После включения план будет отображаться пользователям. Продолжить?",
     "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?": "После аннулирования подписка будет немедленно деактивирована. Исторические записи не затронуты. Продолжить?",
+    "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.": "После принятия генерации upstream закрытие клиента или отмена HTTP-запроса её не останавливает. Перед повтором проверьте логи задач.",
+    "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.": "После принятия генерации upstream уход со страницы или остановка запроса браузера её не отменяет. Перед повтором проверьте логи задач.",
     "Agent ID": "Идентификатор агента",
     "Agent ID *": "Идентификатор агента *",
     "Aggregate tokens delivered across the platform": "Совокупное количество токенов, доставленных платформой",

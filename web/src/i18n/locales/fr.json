@@ -412,6 +412,8 @@
     "After enabling, the original request body is forwarded to the upstream without gateway rewriting:": "Une fois activé, le corps original de la requête est transmis au service amont sans réécriture par la passerelle :",
     "After enabling, the plan will be shown to users. Continue?": "Après activation, le plan sera affiché aux utilisateurs. Continuer ?",
     "After invalidating, this subscription will be immediately deactivated. Historical records are not affected. Continue?": "Après l'invalidation, cet abonnement sera immédiatement désactivé. Les enregistrements historiques ne sont pas affectés. Continuer ?",
+    "After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.": "Une fois la génération acceptée en amont, fermer le client ou annuler la requête HTTP ne l’arrête pas. Consultez les journaux de tâches avant de réessayer.",
+    "After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.": "Une fois la génération acceptée en amont, quitter cette page ou arrêter la requête du navigateur ne l’annule pas. Consultez les journaux de tâches avant de réessayer.",
     "Agent ID": "ID d'agent",
     "Agent ID *": "ID d'agent *",
     "Aggregate tokens delivered across the platform": "Jetons cumulés livrés sur la plateforme",

@@ -164,6 +164,10 @@ export function DocsPage() {
   const videoFlowNote = t(
     'Video is asynchronous: create a task, poll until it reaches a terminal status (success or failure), then download content with GET /v1/videos/{task_id}/content. Poll at a reasonable interval and stop after a terminal status.'
   )
+  const cancelNote = t(
+    'After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.'
+  )
+  const endpointNotes = [imageSyncNote, videoFlowNote, cancelNote]
 
   const sdkExample = `from openai import OpenAI
 
@@ -271,6 +275,7 @@ curl ${baseUrl}/videos/task_xxx/content \\
       video: t('Video'),
       imageSyncNote,
       videoFlowNote,
+      cancelNote,
       examples: t('Examples'),
       sdkExample: t('OpenAI SDK'),
       listModelsHeading: t('List models'),
@@ -344,8 +349,11 @@ curl ${baseUrl}/videos/task_xxx/content \\
 
         <Section id='endpoints' title={t('Endpoints')}>
           <EndpointGroups />
-          <p className='text-muted-foreground text-sm'>{imageSyncNote}</p>
-          <p className='text-muted-foreground text-sm'>{videoFlowNote}</p>
+          {endpointNotes.map((note) => (
+            <p key={note} className='text-muted-foreground text-sm'>
+              {note}
+            </p>
+          ))}
         </Section>
 
         <Section id='examples' title={t('Examples')}>
