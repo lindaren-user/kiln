@@ -22,6 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { HeroHangingModels } from '../hero-hanging-models'
 import { HeroTerminalDemo } from '../hero-terminal-demo'
 
 interface HeroProps {
@@ -131,6 +132,13 @@ export function Hero(props: HeroProps) {
                 {renderDocsButton()}
               </>
             )}
+          </div>
+
+          <div
+            className='landing-animate-fade-up mt-10 w-full opacity-0'
+            style={{ animationDelay: '240ms' }}
+          >
+            <HeroHangingModels />
           </div>
         </div>
 
