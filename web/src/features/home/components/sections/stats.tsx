@@ -100,8 +100,8 @@ export function Stats(_props: StatsProps) {
   const { t } = useTranslation()
 
   const stats: StatItem[] = [
-    { end: 30, suffix: '+', label: t('video models') },
     { end: 50, suffix: '+', label: t('image models') },
+    { end: 30, suffix: '+', label: t('video models') },
     { end: 10, suffix: '+', label: t('creation workflows') },
     { end: 24, suffix: '/7', label: t('generation service') },
   ]

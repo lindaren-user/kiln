@@ -74,7 +74,7 @@ const SETUP_GUIDE_VISIBILITY_STORAGE_KEY =
   'dashboard_overview_setup_guide_expanded'
 
 const SETUP_GUIDE_CODE_PATTERN = [
-  'await fetch("/v1/images/generations", {',
+  `await fetch("${typeof window === 'undefined' ? '' : window.location.origin}/v1/images/generations", {`,
   '  method: "POST",',
   '  body: JSON.stringify({',
   '    model: "your-image-model",',
@@ -145,7 +145,10 @@ const CHAT_COMPLETIONS_PATH = '/v1/chat/completions'
 
 function normalizeEndpoint(sourceUrl?: string): string {
   const base = sourceUrl?.trim().replace(/\/+$/, '') ?? ''
-  if (!base) return IMAGE_GENERATIONS_PATH
+  if (!base) {
+    const origin = typeof window === 'undefined' ? '' : window.location.origin
+    return `${origin}${IMAGE_GENERATIONS_PATH}`
+  }
   if (base.endsWith(IMAGE_GENERATIONS_PATH)) return base
 
   const withoutChat = base.endsWith(CHAT_COMPLETIONS_PATH)

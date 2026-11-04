@@ -43,17 +43,17 @@ export function Features(_props: FeaturesProps) {
       num: '01',
       title: t('Every Model, One Workspace'),
       desc: t(
-        'Generate video and images from several providers through one interface, with one balance and one usage log.'
+        'Generate images and video from several providers through one interface, with one balance and one usage log.'
       ),
       span: 'md:col-span-2',
       icon: <Zap className='size-4 text-blue-400' />,
       visual: (
         <div className='mt-4 grid grid-cols-3 gap-2'>
           {[
-            t('Text to Video'),
-            t('Image to Video'),
             t('Text to Image'),
             t('Image to Image'),
+            t('Text to Video'),
+            t('Image to Video'),
             t('Upscale'),
             t('Inpaint'),
           ].map((name) => (

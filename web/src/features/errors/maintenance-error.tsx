@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
+const CONTACT_QQ = '2144632819'
 
 export function MaintenanceError() {
   const { t } = useTranslation()
@@ -33,9 +33,9 @@ export function MaintenanceError() {
           {t('The site is not available at the moment.')} <br />
           {t("We'll be back online shortly.")}
         </p>
-        <div className='mt-6 flex gap-4'>
-          <Button variant='outline'>{t('Learn more')}</Button>
-        </div>
+        <p className='text-foreground mt-6 text-sm font-medium'>
+          {t('Contact us (QQ): {{qq}}', { qq: CONTACT_QQ })}
+        </p>
       </div>
     </div>
   )

@@ -57,7 +57,7 @@ export function CTA(props: CTAProps) {
           {t('Ready to turn ideas into')}
           <br />
           <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
-            {t('video and images?')}
+            {t('images and video?')}
           </span>
         </h2>
         <p className='text-muted-foreground/80 mx-auto mt-5 max-w-md text-sm leading-relaxed md:text-base'>

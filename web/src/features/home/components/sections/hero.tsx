@@ -96,7 +96,7 @@ export function Hero(props: HeroProps) {
               <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75' />
               <span className='relative inline-flex size-1.5 rounded-full bg-blue-500 dark:bg-blue-400' />
             </span>
-            <span>{t('AI Video & Image Creation')}</span>
+            <span>{t('AI Image & Video Creation')}</span>
           </div>
 
           <h1
@@ -106,7 +106,7 @@ export function Hero(props: HeroProps) {
             {t('Turn every idea into')}
             <br />
             <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
-              {t('video and image')}
+              {t('image and video')}
             </span>
           </h1>
           <p

@@ -114,10 +114,10 @@ describe('overview setup guide', () => {
     await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
 
     expect(
-      await screen.findByText('curl /v1/images/generations \\')
+      await screen.findByText(
+        `curl ${window.location.origin}/v1/images/generations \\`
+      )
     ).toBeVisible()
-    expect(screen.queryByText(/localhost/)).toBeNull()
-    expect(screen.queryByText(/https?:\/\//)).toBeNull()
     expect(
       screen.getByText(/"prompt":"A red fox in the snow","n":1/)
     ).toBeVisible()

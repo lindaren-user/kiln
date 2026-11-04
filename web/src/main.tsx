@@ -22,11 +22,10 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 
 import { installBuildMetadata } from '@/lib/build-metadata'
-import { applyFaviconToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { createAppQueryClient } from '@/lib/query-client'
-import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
+import { statusQueryOptions } from '@/lib/status-query'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -67,35 +66,23 @@ const rootElement = document.querySelector<HTMLElement>('#root')
 if (!rootElement) {
   throw new Error('Root element not found')
 }
-// Set document.title and favicon from cached status, then refresh from network
+// Keep the tab title on Kiln. Status still loads once so later readers share it.
 ;(function initSystemBranding() {
   try {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
-    const apply = (name: string) => {
-      document.title = name
-      const metaTitle = document.querySelector(
-        'meta[name="title"]'
-      ) as HTMLMetaElement | null
-      if (metaTitle) metaTitle.setAttribute('content', name)
-    }
-    // Cache-first
-    const cached = readCachedStatus()
-    if (cached?.system_name) apply(cached.system_name as string)
-    if (cached?.logo) applyFaviconToDom(cached.logo as string)
+    document.title = 'Kiln'
+    const metaTitle = document.querySelector(
+      'meta[name="title"]'
+    ) as HTMLMetaElement | null
+    if (metaTitle) metaTitle.setAttribute('content', 'Kiln')
 
     // Background refresh through the shared cache. This primes ['status']
     // before React mounts, so the root guard and every status consumer reuse
     // this one request instead of firing their own. `fetchStatus` owns the
     // localStorage write and the system-config store sync.
-    queryClient
-      .ensureQueryData(statusQueryOptions)
-      .then((s) => {
-        if (s?.system_name) apply(s.system_name as string)
-        if (s?.logo) applyFaviconToDom(s.logo as string)
-      })
-      .catch(() => {
-        /* empty */
-      })
+    queryClient.ensureQueryData(statusQueryOptions).catch(() => {
+      /* empty */
+    })
   } catch {
     /* empty */
   }

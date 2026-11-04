@@ -60,7 +60,12 @@ describe('HeroTerminalDemo', () => {
     renderDemo()
 
     expect(screen.getByRole('button', { name: 'Image' })).toBeInTheDocument()
-    expect(screen.getByText('/v1/images/generations')).toBeInTheDocument()
+    expect(
+      screen.getByText(`${window.location.origin}/v1/images/generations`)
+    ).toBeInTheDocument()
+    expect(document.body.textContent).toContain(
+      `"${window.location.origin}/v1/images/generations"`
+    )
     expect(screen.getAllByText('POST')).toHaveLength(2)
     expect(screen.queryByText('/v1/chat/completions')).toBeNull()
     expect(screen.queryByText('/v1/messages')).toBeNull()
@@ -73,11 +78,13 @@ describe('HeroTerminalDemo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Video' }))
 
     expect(
-      await screen.findByText('/v1/video/generations')
+      await screen.findByText(`${window.location.origin}/v1/video/generations`)
     ).toBeInTheDocument()
     expect(screen.getAllByText('POST')).toHaveLength(2)
     expect(document.body.textContent).toContain('"duration": 5')
-    expect(screen.queryByText('/v1/images/generations')).toBeNull()
+    expect(
+      screen.queryByText(`${window.location.origin}/v1/images/generations`)
+    ).toBeNull()
   })
 
   it('switches the sample to a video task poll without a request body', async () => {
@@ -86,7 +93,9 @@ describe('HeroTerminalDemo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Task' }))
 
     expect(
-      await screen.findByText('/v1/video/generations/{task_id}')
+      await screen.findByText(
+        `${window.location.origin}/v1/video/generations/{task_id}`
+      )
     ).toBeInTheDocument()
     expect(screen.getAllByText('GET')).toHaveLength(2)
     expect(document.body.textContent).not.toContain('"duration"')
