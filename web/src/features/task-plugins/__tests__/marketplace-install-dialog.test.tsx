@@ -25,7 +25,7 @@ import {
 } from '@tanstack/react-query'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import {
@@ -89,6 +89,13 @@ function renderDialog(
   return {
     client,
     onOpenChange,
+    close: () => {
+      view.rerender(
+        <QueryClientProvider client={client}>
+          <MarketplaceInstallDialog target={null} onOpenChange={onOpenChange} />
+        </QueryClientProvider>
+      )
+    },
     reopen: () => {
       view.rerender(
         <QueryClientProvider client={client}>
@@ -107,6 +114,7 @@ function renderDialog(
   }
 }
 afterEach(() => {
+  toast.dismiss()
   clients.forEach((client) => client.clear())
   clients.length = 0
   vi.unstubAllGlobals()
@@ -535,7 +543,7 @@ test('an install that needs activation reports what the activated version cannot
       },
     ],
   })
-  renderDialog()
+  const { close } = renderDialog()
   render(<Toaster />)
   const install = screen.getByRole('button', { name: 'Install and enable' })
   await waitFor(() => expect(install).toBeEnabled())
@@ -543,6 +551,7 @@ test('an install that needs activation reports what the activated version cannot
   await user.click(install)
 
   expect(api.activateTaskPlugin).toHaveBeenCalledWith('demo', '1.1')
+  close()
   expect(await screen.findByText('Installed Demo v1.1')).toBeVisible()
   expect(screen.getByText('demo-video: No price set')).toBeVisible()
 })

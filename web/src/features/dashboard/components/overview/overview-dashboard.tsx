@@ -520,7 +520,7 @@ export function OverviewDashboard() {
       },
       {
         title: t('Send a request'),
-        description: t('Verify routing with Canvas or your client'),
+        description: t('Verify routing with Quick generate or your client'),
         to: '/canvas',
         icon: TerminalSquare,
         completed: requestCount > 0,

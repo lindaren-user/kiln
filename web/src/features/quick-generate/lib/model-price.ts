@@ -48,6 +48,8 @@ export function generationModelPrice(
   if (dynamic?.isSpecialExpression) return t('Special billing expression')
   if (dynamic) {
     const parts = dynamic.primaryEntries.slice(0, 2).flatMap((entry) => {
+      // Token formulas such as `p * 5` are not a price for one generation.
+      if (entry.unit === 'token') return []
       const amount = entry.formattedRange ?? entry.formatted
       if (!amount || amount === '-' || amount === '- – -') return []
       const unitKey = getDynamicPriceUnitLabelKey(entry)

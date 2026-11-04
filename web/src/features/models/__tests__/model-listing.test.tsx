@@ -661,10 +661,8 @@ it('shows task tier ranges in the schema unit and converts site currency only on
   const button = screen.getByRole('button', {
     name: 'View pricing for channel-only',
   })
-  expect(button).toHaveTextContent(/2.8.*5.6/)
-  expect(button).toHaveTextContent('/s')
-  expect(button).toHaveTextContent('CNY')
-  expect(button).not.toHaveTextContent('¥')
+  expect(button).toHaveTextContent('¥2.8 – ¥5.6 / s')
+  expect(button).toHaveTextContent('2 tiers')
   expect(button).not.toHaveTextContent('1M tokens')
 })
 
