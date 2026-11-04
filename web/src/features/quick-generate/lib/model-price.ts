@@ -40,6 +40,7 @@ export function generationModelPrice(
   usdExchangeRate = 1
 ): string {
   const dynamic = getDynamicPricingSummary(model, {
+    tokenUnit: 'M',
     priceRate,
     usdExchangeRate,
     showCurrencySymbol: true,
@@ -127,6 +128,7 @@ export function generationRunPrice(
   usdExchangeRate = 1
 ): string {
   const dynamic = getDynamicPricingSummary(model, {
+    tokenUnit: 'M',
     priceRate,
     usdExchangeRate,
     showCurrencySymbol: true,
@@ -166,11 +168,12 @@ export function generationRunPrice(
     return `${lowText} – ${highText}`
   }
   if (isUnconfiguredTaskUsageModel(model) || isTokenBasedModel(model)) return ''
-  if (!Number.isFinite(model.model_price)) return ''
+  const unitPrice = model.model_price
+  if (typeof unitPrice !== 'number' || !Number.isFinite(unitPrice)) return ''
   const count =
     quantities.count && quantities.count > 0 ? quantities.count : 1
   const total = formatRequestPrice(
-    { ...model, model_price: model.model_price * count },
+    { ...model, model_price: unitPrice * count },
     false,
     priceRate,
     usdExchangeRate

@@ -104,7 +104,11 @@ const API_KEY: ApiKey = {
 function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
   useGenerationModelsMock.mockReturnValue({
     models,
-    items: models.map((model) => ({ value: model.name, label: model.name })),
+    items: models.map((model) => ({
+      value: model.name,
+      label: model.name,
+      hint: '',
+    })),
     descriptionFor: () => '',
     priceForRun: () => '',
     isLoading: false,
