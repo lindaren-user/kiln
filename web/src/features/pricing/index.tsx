@@ -29,10 +29,9 @@ import {
   PricingTable,
   PricingSidebar,
   PricingToolbar,
-  ModelCardGrid,
   ModelDetailsDrawer,
 } from './components'
-import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
+import { EXCLUDED_GROUPS } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
 
@@ -63,7 +62,6 @@ export function Pricing() {
     endpointTypeFilter,
     tagFilter,
     tokenUnit,
-    viewMode,
     showRechargePrice,
     setSearchInput,
     setSortBy,
@@ -73,7 +71,6 @@ export function Pricing() {
     setEndpointTypeFilter,
     setTagFilter,
     setTokenUnit,
-    setViewMode,
     setShowRechargePrice,
     filteredModels,
     hasActiveFilters,
@@ -121,20 +118,6 @@ export function Pricing() {
       )
     }
 
-    if (viewMode === VIEW_MODES.CARD) {
-      return (
-        <ModelCardGrid
-          models={filteredModels}
-          onModelClick={handleModelClick}
-          priceRate={priceRate}
-          usdExchangeRate={usdExchangeRate}
-          tokenUnit={tokenUnit}
-          showRechargePrice={showRechargePrice}
-          selectedGroup={groupFilter}
-        />
-      )
-    }
-
     return (
       <PricingTable
         models={filteredModels}
@@ -152,7 +135,7 @@ export function Pricing() {
     return (
       <PublicLayout showMainContainer={false}>
         <div className='mx-auto w-full max-w-[1800px] px-3 pt-16 pb-8 sm:px-6 sm:pt-20 sm:pb-10 xl:px-8'>
-          <LoadingSkeleton viewMode={viewMode} />
+          <LoadingSkeleton />
         </div>
       </PublicLayout>
     )
@@ -234,8 +217,6 @@ export function Pricing() {
                 onTokenUnitChange={setTokenUnit}
                 showRechargePrice={showRechargePrice}
                 onRechargePriceChange={setShowRechargePrice}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
                 quotaTypeFilter={quotaTypeFilter}
                 endpointTypeFilter={endpointTypeFilter}
                 vendorFilter={vendorFilter}

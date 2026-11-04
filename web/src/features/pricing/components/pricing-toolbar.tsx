@@ -20,7 +20,6 @@ import { ArrowUpDown, Check, Filter } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { DataTableViewModeToggle } from '@/components/data-table'
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -45,7 +44,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 
-import { getSortLabels, type SortOption, type ViewMode } from '../constants'
+import { getSortLabels, type SortOption } from '../constants'
 import type { PricingModel, PricingVendor, TokenUnit } from '../types'
 import { PricingSidebar } from './pricing-sidebar'
 
@@ -58,8 +57,6 @@ export interface PricingToolbarProps {
   onTokenUnitChange: (value: TokenUnit) => void
   showRechargePrice: boolean
   onRechargePriceChange: (value: boolean) => void
-  viewMode: ViewMode
-  onViewModeChange: (value: ViewMode) => void
   quotaTypeFilter: string
   endpointTypeFilter: string
   vendorFilter: string
@@ -183,11 +180,6 @@ export function PricingToolbar(props: PricingToolbarProps) {
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          <DataTableViewModeToggle
-            value={props.viewMode}
-            onChange={props.onViewModeChange}
-          />
         </div>
       </div>
 

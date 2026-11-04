@@ -51,7 +51,7 @@ it('shows an explicit free request price alongside token prices with distinct un
       matchedTierLabel='free'
     />
   )
-  expect(screen.getAllByText('$0/request').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('$0 / request').length).toBeGreaterThan(0)
   expect(screen.getAllByText('Input / 1M token').length).toBeGreaterThan(0)
   expect(screen.getAllByText('Price per request').length).toBeGreaterThan(0)
 })
@@ -286,11 +286,11 @@ it('refreshes memoized provider prices when the group or display currency change
     const view = render(
       <ModelPriceCell model={shared} options={{ selectedGroup: 'default' }} />
     )
-    expect(view.container).toHaveTextContent('0.22/unit')
+    expect(view.container).toHaveTextContent('$0.22 / unit')
     view.rerender(
       <ModelPriceCell model={shared} options={{ selectedGroup: 'premium' }} />
     )
-    expect(view.container).toHaveTextContent('0.66/unit')
+    expect(view.container).toHaveTextContent('$0.66 / unit')
     act(() =>
       useSystemConfigStore.getState().setConfig({
         currency: {
@@ -300,7 +300,7 @@ it('refreshes memoized provider prices when the group or display currency change
         },
       })
     )
-    expect(view.container).toHaveTextContent('1.32/unit')
+    expect(view.container).toHaveTextContent('¥1.32 / unit')
   } finally {
     act(() => useSystemConfigStore.getState().setConfig({ currency: previous }))
   }
@@ -503,8 +503,8 @@ it('uses the same recharge conversion and token unit in task condition prices', 
       }}
     />
   )
-  expect(screen.getAllByText('$5/1M token')).toHaveLength(2)
-  expect(screen.getAllByText('$3/1M token')).toHaveLength(2)
+  expect(screen.getAllByText('$5 / 1M token')).toHaveLength(2)
+  expect(screen.getAllByText('$3 / 1M token')).toHaveLength(2)
 })
 
 it('switches provider group prices, localized conditions and examples, and shows unconfigured providers', async () => {
@@ -661,6 +661,6 @@ it('shows provider count, price range and missing-price status in both list and 
   expect(screen.getAllByText(/Not configured for some providers/)).toHaveLength(
     2
   )
-  expect(screen.getByText('0.4 – 0.8/s')).toBeVisible()
+  expect(screen.getByText('$0.4 – $0.8 / s')).toBeVisible()
   expect(screen.getByText('$0.4 – $0.8')).toBeVisible()
 })

@@ -28,6 +28,18 @@ export function formatLatency(ms: number): string {
   return `${Math.round(ms)}ms`
 }
 
+/** Clock duration, `hh:mm:ss`. A positive value under one second is `00:00:01`. */
+export function formatLatencyClock(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—'
+  const totalSeconds = Math.max(1, Math.round(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, '0'))
+    .join(':')
+}
+
 export function formatUptimePct(pct: number): string {
   if (!Number.isFinite(pct)) return '—'
   return `${pct.toFixed(2)}%`
