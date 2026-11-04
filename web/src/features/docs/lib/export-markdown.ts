@@ -1,0 +1,152 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { DOCS_ENDPOINT_GROUPS } from './endpoints'
+
+export type DocsMarkdownLabels = {
+  title: string
+  intro: string
+  baseUrl: string
+  baseUrlHint: string
+  authentication: string
+  authHint: string
+  billingNote: string
+  availableModels: string
+  modelsHint: string
+  modelsListLinkLabel: string
+  endpoints: string
+  method: string
+  path: string
+  description: string
+  endpointDescriptions: Record<string, string>
+  image: string
+  video: string
+  imageSyncNote: string
+  videoFlowNote: string
+  examples: string
+  sdkExample: string
+  listModelsHeading: string
+  imageGeneration: string
+  imageEdit: string
+  videoGeneration: string
+  videoPoll: string
+  furtherHelp: string
+}
+
+export type DocsMarkdownInput = {
+  labels: DocsMarkdownLabels
+  baseUrl: string
+  siteOrigin: string
+  sdkExample: string
+  modelsExample: string
+  imageExample: string
+  imageEditExample: string
+  videoExample: string
+  videoPollExample: string
+}
+
+function fence(code: string) {
+  return `\`\`\`\n${code}\n\`\`\``
+}
+
+export function buildDocsMarkdown(input: DocsMarkdownInput): string {
+  const { labels, baseUrl, siteOrigin } = input
+  const origin = siteOrigin.replace(/\/$/, '')
+  const groupTitles: Record<string, string> = {
+    Image: labels.image,
+    Video: labels.video,
+  }
+  const lines = [
+    `# ${labels.title}`,
+    '',
+    labels.intro,
+    '',
+    `## ${labels.baseUrl}`,
+    '',
+    fence(baseUrl),
+    '',
+    labels.baseUrlHint,
+    '',
+    `## ${labels.authentication}`,
+    '',
+    labels.authHint,
+    '',
+    fence('Authorization: Bearer sk-your-key'),
+    '',
+    labels.billingNote,
+    '',
+    `## ${labels.availableModels}`,
+    '',
+    `${labels.modelsHint} [${labels.modelsListLinkLabel}](${origin}/pricing)`,
+    '',
+    `## ${labels.endpoints}`,
+    '',
+  ]
+
+  for (const group of DOCS_ENDPOINT_GROUPS) {
+    if (group.titleKey) {
+      lines.push(
+        `### ${groupTitles[group.titleKey] ?? group.titleKey}`,
+        ''
+      )
+    }
+    lines.push(
+      `| ${labels.method} | ${labels.path} | ${labels.description} |`,
+      '| --- | --- | --- |'
+    )
+    for (const endpoint of group.endpoints) {
+      const description =
+        labels.endpointDescriptions[endpoint.descriptionKey] ??
+        endpoint.descriptionKey
+      lines.push(
+        `| ${endpoint.method} | \`${endpoint.path}\` | ${description} |`
+      )
+    }
+    lines.push('')
+  }
+
+  const exampleBlocks: Array<[string, string]> = [
+    [labels.sdkExample, input.sdkExample],
+    [labels.listModelsHeading, input.modelsExample],
+    [labels.imageGeneration, input.imageExample],
+    [labels.imageEdit, input.imageEditExample],
+    [labels.videoGeneration, input.videoExample],
+    [labels.videoPoll, input.videoPollExample],
+  ]
+
+  lines.push(labels.imageSyncNote, '', labels.videoFlowNote, '')
+  lines.push(`## ${labels.examples}`, '')
+  for (const [heading, code] of exampleBlocks) {
+    lines.push(`### ${heading}`, '', fence(code), '')
+  }
+  lines.push(labels.furtherHelp, '')
+
+  return lines.join('\n')
+}
+
+export function downloadMarkdownFile(markdown: string, filename: string) {
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+  const href = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = href
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(href)
+}
