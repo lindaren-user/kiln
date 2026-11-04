@@ -1,0 +1,6 @@
+.env
+certs/
+letsencrypt/
+acme/
+logs/
+backups/
