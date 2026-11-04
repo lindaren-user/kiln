@@ -31,6 +31,49 @@ type ModelRequest struct {
 	Group string `json:"group,omitempty"`
 }
 
+// allowDeclaredTaskPlugins lets a legacy video submission use a type-61
+// channel whose plugin declares the model. The OpenAI video protocol stays
+// unclaimed on this path, so the task DTO and its result URL are unchanged.
+func allowDeclaredTaskPlugins(c *gin.Context, modelName string) {
+	if c == nil || c.Request == nil || c.Request.Method != http.MethodPost || c.Request.URL.Path != "/v1/video/generations" {
+		return
+	}
+	if c.GetString("expected_task_plugin_key") != "" || strings.TrimSpace(modelName) == "" {
+		return
+	}
+	generation := jsplugin.DefaultRegistry.Generation()
+	if generation == nil {
+		return
+	}
+	lookup := modelName
+	if declared, ok := generation.CanonicalModel(modelName); ok {
+		lookup = declared
+	} else if target, ok := model.ResolveTaskModelAlias(generation, modelName); ok && target.Declared != "" {
+		lookup = target.Declared
+	}
+	plugins := generation.PluginsByModel(lookup)
+	if len(plugins) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(plugins))
+	for _, plugin := range plugins {
+		if plugin != nil && plugin.Meta.Key != "" {
+			keys = append(keys, plugin.Meta.Key)
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	constraints := service.GetChannelConstraints(c)
+	for index := range constraints.Filters {
+		filter := &constraints.Filters[index]
+		if filter.Kind == taskdto.FilterTaskPluginIdentity && filter.TaskPluginKey == "" {
+			filter.TaskPluginKeys = keys
+			return
+		}
+	}
+}
+
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
@@ -50,6 +93,7 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, invalidRequestStatus(err), i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		allowDeclaredTaskPlugins(c, modelRequest.Model)
 		_, pinned, _ := constraints.ResolvedPin()
 		if !pinned {
 			// Select a channel for the user

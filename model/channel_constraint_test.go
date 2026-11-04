@@ -72,6 +72,16 @@ func TestFilterCandidateIDs(t *testing.T) {
 			wantKept:  []int{900003},
 		},
 		{
+			name:      "identity declared plugin keys keep the bound task plugin and ordinary channels",
+			ids:       []int{900001, 900002, 900003},
+			modelName: "shared",
+			filters: []dto.ChannelFilter{{
+				Kind:           dto.FilterTaskPluginIdentity,
+				TaskPluginKeys: []string{"alpha"},
+			}},
+			wantKept: []int{900001, 900003},
+		},
+		{
 			name:      "identity keeps matching legacy type",
 			ids:       []int{900004, 900005},
 			modelName: "legacy",

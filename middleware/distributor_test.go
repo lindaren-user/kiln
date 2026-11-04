@@ -10,10 +10,13 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	hostdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	_ "github.com/QuantumNous/new-api/plugins"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -399,4 +402,31 @@ func TestSharedEndpointRebindsToBoundNewAPIExtension(t *testing.T) {
 	require.Nil(t, SetupContextForSelectedChannel(c, channel, "task-model"))
 	assert.Equal(t, "alpha", c.GetString("task_plugin_key"), "the first bound candidate executes regardless of the earlier pin")
 	assert.Equal(t, "alpha", c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint).Plugin.Meta.Key)
+}
+
+func TestLegacyVideoGenerationsAdmitsDeclaredTaskPlugin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	constraints := service.GetChannelConstraints(c)
+	constraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+
+	allowDeclaredTaskPlugins(c, "官转SD2.5-30图版-480P")
+
+	require.Equal(t, []string{"top-image"}, constraints.Filters[0].TaskPluginKeys)
+
+	chat, _ := gin.CreateTestContext(httptest.NewRecorder())
+	chat.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	chatConstraints := service.GetChannelConstraints(chat)
+	chatConstraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+	allowDeclaredTaskPlugins(chat, "官转SD2.5-30图版-480P")
+	assert.Empty(t, chatConstraints.Filters[0].TaskPluginKeys)
+
+	unknown, _ := gin.CreateTestContext(httptest.NewRecorder())
+	unknown.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	unknownConstraints := service.GetChannelConstraints(unknown)
+	unknownConstraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+	allowDeclaredTaskPlugins(unknown, "not-a-declared-video-model")
+	assert.Empty(t, unknownConstraints.Filters[0].TaskPluginKeys)
 }

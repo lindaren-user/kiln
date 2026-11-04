@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	_ "github.com/QuantumNous/new-api/plugins"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,6 +77,29 @@ func pricingEndpointTypesFromPricing(pricings []Pricing) map[string][]constant.E
 		byModel[pricing.ModelName] = pricing.SupportedEndpointTypes
 	}
 	return byModel
+}
+
+func TestPricingTaskPluginVideoModelsUseVideoEndpoint(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	setting := `{"task_plugin_key":"top-image"}`
+	channel := &Channel{
+		Id:      301,
+		Type:    constant.ChannelTypeTaskPlugin,
+		Key:     "key-301",
+		Status:  common.ChannelStatusEnabled,
+		Name:    "top-image",
+		Setting: &setting,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	insertPricingEndpointAbility(t, 301, "sd2.0满血版")
+
+	byModel := pricingEndpointTypesByModel(t)
+
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAIVideo,
+		constant.EndpointTypeOpenAIResponse,
+	}, byModel["sd2.0满血版"])
 }
 
 func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {

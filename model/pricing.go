@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -119,7 +120,12 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 	return make([]constant.EndpointType, 0)
 }
 
-func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
+func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig, taskPluginKeys map[int]string) []constant.EndpointType {
+	if ability.ChannelType == constant.ChannelTypeTaskPlugin {
+		if endpoints, ok := taskPluginPricingEndpoints(taskPluginKeys[ability.ChannelId], ability.Model); ok {
+			return endpoints
+		}
+	}
 	if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
 		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
 	}
@@ -182,6 +188,89 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 	return configs
 }
 
+// loadPricingTaskPluginKeys reads the plugin bound to each type-61 channel.
+// The pricing refresh holds updatePricingLock and may take channelSyncLock
+// here, the same order as loadPricingAdvancedCustomConfigs.
+func loadPricingTaskPluginKeys(enableAbilities []AbilityWithChannel) map[int]string {
+	channelIDs := make([]int, 0)
+	seen := make(map[int]struct{})
+	for _, ability := range enableAbilities {
+		if ability.ChannelType != constant.ChannelTypeTaskPlugin {
+			continue
+		}
+		if _, exists := seen[ability.ChannelId]; exists {
+			continue
+		}
+		seen[ability.ChannelId] = struct{}{}
+		channelIDs = append(channelIDs, ability.ChannelId)
+	}
+	if len(channelIDs) == 0 {
+		return nil
+	}
+	keys := make(map[int]string, len(channelIDs))
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		defer channelSyncLock.RUnlock()
+		for _, channelID := range channelIDs {
+			channel := channelsIDM[channelID]
+			if channel == nil {
+				continue
+			}
+			keys[channelID] = strings.TrimSpace(channel.GetSetting().TaskPluginKey)
+		}
+		return keys
+	}
+	var channels []Channel
+	if err := DB.Select("id", "setting").Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
+		common.SysLog(common.LogText("load task plugin keys for pricing: %v", err))
+		return keys
+	}
+	for i := range channels {
+		keys[channels[i].Id] = strings.TrimSpace(channels[i].GetSetting().TaskPluginKey)
+	}
+	return keys
+}
+
+// taskPluginPricingEndpoints reports the host endpoints a task plugin actually
+// serves. A video plugin must be tagged openai-video so quick generate lists
+// its models; the type-61 default of the chat endpoint does not.
+func taskPluginPricingEndpoints(pluginKey, model string) ([]constant.EndpointType, bool) {
+	plugin, ok := jsplugin.DefaultRegistry.Get(strings.TrimSpace(pluginKey))
+	if !ok {
+		return nil, false
+	}
+	var video, image, responses bool
+	for _, claim := range plugin.Meta.Protocols {
+		if len(claim.Models) > 0 && !slices.Contains(claim.Models, model) {
+			continue
+		}
+		switch claim.Name {
+		case "openai_video":
+			video = true
+		case "openai_image":
+			image = true
+		case "openai_responses":
+			responses = true
+		}
+	}
+	// Video and image come first: quick generate and the pricing catalog treat
+	// the first endpoint as the one the model is for.
+	endpoints := make([]constant.EndpointType, 0, 3)
+	if video {
+		endpoints = append(endpoints, constant.EndpointTypeOpenAIVideo)
+	}
+	if image {
+		endpoints = append(endpoints, constant.EndpointTypeImageGeneration)
+	}
+	if responses {
+		endpoints = append(endpoints, constant.EndpointTypeOpenAIResponse)
+	}
+	if len(endpoints) == 0 {
+		return nil, false
+	}
+	return endpoints, true
+}
+
 func appendPricingEndpoint(endpoints []string, endpoint string) []string {
 	if endpoint == "" || common.StringsContains(endpoints, endpoint) {
 		return endpoints
@@ -241,11 +330,12 @@ func updatePricing() {
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
+	taskPluginKeys := loadPricingTaskPluginKeys(enableAbilities)
 
 	// 先根据已有能力填充原生端点
 	for _, ability := range enableAbilities {
 		endpoints := modelSupportEndpointsStr[ability.Model]
-		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs)
+		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs, taskPluginKeys)
 		for _, channelType := range channelTypes {
 			if !common.StringsContains(endpoints, string(channelType)) {
 				endpoints = append(endpoints, string(channelType))
