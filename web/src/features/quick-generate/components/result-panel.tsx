@@ -27,6 +27,8 @@ import type { Generation } from '../types'
 
 type ResultPanelProps = {
   generation: Generation | null
+  /** Price of the generation the composer will send. Empty when unknown. */
+  runPrice?: string
   onZoom: (index: number) => void
   onDownload: (index: number) => void
   onRetry: () => void
@@ -45,13 +47,14 @@ function RunningStatus(props: { progress?: string }) {
   }, [])
   const minutes = Math.floor(seconds / 60)
   const remainder = String(seconds % 60).padStart(2, '0')
-  let label = `${t('Generating')}... ${minutes}:${remainder}`
-  if (props.progress) label += ` ${props.progress}`
 
   return (
     <div className='text-muted-foreground flex flex-col items-center gap-3'>
       <Loader2 className='size-6 animate-spin' aria-hidden='true' />
-      <p className='text-sm'>{label}</p>
+      <div className='text-center text-sm leading-5'>
+        <p>{`${t('Generating')}... ${minutes}:${remainder}`}</p>
+        {props.progress ? <p>{props.progress}</p> : null}
+      </div>
     </div>
   )
 }
@@ -79,6 +82,14 @@ export function ResultPanel(props: ResultPanelProps) {
           <p className='text-sm font-medium'>{t('Your result appears here')}</p>
           <p className='text-xs leading-5'>
             {t('Describe what you want, pick a model, then generate.')}
+          </p>
+          <p className='text-xs leading-5'>
+            {t('Price for this run')}
+            {props.runPrice ? (
+              <span className='text-warning ml-1 font-semibold tabular-nums'>
+                {props.runPrice}
+              </span>
+            ) : null}
           </p>
         </div>
       )}

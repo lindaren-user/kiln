@@ -46,8 +46,10 @@ import type { GenerationValues } from '../types'
 import { PromptMentionInput } from './prompt-mention-input'
 
 type GenerateComposerProps = {
-  modelItems: { value: string; label: string }[]
+  modelItems: { value: string; label: string; hint?: string }[]
   model: string
+  /** Shown in the empty prompt. The page supplies the model description. */
+  promptPlaceholder: string
   onModelChange: (value: string) => void
   /** The controls this model accepts; a different model shows a different set. */
   capability: ModelCapability
@@ -70,7 +72,7 @@ function ParamLabel(props: { children: string }) {
 
 type ParamSelectProps = {
   label: string
-  items: { value: string; label: string }[]
+  items: { value: string; label: string; hint?: string }[]
   value: string
   onValueChange: (value: string) => void
   disabled?: boolean
@@ -95,10 +97,18 @@ function ParamSelect(props: ParamSelectProps) {
         <ParamLabel>{props.label}</ParamLabel>
         <SelectValue placeholder={props.placeholder} />
       </SelectTrigger>
-      <SelectContent alignItemWithTrigger={false}>
+      <SelectContent
+        alignItemWithTrigger={false}
+        className='max-h-60 w-auto min-w-(--anchor-width) max-w-[min(20rem,calc(100vw-1.5rem))] overflow-x-auto overflow-y-auto'
+      >
         {props.items.map((item) => (
-          <SelectItem key={item.value} value={item.value}>
-            {item.label}
+          <SelectItem key={item.value} value={item.value} className='w-max min-w-full'>
+            <span>{item.label}</span>
+            {item.hint ? (
+              <span className='text-muted-foreground ml-auto pl-3 text-xs tabular-nums'>
+                {item.hint}
+              </span>
+            ) : null}
           </SelectItem>
         ))}
       </SelectContent>
@@ -126,8 +136,16 @@ function ParamNumber(props: ParamNumberProps) {
         inputMode='numeric'
         min={props.min}
         max={props.max}
+        step={1}
         value={props.value}
         onChange={(event) => props.onValueChange(event.target.value)}
+        onBlur={() => {
+          const parsed = Number(props.value)
+          const next = Number.isFinite(parsed)
+            ? Math.min(props.max, Math.max(props.min, Math.round(parsed)))
+            : props.min
+          if (String(next) !== props.value) props.onValueChange(String(next))
+        }}
         disabled={props.disabled}
         aria-label={props.label}
         className='h-6 w-12 border-0 bg-transparent px-0 text-right text-sm shadow-none focus-visible:ring-0 dark:bg-transparent'
@@ -177,9 +195,16 @@ function ParamFieldControl(props: {
       />
     )
   }
+  const label =
+    props.field.key === 'seconds'
+      ? t('Duration {{min}}-{{max}}s', {
+          min: props.field.min,
+          max: props.field.max,
+        })
+      : t(props.field.labelKey)
   return (
     <ParamNumber
-      label={t(props.field.labelKey)}
+      label={label}
       value={props.value}
       min={props.field.min}
       max={props.field.max}
@@ -199,19 +224,27 @@ export function GenerateComposer(props: GenerateComposerProps) {
   const [text, setText] = useState('')
 
   // Option arrays depend on the model capability or the key list, not on typing.
-  const fields = useMemo<ParamField[]>(
-    () =>
-      props.capability.fields.map((field) => {
-        if (field.type !== 'select') return field
-        return {
-          ...field,
-          options: field.options.map((option) =>
-            option.value === 'auto' ? { ...option, label: t('Auto') } : option
-          ),
-        }
-      }),
-    [props.capability, t]
-  )
+  // TODO: Hide resolution until a model declares the sizes its upstream
+  // actually accepts. Most of these interfaces have no resolution choice,
+  // and a shared list sends sizes they reject. The default is still sent.
+  const fields = useMemo<ParamField[]>(() => {
+    const visible = props.capability.fields.filter(
+      (field) => field.key !== 'resolution'
+    )
+    return visible.map((field) => {
+      if (field.type !== 'select') return field
+      return {
+        ...field,
+        options: field.options.map((option) =>
+          option.value === 'auto'
+            ? { ...option, label: t('Auto') }
+            : option.value === 'adaptive'
+              ? { ...option, label: t('Adaptive') }
+              : option
+        ),
+      }
+    })
+  }, [props.capability, t])
   const keyItems = useMemo(
     () => props.keys.map((key) => ({ value: String(key.id), label: key.name })),
     [props.keys]
@@ -237,7 +270,6 @@ export function GenerateComposer(props: GenerateComposerProps) {
 
   return (
     <PromptInput
-      key={props.model}
       className='relative'
       groupClassName={cn(
         'bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]',
@@ -255,13 +287,15 @@ export function GenerateComposer(props: GenerateComposerProps) {
       <PromptMentionInput
         value={text}
         onChange={setText}
-        placeholder={t('Describe what you want to create')}
+        placeholder={props.promptPlaceholder}
         label={t('Prompt')}
         disabled={props.disabled}
       />
       {props.capability.mediaNotice && (
         <p className='text-warning px-3 pt-1 text-xs'>
-          {t('This version does not support reference video or audio.')}
+          {t(
+            'Quick generate does not support reference video or audio. The API does.'
+          )}
         </p>
       )}
 

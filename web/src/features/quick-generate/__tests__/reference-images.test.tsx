@@ -50,6 +50,7 @@ function renderComposer(model: string, kind: 'image' | 'video') {
     <GenerateComposer
       modelItems={[{ value: model, label: model }]}
       model={model}
+      promptPlaceholder='Describe what you want to create'
       onModelChange={vi.fn()}
       capability={capability}
       values={defaultValues(capability)}
@@ -77,7 +78,7 @@ describe('reference image upload', () => {
     )
     expect(
       screen.queryByText(
-        'This version does not support reference video or audio.'
+        'Quick generate does not support reference video or audio. The API does.'
       )
     ).toBeNull()
   })
@@ -95,7 +96,7 @@ describe('reference image upload', () => {
 
     expect(
       screen.getByText(
-        'This version does not support reference video or audio.'
+        'Quick generate does not support reference video or audio. The API does.'
       )
     ).toBeInTheDocument()
     expect(
@@ -108,7 +109,7 @@ describe('reference image upload', () => {
 
     expect(
       screen.getByText(
-        'This version does not support reference video or audio.'
+        'Quick generate does not support reference video or audio. The API does.'
       )
     ).toBeInTheDocument()
     expect(

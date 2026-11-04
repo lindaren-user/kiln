@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ApiKey } from '@/features/keys/types'
@@ -50,6 +50,7 @@ function renderComposer() {
     <GenerateComposer
       modelItems={[{ value: 'z-image', label: 'z-image' }]}
       model='z-image'
+      promptPlaceholder='Describe what you want to create'
       onModelChange={vi.fn()}
       capability={capability}
       values={defaultValues(capability)}
@@ -79,7 +80,6 @@ describe('composer footer layout', () => {
     renderComposer()
     const controls = [
       screen.getByLabelText('Aspect Ratio'),
-      screen.getByLabelText('Resolution'),
       screen.getByLabelText('Count'),
       screen.getByLabelText('Model'),
       screen.getByLabelText('API key'),
@@ -91,6 +91,53 @@ describe('composer footer layout', () => {
     for (const control of controls) {
       expect(tools).toContainElement(control)
     }
+  })
+
+  it('keeps the prompt when the model changes', () => {
+    const first = capabilityFor('z-image', 'image')
+    const view = render(
+      <GenerateComposer
+        modelItems={[{ value: 'z-image', label: 'z-image' }]}
+        model='z-image'
+        promptPlaceholder='Describe what you want to create'
+        onModelChange={vi.fn()}
+        capability={first}
+        values={defaultValues(first)}
+        onValueChange={vi.fn()}
+        keys={[API_KEY]}
+        selectedKeyId={API_KEY.id}
+        onKeyChange={vi.fn()}
+        onSubmit={() => true}
+        busy={false}
+        disabled={false}
+      />
+    )
+    const editor = screen.getByRole('textbox', { name: 'Prompt' })
+    editor.textContent = 'keep this prompt'
+    fireEvent.input(editor)
+
+    const next = capabilityFor('sora-2', 'video')
+    view.rerender(
+      <GenerateComposer
+        modelItems={[{ value: 'sora-2', label: 'sora-2' }]}
+        model='sora-2'
+        promptPlaceholder='Describe what you want to create'
+        onModelChange={vi.fn()}
+        capability={next}
+        values={defaultValues(next)}
+        onValueChange={vi.fn()}
+        keys={[API_KEY]}
+        selectedKeyId={API_KEY.id}
+        onKeyChange={vi.fn()}
+        onSubmit={() => true}
+        busy={false}
+        disabled={false}
+      />
+    )
+
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveTextContent(
+      'keep this prompt'
+    )
   })
 
   it('puts the model and the key first', () => {

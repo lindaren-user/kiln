@@ -22,6 +22,7 @@ import {
   buildImageRequest,
   buildVideoRequest,
   capabilityFor,
+  compatibleValues,
   defaultValues,
   summarizeValues,
 } from '../lib/capabilities'
@@ -127,7 +128,15 @@ describe('model capabilities', () => {
         'resolution',
         'seconds',
       ])
-      expect(selectValues(model, 'video', 'ratio')).toEqual(['16:9', '9:16'])
+      expect(selectValues(model, 'video', 'ratio')).toEqual(
+        model === 'kling-v2-5-turbo'
+          ? ['16:9', '9:16', '1:1']
+          : model === 'wan3.0-video'
+            ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive']
+            : model === 'grok-imagine-video'
+              ? ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '21:9', '5:2']
+              : ['16:9', '9:16']
+      )
       expect(selectValues(model, 'video', 'resolution')).toEqual([
         '720p',
         '1080p',
@@ -140,6 +149,36 @@ describe('model capabilities', () => {
       })
     }
   )
+
+  it('limits video duration to the range that model accepts', () => {
+    const bounds = (model: string) => {
+      const field = capabilityFor(model, 'video').fields.find(
+        (candidate) => candidate.key === 'seconds'
+      )
+      return field?.type === 'number'
+        ? { min: field.min, max: field.max }
+        : null
+    }
+
+    expect(bounds('官转SD2.5-30图版-480P')).toEqual({ min: 4, max: 30 })
+    expect(bounds('特价SD2.5-30图版-720p')).toEqual({ min: 4, max: 30 })
+    expect(bounds('wan3-1080p')).toEqual({ min: 4, max: 30 })
+    expect(bounds('kling-4.0-1080p')).toEqual({ min: 4, max: 30 })
+    expect(bounds('官转SD2.0-满血9图版-短剧专用-4K')).toEqual({ min: 4, max: 15 })
+    expect(bounds('sd2.0满血版')).toEqual({ min: 4, max: 15 })
+    expect(bounds('sd2-fast')).toEqual({ min: 4, max: 15 })
+    expect(bounds('Minimax-768P')).toEqual({ min: 4, max: 15 })
+    expect(bounds('sora-2')).toEqual({ min: 1, max: 60 })
+    expect(bounds('sd2-933-720p-9:16')).toEqual({ min: 5, max: 15 })
+    expect(bounds('minimaxh3')).toEqual({ min: 4, max: 30 })
+    expect(bounds('sd2.5-y')).toEqual({ min: 4, max: 30 })
+    expect(bounds('seedance_v2.5')).toEqual({ min: 4, max: 30 })
+
+    expect(buildVideoRequest({ seconds: '1' }, '官转SD2.5-30图版-480P').duration).toBe(4)
+    expect(buildVideoRequest({ seconds: '40' }, '官转SD2.5-30图版-480P').duration).toBe(30)
+    expect(buildVideoRequest({ seconds: '20' }, 'Minimax-2k').duration).toBe(15)
+    expect(buildVideoRequest({ seconds: '8' }, 'kling-4.0').duration).toBe(8)
+  })
 
   it('keeps Sora 2 on the 720p sizes it accepts', () => {
     expect(fieldKeys('sora-2', 'video')).toEqual(['ratio', 'seconds'])
@@ -201,19 +240,106 @@ describe('model capabilities', () => {
   })
 
   it('maps the video ratio and resolution to pixels and keeps the duration', () => {
+    const aspect = (ratio: string) => ({ ratio, aspect_ratio: ratio })
     expect(buildVideoRequest({ ratio: '9:16', resolution: '720p', seconds: '8' })).toEqual({
       size: '720x1280',
       duration: 8,
+      metadata: aspect('9:16'),
     })
     expect(
       buildVideoRequest({ ratio: '16:9', resolution: '1080p', seconds: '5' })
-    ).toEqual({ size: '1920x1080', duration: 5 })
+    ).toEqual({ size: '1920x1080', duration: 5, metadata: aspect('16:9') })
     expect(
       buildVideoRequest({ ratio: '9:16', resolution: '4k', seconds: '5' })
-    ).toEqual({ size: '2160x3840', duration: 5 })
+    ).toEqual({ size: '2160x3840', duration: 5, metadata: aspect('9:16') })
     expect(
       buildVideoRequest({ ratio: '16:9', resolution: '1792', seconds: '4' })
-    ).toEqual({ size: '1792x1024', duration: 4 })
+    ).toEqual({ size: '1792x1024', duration: 4, metadata: aspect('16:9') })
+  })
+
+  it('offers each video model the aspect ratios its plugin documents', () => {
+    expect(selectValues('minimaxh3', 'video', 'ratio')).toEqual([
+      '16:9',
+      '9:16',
+      '1:1',
+      '4:3',
+      '3:4',
+      '21:9',
+    ])
+    expect(selectValues('sd2-933-720p-9:16', 'video', 'ratio')).toEqual(['9:16'])
+    expect(defaultValues(capabilityFor('sd2-933-720p-9:16', 'video')).ratio).toBe(
+      '9:16'
+    )
+    expect(
+      compatibleValues(capabilityFor('sd2-933-720p-9:16', 'video'), {
+        ratio: '16:9',
+        seconds: '8',
+      })
+    ).toMatchObject({ ratio: '9:16', seconds: '8' })
+    expect(
+      compatibleValues(capabilityFor('minimaxh3', 'video'), { ratio: '21:9' }).ratio
+    ).toBe('21:9')
+    expect(selectValues('sd2.5-y', 'video', 'ratio')).toEqual([
+      'auto',
+      '16:9',
+      '9:16',
+      '1:1',
+      '4:3',
+      '3:4',
+      '21:9',
+    ])
+    expect(selectValues('seedance_v2.5', 'video', 'ratio')).toEqual([
+      '16:9',
+      '9:16',
+      '1:1',
+      '4:3',
+      '3:4',
+    ])
+    expect(selectValues('kling-4.0', 'video', 'ratio')).toEqual([
+      '16:9',
+      '9:16',
+      '1:1',
+      '21:9',
+    ])
+    expect(selectValues('官转SD2.5-30图版-480P', 'video', 'ratio')).toEqual([
+      '16:9',
+      '9:16',
+      '1:1',
+    ])
+    expect(selectValues('wan2.6-t2v', 'video', 'ratio')).toEqual([
+      '16:9',
+      '9:16',
+      '1:1',
+      '4:3',
+      '3:4',
+    ])
+  })
+
+  it('sends the chosen ratio, and omits a size the vendor cannot map', () => {
+    expect(
+      buildVideoRequest({ ratio: '1:1', resolution: '720p', seconds: '5' }, 'kling-4.0')
+    ).toMatchObject({
+      size: '720x720',
+      metadata: { ratio: '1:1', aspect_ratio: '1:1' },
+    })
+    expect(
+      buildVideoRequest({ ratio: 'auto', seconds: '5' }, 'sd2.5-y')
+    ).toEqual({
+      duration: 5,
+      metadata: { ratio: 'auto', aspect_ratio: 'auto' },
+    })
+    expect(
+      buildVideoRequest(
+        { ratio: '1:1', resolution: '720p', seconds: '5' },
+        'wan3.0-video'
+      )
+    ).toMatchObject({
+      size: '960x960',
+      metadata: { parameters: { ratio: '1:1' } },
+    })
+    expect(
+      buildVideoRequest({ ratio: '21:9', seconds: '5' }, 'wan3.0-video').size
+    ).toBeUndefined()
   })
 
   it('offers reference images only on models that read them', () => {
@@ -282,6 +408,7 @@ describe('model capabilities', () => {
       size: '1280x720',
       duration: 5,
       images: [dataUrl],
+      metadata: { ratio: '16:9', aspect_ratio: '16:9' },
     })
     expect(
       buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'jimeng-video', [dataUrl])
@@ -289,12 +416,14 @@ describe('model capabilities', () => {
     expect(buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'sora-2')).toEqual({
       size: '1280x720',
       duration: 5,
+      metadata: { ratio: '16:9', aspect_ratio: '16:9' },
     })
   })
 
   it('omits a duration that is not a positive number', () => {
     expect(buildVideoRequest({ ratio: '16:9', seconds: '' })).toEqual({
       size: '1280x720',
+      metadata: { ratio: '16:9', aspect_ratio: '16:9' },
     })
   })
 

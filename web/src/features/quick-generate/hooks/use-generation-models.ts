@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { ENDPOINT_TYPES, SORT_OPTIONS } from '@/features/pricing/constants'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
@@ -26,6 +27,11 @@ import {
 } from '@/features/pricing/lib/filters'
 import type { PricingModel } from '@/features/pricing/types'
 
+import {
+  generationModelPrice,
+  generationRunPrice,
+  type GenerationRunQuantity,
+} from '../lib/model-price'
 import type { GenerationKind } from '../types'
 
 export type GenerationModel = {
@@ -33,11 +39,17 @@ export type GenerationModel = {
   kind: GenerationKind
 }
 
-function namesFor(models: PricingModel[], endpointType: string): string[] {
+type ListedModel = GenerationModel & { source: PricingModel }
+
+function modelsFor(
+  models: PricingModel[],
+  endpointType: string,
+  kind: GenerationKind
+): ListedModel[] {
   return sortModels(
     filterByEndpointType(models, endpointType),
     SORT_OPTIONS.NAME
-  ).map((model) => model.model_name)
+  ).map((model) => ({ name: model.model_name, kind, source: model }))
 }
 
 /**
@@ -47,28 +59,73 @@ function namesFor(models: PricingModel[], endpointType: string): string[] {
  */
 export function useGenerationModels() {
   const pricing = usePricingData()
+  const { t, i18n } = useTranslation()
 
-  const models = useMemo<GenerationModel[]>(() => {
-    const images = namesFor(pricing.models, ENDPOINT_TYPES.IMAGE_GENERATION)
-    const videos = namesFor(pricing.models, ENDPOINT_TYPES.OPENAI_VIDEO)
-    const taken = new Set(images)
+  const listed = useMemo<ListedModel[]>(() => {
+    const images = modelsFor(
+      pricing.models,
+      ENDPOINT_TYPES.IMAGE_GENERATION,
+      'image'
+    )
+    const videos = modelsFor(
+      pricing.models,
+      ENDPOINT_TYPES.OPENAI_VIDEO,
+      'video'
+    )
+    const taken = new Set(images.map((model) => model.name))
 
     return [
-      ...images.map((name) => ({ name, kind: 'image' as const })),
-      ...videos
-        .filter((name) => !taken.has(name))
-        .map((name) => ({ name, kind: 'video' as const })),
+      ...images,
+      ...videos.filter((model) => !taken.has(model.name)),
     ]
   }, [pricing.models])
 
+  const models = useMemo<GenerationModel[]>(
+    () => listed.map(({ name, kind }) => ({ name, kind })),
+    [listed]
+  )
+
   const items = useMemo(
-    () => models.map((model) => ({ value: model.name, label: model.name })),
-    [models]
+    () =>
+      listed.map((model) => ({
+        value: model.name,
+        label: model.name,
+        hint: generationModelPrice(
+          model.source,
+          t,
+          i18n.resolvedLanguage || i18n.language,
+          pricing.priceRate,
+          pricing.usdExchangeRate
+        ),
+      })),
+    [i18n.language, i18n.resolvedLanguage, listed, pricing.priceRate, pricing.usdExchangeRate, t]
+  )
+
+  const descriptionFor = useCallback((name: string) => {
+    const description = listed.find((item) => item.name === name)?.source
+      .description
+    return description?.trim() ?? ''
+  }, [listed])
+
+  const priceForRun = useCallback(
+    (name: string, quantities: GenerationRunQuantity) => {
+      const source = listed.find((item) => item.name === name)?.source
+      if (!source) return ''
+      return generationRunPrice(
+        source,
+        quantities,
+        pricing.priceRate,
+        pricing.usdExchangeRate
+      )
+    },
+    [listed, pricing.priceRate, pricing.usdExchangeRate]
   )
 
   return {
     models,
     items,
+    descriptionFor,
+    priceForRun,
     isLoading: pricing.isLoading,
     error: pricing.error,
   }

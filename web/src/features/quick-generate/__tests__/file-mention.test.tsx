@@ -154,7 +154,7 @@ describe('mentioning an uploaded file', () => {
     ).toBeTruthy()
     expect(editor.parentElement).toHaveClass('w-full')
     expect(screen.getByText('Describe what you want to create')).toHaveClass(
-      'truncate',
+      'line-clamp-2',
       'left-3',
       'right-3'
     )

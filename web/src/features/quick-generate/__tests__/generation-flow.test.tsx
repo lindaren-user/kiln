@@ -105,6 +105,8 @@ function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
   useGenerationModelsMock.mockReturnValue({
     models,
     items: models.map((model) => ({ value: model.name, label: model.name })),
+    descriptionFor: () => '',
+    priceForRun: () => '',
     isLoading: false,
     error: null,
   } as ReturnType<typeof useGenerationModels>)
@@ -165,7 +167,11 @@ describe('quick generate', () => {
       apiKey: 'sk-abc123',
       model: 'sora-2',
       prompt: 'a kiln at dusk',
-      request: { size: '1280x720', duration: 5 },
+      request: {
+        size: '1280x720',
+        duration: 5,
+        metadata: { ratio: '16:9', aspect_ratio: '16:9' },
+      },
     })
     expect(generateImagesMock).not.toHaveBeenCalled()
   })
@@ -297,13 +303,13 @@ describe('quick generate', () => {
     await waitFor(() => expect(guardMock.mock.lastCall?.[0].when).toBe(false))
   })
 
-  it('keeps the model, ratio, resolution, count and key in the composer', () => {
+  it('keeps the model, ratio, count and key in the composer', () => {
     render(<QuickGenerate />)
 
     expect(screen.queryByText('No result yet')).toBeNull()
     expect(screen.getByLabelText('Model')).toHaveTextContent('z-image')
     expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('1:1')
-    expect(screen.getByLabelText('Resolution')).toHaveTextContent('1K')
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.getByLabelText('Count')).toBeInTheDocument()
     expect(screen.getByLabelText('API key')).toHaveTextContent('Quick key')
   })
@@ -324,19 +330,32 @@ describe('quick generate', () => {
 
     render(<QuickGenerate />)
 
-    expect(screen.getByLabelText('Duration')).toHaveValue(5)
+    expect(screen.getByLabelText('Duration 1-60s')).toHaveValue(5)
+    expect(screen.getByLabelText('Duration 1-60s')).toHaveAttribute('min', '1')
+    expect(screen.getByLabelText('Duration 1-60s')).toHaveAttribute('max', '60')
     expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
     expect(screen.queryByLabelText('Count')).toBeNull()
     expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.queryByLabelText('Size')).toBeNull()
   })
 
-  it('shows a resolution for a video model that accepts more than one', () => {
+  it('labels the duration with the range that model accepts', () => {
+    mockModels([{ name: '官转SD2.5-30图版-480P', kind: 'video' }])
+
+    render(<QuickGenerate />)
+
+    const duration = screen.getByLabelText('Duration 4-30s')
+    expect(duration).toHaveValue(5)
+    expect(duration).toHaveAttribute('min', '4')
+    expect(duration).toHaveAttribute('max', '30')
+  })
+
+  it('keeps resolution hidden for a video model that accepts more than one', () => {
     mockModels([{ name: 'veo-3.0-generate-001', kind: 'video' }])
 
     render(<QuickGenerate />)
 
-    expect(screen.getByLabelText('Resolution')).toHaveTextContent('720p')
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
     expect(screen.queryByLabelText('Count')).toBeNull()
   })

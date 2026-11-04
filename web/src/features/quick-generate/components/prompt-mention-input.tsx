@@ -428,7 +428,7 @@ export function PromptMentionInput(props: PromptMentionInputProps) {
       <ReferenceFiles />
       <div className='relative w-full min-w-0'>
         {props.value === '' && (
-          <span className='text-muted-foreground pointer-events-none absolute top-2 right-3 left-3 truncate text-sm'>
+          <span className='text-muted-foreground pointer-events-none absolute top-2 right-3 left-3 line-clamp-2 text-sm leading-5'>
             {props.placeholder}
           </span>
         )}

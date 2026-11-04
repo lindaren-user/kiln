@@ -39,7 +39,7 @@ import {
   buildImageRequest,
   buildVideoRequest,
   capabilityFor,
-  defaultValues,
+  compatibleValues,
 } from './lib/capabilities'
 import { downloadMedia, mediaFilename } from './lib/download-media'
 import { pollVideoTask } from './lib/poll-video'
@@ -55,6 +55,8 @@ export function QuickGenerate() {
   const {
     models,
     items: modelItems,
+    descriptionFor,
+    priceForRun,
     isLoading: modelsLoading,
   } = useGenerationModels()
   const {
@@ -83,9 +85,28 @@ export function QuickGenerate() {
   const model = models.some((item) => item.name === preferredModel)
     ? preferredModel
     : (models[0]?.name ?? '')
+  const modelDescription = model ? descriptionFor(model) : ''
+  const promptPlaceholder = modelDescription
+    ? modelDescription
+    : t('This model has no description yet.')
   const kind =
     models.find((item) => item.name === model)?.kind ?? ('image' as const)
   const capability = useMemo(() => capabilityFor(model, kind), [model, kind])
+  const effectiveValues = useMemo(
+    () => compatibleValues(capability, values),
+    [capability, values]
+  )
+  const runPrice = useMemo(() => {
+    if (!model) return ''
+    if (kind === 'video') {
+      return priceForRun(model, {
+        seconds: buildVideoRequest(effectiveValues, model).duration,
+      })
+    }
+    return priceForRun(model, {
+      count: buildImageRequest(effectiveValues, model).count,
+    })
+  }, [effectiveValues, kind, model, priceForRun])
 
   // A different model accepts a different set of parameters, so switching the
   // model drops the previous model's values instead of sending them again.
@@ -207,12 +228,12 @@ export function QuickGenerate() {
         {
           model,
           kind,
-          values: { ...defaultValues(capability), ...values },
+          values: effectiveValues,
           images,
         },
         prompt
       ),
-    [capability, kind, model, runGeneration, values]
+    [effectiveValues, kind, model, runGeneration]
   )
 
   /** Replays the failed request with the parameters it was sent with. */
@@ -303,7 +324,7 @@ export function QuickGenerate() {
 
   return (
     <div className='mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col gap-3 p-4'>
-      {/* Results live in memory only, so leaving before a download loses them. */}
+      {/* Images stay in memory. Completed videos remain in the task log. */}
       <FormNavigationGuard
         when={unsaved}
         title={t('Result not downloaded')}
@@ -316,10 +337,10 @@ export function QuickGenerate() {
         />
         <p>
           <span className='font-medium'>
-            {t('Test preview only, not a workbench')}
+            {t('For testing only. Using this as a workbench is not recommended.')}
           </span>{' '}
           {t(
-            'Nothing here is saved. Download anything you want to keep before leaving or generating again.'
+            'Images are not saved. Videos can be opened from "Task logs → Artifacts". Download any image you want to keep before leaving or generating again.'
           )}
         </p>
       </div>
@@ -337,6 +358,7 @@ export function QuickGenerate() {
         <div className='min-h-0 flex-1'>
           <ResultPanel
             generation={generation}
+            runPrice={runPrice}
             onZoom={(index) => {
               setZoomIndex(index)
               setZoomOpen(true)
@@ -374,9 +396,10 @@ export function QuickGenerate() {
         <GenerateComposer
           modelItems={modelItems}
           model={model}
+          promptPlaceholder={promptPlaceholder}
           onModelChange={changeModel}
           capability={capability}
-          values={values}
+          values={effectiveValues}
           onValueChange={(key, value) =>
             setValues((current) => ({ ...current, [key]: value }))
           }

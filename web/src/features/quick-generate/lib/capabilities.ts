@@ -104,11 +104,43 @@ const IMAGE_COUNT_FIELD: ParamField = {
 /**
  * Video APIs take `WIDTHxHEIGHT`. The page picks the pixels for the chosen
  * aspect ratio and resolution, and each vendor maps that frame onto the tier
- * it supports.
+ * it supports. Ratios without a published pixel size (auto, adaptive) are
+ * sent as the ratio itself.
  */
-const VIDEO_RATIO_ITEMS: ParamOption[] = [
-  { value: '16:9', label: '16:9' },
-  { value: '9:16', label: '9:16' },
+const DEFAULT_VIDEO_RATIOS = ['16:9', '9:16']
+
+/**
+ * First match wins. These lists are the aspect ratios each plugin documents,
+ * not a shared pair. Models that publish none of these keep 16:9 and 9:16.
+ */
+const VIDEO_RATIO_RULES: { test: RegExp; ratios: string[] }[] = [
+  { test: /^sd2-933-720p-9:16$/, ratios: ['9:16'] },
+  {
+    test: /^minimaxh3$/,
+    ratios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
+  },
+  {
+    test: /^sd2\.5-y$/,
+    ratios: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
+  },
+  {
+    test: /^seedance_v2\.5$/,
+    ratios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+  },
+  { test: /^kling-4\.0/, ratios: ['16:9', '9:16', '1:1', '21:9'] },
+  { test: /^kling/i, ratios: ['16:9', '9:16', '1:1'] },
+  {
+    test: /^grok-imagine-video$/,
+    ratios: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '21:9', '5:2'],
+  },
+  { test: /^jimeng/, ratios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] },
+  {
+    test: /^wan3\.0-video/,
+    ratios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'],
+  },
+  { test: /^wan3-/, ratios: ['16:9', '9:16', '1:1'] },
+  { test: /^wan/, ratios: ['16:9', '9:16', '1:1', '4:3', '3:4'] },
+  { test: /SD2|sd2|Minimax-/, ratios: ['16:9', '9:16', '1:1'] },
 ]
 
 const VIDEO_RESOLUTION_ITEMS: ParamOption[] = [
@@ -117,21 +149,95 @@ const VIDEO_RESOLUTION_ITEMS: ParamOption[] = [
   { value: '4k', label: '4K' },
 ]
 
-/** Landscape and portrait pixels for each resolution the page offers. */
+/** Pixels whose aspect is the ratio. Vendors that only read `size` use these. */
 const VIDEO_PIXELS: Record<string, Record<string, string>> = {
-  '720p': { '16:9': '1280x720', '9:16': '720x1280' },
-  '1080p': { '16:9': '1920x1080', '9:16': '1080x1920' },
-  '4k': { '16:9': '3840x2160', '9:16': '2160x3840' },
+  '720p': {
+    '16:9': '1280x720',
+    '9:16': '720x1280',
+    '1:1': '720x720',
+    '4:3': '960x720',
+    '3:4': '720x960',
+    '3:2': '1080x720',
+    '2:3': '720x1080',
+    '21:9': '1680x720',
+    '5:2': '1800x720',
+  },
+  '1080p': {
+    '16:9': '1920x1080',
+    '9:16': '1080x1920',
+    '1:1': '1080x1080',
+    '4:3': '1440x1080',
+    '3:4': '1080x1440',
+    '3:2': '1620x1080',
+    '2:3': '1080x1620',
+    '21:9': '2520x1080',
+    '5:2': '2700x1080',
+  },
+  '4k': {
+    '16:9': '3840x2160',
+    '9:16': '2160x3840',
+    '1:1': '2160x2160',
+    '4:3': '2880x2160',
+    '3:4': '2160x2880',
+    '3:2': '3240x2160',
+    '2:3': '2160x3240',
+    '21:9': '5040x2160',
+    '5:2': '5400x2160',
+  },
   // Sora 2 Pro's higher official size. It is not 1920x1080.
   '1792': { '16:9': '1792x1024', '9:16': '1024x1792' },
 }
 
-const VIDEO_RATIO_FIELD: ParamField = {
-  key: 'ratio',
-  labelKey: 'Aspect Ratio',
-  type: 'select',
-  options: VIDEO_RATIO_ITEMS,
-  defaultValue: '16:9',
+/**
+ * Wan rejects a size that is not in its published tables. 16:9 and 9:16 match
+ * the generic pixels; the square and 4:3 frames do not.
+ */
+const WAN_PIXELS: Record<string, Record<string, string>> = {
+  '720p': {
+    '16:9': '1280x720',
+    '9:16': '720x1280',
+    '1:1': '960x960',
+    '4:3': '1104x832',
+    '3:4': '832x1104',
+  },
+  '1080p': {
+    '16:9': '1920x1080',
+    '9:16': '1080x1920',
+    '1:1': '1440x1440',
+    '4:3': '1648x1248',
+    '3:4': '1248x1648',
+  },
+}
+
+function videoRatios(model: string): string[] {
+  return (
+    VIDEO_RATIO_RULES.find((rule) => rule.test.test(model))?.ratios ??
+    DEFAULT_VIDEO_RATIOS
+  )
+}
+
+function videoRatioField(model: string): ParamField {
+  const ratios = videoRatios(model)
+  return {
+    key: 'ratio',
+    labelKey: 'Aspect Ratio',
+    type: 'select',
+    options: ratios.map((ratio) => ({ value: ratio, label: ratio })),
+    defaultValue: ratios.includes('16:9') ? '16:9' : (ratios[0] ?? '16:9'),
+  }
+}
+
+function isAlibabaWan(model: string): boolean {
+  return /^wan/.test(model) && !/^wan3-/.test(model)
+}
+
+function videoFrame(
+  model: string,
+  resolution: string,
+  ratio: string
+): string | undefined {
+  const table = isAlibabaWan(model) ? WAN_PIXELS : VIDEO_PIXELS
+  return (table[resolution] ?? table['720p'])?.[ratio]
 }
 
 const VIDEO_RESOLUTION_FIELD: ParamField = {
@@ -155,18 +261,36 @@ const SORA_PRO_RESOLUTION_FIELD: ParamField = {
 }
 
 /**
- * Vendor duration limits differ and are not published by the gateway, so the
- * page takes any positive value and lets the upstream reject what it cannot
- * do. A select of guessed durations would advertise options that do not exist.
+ * Inclusive second ranges the quick-generate page will send. Top Image
+ * families differ: SD2.5, wan3 and Kling 4.0 accept 4-30; SD2.0 and MiniMax
+ * accept 4-15. Asdada publishes its own ranges. Other vendors do not publish
+ * a range here, so they keep the page bound of 1-60 instead of a guessed list.
  */
-const VIDEO_SECONDS_FIELD: ParamField = {
-  key: 'seconds',
-  labelKey: 'Duration',
-  type: 'number',
-  defaultValue: 5,
-  min: 1,
-  max: 60,
-  suffix: 's',
+const VIDEO_DURATION_RULES: { test: RegExp; min: number; max: number }[] = [
+  { test: /^sd2-933-720p-9:16$/, min: 5, max: 15 },
+  { test: /^(?:minimaxh3|sd2\.5-y|seedance_v2\.5)$/, min: 4, max: 30 },
+  { test: /SD2\.5/, min: 4, max: 30 },
+  { test: /^wan3-/, min: 4, max: 30 },
+  { test: /^kling-4\.0/, min: 4, max: 30 },
+  { test: /SD2\.0|sd2\.0|^sd2-/, min: 4, max: 15 },
+  { test: /^Minimax-|^MiniMax-/, min: 4, max: 15 },
+]
+
+function videoDurationBounds(model: string): { min: number; max: number } {
+  const rule = VIDEO_DURATION_RULES.find((item) => item.test.test(model))
+  return rule ?? { min: 1, max: 60 }
+}
+
+function videoSecondsField(model: string): ParamField {
+  const bounds = videoDurationBounds(model)
+  return {
+    key: 'seconds',
+    labelKey: 'Duration {{min}}-{{max}}s',
+    type: 'number',
+    defaultValue: 5,
+    min: bounds.min,
+    max: bounds.max,
+  }
 }
 
 type ImageSizeRule = {
@@ -336,18 +460,18 @@ export function capabilityFor(
       return {
         kind,
         ...media,
-        fields: [VIDEO_RATIO_FIELD, SORA_PRO_RESOLUTION_FIELD, VIDEO_SECONDS_FIELD],
+        fields: [videoRatioField(model), SORA_PRO_RESOLUTION_FIELD, videoSecondsField(model)],
       }
     }
     // Sora 2 only accepts the 720p pair, so a resolution list would offer
     // sizes the model rejects.
     if (/sora/i.test(model)) {
-      return { kind, ...media, fields: [VIDEO_RATIO_FIELD, VIDEO_SECONDS_FIELD] }
+      return { kind, ...media, fields: [videoRatioField(model), videoSecondsField(model)] }
     }
     return {
       kind,
       ...media,
-      fields: [VIDEO_RATIO_FIELD, VIDEO_RESOLUTION_FIELD, VIDEO_SECONDS_FIELD],
+        fields: [videoRatioField(model), VIDEO_RESOLUTION_FIELD, videoSecondsField(model)],
     }
   }
 
@@ -400,6 +524,29 @@ export function defaultValues(capability: ModelCapability): GenerationValues {
   return values
 }
 
+/**
+ * Keeps a stored choice only when the current model still offers it.
+ * A ratio from the previous model must not be sent, or shown, after a switch.
+ */
+export function compatibleValues(
+  capability: ModelCapability,
+  values: GenerationValues
+): GenerationValues {
+  const next = defaultValues(capability)
+  for (const field of capability.fields) {
+    const stored = values[field.key]
+    if (stored == null || stored === '') continue
+    if (
+      field.type === 'select' &&
+      !field.options.some((option) => option.value === stored)
+    ) {
+      continue
+    }
+    next[field.key] = stored
+  }
+  return next
+}
+
 export type ImageRequest = {
   size: string
   count: number
@@ -439,7 +586,21 @@ export function buildImageRequest(
   return withReferences(request, model, 'image', references)
 }
 
-export type VideoRequest = { size?: string; duration?: number; images?: string[] }
+export type VideoRequest = {
+  size?: string
+  duration?: number
+  images?: string[]
+  /**
+   * Task submission keeps vendor fields on `metadata`. `ratio` and
+   * `aspect_ratio` are what the video plugins read; Wan also reads
+   * `metadata.parameters.ratio`.
+   */
+  metadata?: {
+    ratio: string
+    aspect_ratio: string
+    parameters?: { ratio: string }
+  }
+}
 
 export function buildVideoRequest(
   values: GenerationValues,
@@ -447,14 +608,17 @@ export function buildVideoRequest(
   references: string[] = []
 ): VideoRequest {
   const request: VideoRequest = {}
-  const frames =
-    VIDEO_PIXELS[values.resolution ?? ''] ?? VIDEO_PIXELS['720p']
-  const size = frames?.[values.ratio ?? ''] ?? frames?.['16:9']
+  const ratio = values.ratio ?? '16:9'
+  const size = videoFrame(model, values.resolution ?? '720p', ratio)
   if (size) request.size = size
+  request.metadata = { ratio, aspect_ratio: ratio }
+  if (isAlibabaWan(model)) request.metadata.parameters = { ratio }
 
   const seconds = Number(values.seconds)
   if (Number.isFinite(seconds) && seconds > 0) {
-    request.duration = Math.round(seconds)
+    const bounds = videoDurationBounds(model)
+    const rounded = Math.round(seconds)
+    request.duration = Math.min(bounds.max, Math.max(bounds.min, rounded))
   }
   return withReferences(request, model, 'video', references)
 }
