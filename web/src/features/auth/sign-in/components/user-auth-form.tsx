@@ -103,6 +103,7 @@ export function UserAuthForm({
     resetTurnstile,
     validateTurnstile,
   } = useTurnstile()
+  const turnstileReady = !isTurnstileEnabled || Boolean(turnstileToken)
   const { handleLoginResult } = useAuthRedirect()
 
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
@@ -168,10 +169,10 @@ export function UserAuthForm({
 
     if (!validateTurnstile()) return
 
+    // Turnstile tokens are single-use. Clear the local copy before the request
+    // so a double-click cannot replay it, then remount only after the attempt.
     const submittedTurnstileToken = turnstileToken
-    if (isTurnstileEnabled) {
-      resetTurnstile()
-    }
+    if (isTurnstileEnabled) setTurnstileToken('')
 
     setIsLoading(true)
     try {
@@ -194,6 +195,7 @@ export function UserAuthForm({
       handleServerError(AuthOperationError.from(error, loginFailedMessage))
     } finally {
       setIsLoading(false)
+      if (isTurnstileEnabled) resetTurnstile()
     }
   }
 
@@ -411,7 +413,7 @@ export function UserAuthForm({
             <Button
               type='submit'
               className='mt-2 w-full justify-center gap-2'
-              disabled={isLoading}
+              disabled={isLoading || !turnstileReady}
             >
               {isLoading ? <Loader2 className='animate-spin' /> : <LogIn />}
               {t('Sign in')}
