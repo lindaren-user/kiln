@@ -66,8 +66,28 @@ type QuickGenerateUploadResponse = {
 
 type QuickGenerateUploadStatusResponse = {
   success: boolean
-  data?: { enabled: boolean }
+  data?: { enabled: boolean; multipart_enabled?: boolean }
 }
+
+type QuickGenerateMultipartGrant = {
+  exists: boolean
+  url: string
+  key?: string
+  upload_id?: string
+  part_size?: number
+  parts?: { part_number: number; url: string }[]
+}
+
+type QuickGenerateMultipartResponse = {
+  success: boolean
+  message?: string
+  data?: QuickGenerateMultipartGrant
+}
+
+/** Files at or above this size take the multipart path. */
+const MULTIPART_THRESHOLD_BYTES = 20 * 1024 * 1024
+const MULTIPART_CONCURRENCY = 3
+const MULTIPART_RETRIES = 3
 
 function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return crypto.subtle
@@ -83,8 +103,13 @@ function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 async function prepareQuickGenerateUpload(
   blob: Blob,
   mediaType: string,
-  digest: string
+  digest: string,
+  multipartAllowed: boolean,
+  onUploaded: () => void
 ): Promise<string> {
+  if (multipartAllowed && blob.size >= MULTIPART_THRESHOLD_BYTES) {
+    return uploadQuickGenerateMultipart(blob, mediaType, digest, onUploaded)
+  }
   const response = await api.post<QuickGenerateUploadResponse>(
     '/api/quick-generate/upload',
     {
@@ -97,23 +122,117 @@ async function prepareQuickGenerateUpload(
   if (!response.data.success || !grant?.url) {
     throw createServerError(response.data, t('Generation failed'))
   }
-  if (grant.exists) return grant.url
-  if (!grant.put_url) throw new Error(t('Generation failed'))
-  const upload = await fetch(grant.put_url, {
-    method: 'PUT',
-    headers: grant.headers,
-    body: blob,
-  })
-  if (!upload.ok) throw new Error(t('Generation failed'))
+  if (!grant.exists) {
+    if (!grant.put_url) throw new Error(t('Generation failed'))
+    const upload = await fetch(grant.put_url, {
+      method: 'PUT',
+      headers: grant.headers,
+      body: blob,
+    })
+    if (!upload.ok) throw new Error(t('Generation failed'))
+  }
+  onUploaded()
   return grant.url
+}
+
+/** Sends one part, retrying a few times since a slice costs little to resend. */
+async function putQuickGeneratePart(url: string, chunk: Blob): Promise<string> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < MULTIPART_RETRIES; attempt++) {
+    try {
+      const response = await fetch(url, { method: 'PUT', body: chunk })
+      if (!response.ok) throw new Error(t('Generation failed'))
+      const etag = response.headers.get('ETag')
+      if (!etag) throw new Error(t('Generation failed'))
+      return etag
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(t('Generation failed'))
+}
+
+/**
+ * Uploads a large file in slices so a slow connection never has to hold one
+ * long request open, then asks the gateway to assemble and verify it.
+ */
+async function uploadQuickGenerateMultipart(
+  blob: Blob,
+  mediaType: string,
+  digest: string,
+  onUploaded: () => void
+): Promise<string> {
+  const begin = await api.post<QuickGenerateMultipartResponse>(
+    '/api/quick-generate/upload/multipart',
+    {
+      sha256: digest,
+      content_type: blob.type || mediaType,
+      size: blob.size,
+    }
+  )
+  const grant = begin.data.data
+  if (!begin.data.success || !grant) {
+    throw createServerError(begin.data, t('Generation failed'))
+  }
+  if (grant.exists) {
+    if (!grant.url) throw new Error(t('Generation failed'))
+    onUploaded()
+    return grant.url
+  }
+  const parts = grant.parts ?? []
+  const partSize = grant.part_size ?? 0
+  if (!grant.key || !grant.upload_id || parts.length === 0 || partSize <= 0) {
+    throw new Error(t('Generation failed'))
+  }
+
+  const etags = new Map<number, string>()
+  const queue = [...parts]
+  const worker = async () => {
+    for (let part = queue.shift(); part; part = queue.shift()) {
+      const start = (part.part_number - 1) * partSize
+      const chunk = blob.slice(start, Math.min(start + partSize, blob.size))
+      etags.set(part.part_number, await putQuickGeneratePart(part.url, chunk))
+    }
+  }
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MULTIPART_CONCURRENCY, parts.length) },
+      worker
+    )
+  )
+
+  const complete = await api.post<{
+    success: boolean
+    message?: string
+    data?: { url: string }
+  }>('/api/quick-generate/upload/multipart/complete', {
+    key: grant.key,
+    upload_id: grant.upload_id,
+    content_type: blob.type || mediaType,
+    size: blob.size,
+    sha256: digest,
+    parts: parts.map((part) => ({
+      part_number: part.part_number,
+      etag: etags.get(part.part_number),
+    })),
+  })
+  if (!complete.data.success || !complete.data.data?.url) {
+    throw createServerError(complete.data, t('Generation failed'))
+  }
+  onUploaded()
+  return complete.data.data.url
 }
 
 /**
  * Moves local attachments into temporary object storage. Objects are keyed by
  * content digest, so identical files share one upload and one stored object.
+ * `onProgress` reports uploaded bytes so the composer can show a spinner.
  */
 export async function uploadQuickGenerateReferences(
-  references: ReferenceAttachment[]
+  references: ReferenceAttachment[],
+  onProgress?: (uploaded: number, total: number) => void
 ): Promise<ReferenceAttachment[]> {
   if (references.length === 0) return []
 
@@ -123,7 +242,17 @@ export async function uploadQuickGenerateReferences(
   if (!statusResponse.data.success || !statusResponse.data.data?.enabled) {
     throw new Error(t('Temporary file storage is not configured'))
   }
+  const multipartAllowed = Boolean(statusResponse.data.data.multipart_enabled)
 
+  const localReferences = references.filter((reference) =>
+    reference.url.startsWith('blob:')
+  )
+  const total = localReferences.length
+  let done = 0
+  const report = () => {
+    done += 1
+    onProgress?.(done, total)
+  }
   const urlsByDigest = new Map<string, string>()
   const uploadedReferences: ReferenceAttachment[] = []
   for (const reference of references) {
@@ -137,8 +266,16 @@ export async function uploadQuickGenerateReferences(
     const digest = await sha256Hex(await blob.arrayBuffer())
     let url = urlsByDigest.get(digest)
     if (!url) {
-      url = await prepareQuickGenerateUpload(blob, reference.mediaType, digest)
+      url = await prepareQuickGenerateUpload(
+        blob,
+        reference.mediaType,
+        digest,
+        multipartAllowed,
+        report
+      )
       urlsByDigest.set(digest, url)
+    } else {
+      report()
     }
     uploadedReferences.push({ ...reference, url })
   }

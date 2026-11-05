@@ -69,6 +69,8 @@ type GenerateComposerProps = {
   /** Returns false when the prompt was held back (e.g. waiting on a confirm). */
   onSubmit: (prompt: string, references: ReferenceAttachment[]) => boolean
   busy: boolean
+  /** Reference media is still travelling to storage; no success toast. */
+  uploading?: boolean
   disabled: boolean
 }
 
@@ -314,6 +316,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
         onChange={setText}
         placeholder={props.promptPlaceholder}
         label={t('Prompt')}
+        uploading={props.uploading}
         disabled={props.disabled}
       />
       {/* Every parameter shares one row and wraps only when the width runs
@@ -354,8 +357,8 @@ export function GenerateComposer(props: GenerateComposerProps) {
 
         <PromptInputSubmit
           className='ml-auto shrink-0 self-end'
-          status={props.busy ? 'submitted' : undefined}
-          disabled={!ready}
+          status={props.busy || props.uploading ? 'submitted' : undefined}
+          disabled={!ready || Boolean(props.uploading)}
           aria-label={t('Generate')}
         />
       </PromptInputFooter>

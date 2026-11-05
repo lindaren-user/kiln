@@ -61,6 +61,18 @@ type quickGenerateUploadStorage struct {
 	config      system_setting.QuickGenerateUploadConfig
 }
 
+func newQuickGenerateUploadStorage(config system_setting.QuickGenerateUploadConfig) quickGenerateUploadStorage {
+	return quickGenerateUploadStorage{
+		signer: v4.NewSigner(),
+		credentials: aws.Credentials{
+			AccessKeyID:     config.AccessKey,
+			SecretAccessKey: config.SecretKey,
+			Source:          "quick-generate-r2",
+		},
+		config: config,
+	}
+}
+
 func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRequest) (*QuickGenerateUploadGrant, error) {
 	config, err := system_setting.LoadQuickGenerateUploadConfig()
 	if err != nil {
@@ -77,15 +89,7 @@ func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRe
 	if err != nil {
 		return nil, err
 	}
-	storage := quickGenerateUploadStorage{
-		signer: v4.NewSigner(),
-		credentials: aws.Credentials{
-			AccessKeyID:     config.AccessKey,
-			SecretAccessKey: config.SecretKey,
-			Source:          "quick-generate-r2",
-		},
-		config: config,
-	}
+	storage := newQuickGenerateUploadStorage(config)
 
 	stored, err := storage.findObject(ctx, objectURL, input)
 	if err != nil {

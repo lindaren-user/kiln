@@ -85,6 +85,9 @@ export function QuickGenerate() {
   // Identifies the generation that may still write to state; a newer one, or
   // leaving the page, cancels the video poll of an older one.
   const activeRunRef = useRef('')
+  // Reference media is uploaded before the vendor call; the composer shows a
+  // spinner instead of a success message, and only blocks submitting again.
+  const [uploadingReferences, setUploadingReferences] = useState(false)
 
   // A remembered model that is gone falls back to the first available one.
   const model = models.some((item) => item.name === preferredModel)
@@ -156,9 +159,11 @@ export function QuickGenerate() {
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
         const parameterModel = params.parameterModel || params.model
+        setUploadingReferences(params.references.length > 0)
         const uploadedReferences = await uploadQuickGenerateReferences(
           params.references
         )
+        setUploadingReferences(false)
         if (isCancelled()) return
         const imageReferences = uploadedReferences
           .filter((reference) => reference.mediaType.startsWith('image/'))
@@ -226,6 +231,7 @@ export function QuickGenerate() {
             : current
         )
       } catch (error) {
+        setUploadingReferences(false)
         if (isCancelled()) return
         setGeneration((current) =>
           current?.id === id
@@ -436,6 +442,7 @@ export function QuickGenerate() {
           onKeyChange={selectKey}
           onSubmit={submit}
           busy={busy}
+          uploading={uploadingReferences}
           disabled={noModels || keys.length === 0}
         />
       </div>

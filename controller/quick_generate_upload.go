@@ -10,6 +10,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// quickGenerateUploadErrorStatus maps an upload failure onto the status and
+// message the console shows; storage outages never leak the vendor response.
+func quickGenerateUploadErrorStatus(err error) (int, string) {
+	switch {
+	case errors.Is(err, service.ErrQuickGenerateUploadDisabled),
+		errors.Is(err, service.ErrQuickGenerateMultipartDisabled):
+		return http.StatusServiceUnavailable, err.Error()
+	case errors.Is(err, service.ErrQuickGenerateStorageUnavailable):
+		return http.StatusBadGateway, service.ErrQuickGenerateStorageUnavailable.Error()
+	default:
+		return http.StatusBadRequest, err.Error()
+	}
+}
+
 func PrepareQuickGenerateUpload(c *gin.Context) {
 	var request service.QuickGenerateUploadRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
@@ -19,15 +33,39 @@ func PrepareQuickGenerateUpload(c *gin.Context) {
 	grant, err := service.PrepareQuickGenerateUpload(c.Request.Context(), request)
 	c.Header("Cache-Control", "private, no-store")
 	if err != nil {
-		status := http.StatusBadRequest
-		message := err.Error()
-		switch {
-		case errors.Is(err, service.ErrQuickGenerateUploadDisabled):
-			status = http.StatusServiceUnavailable
-		case errors.Is(err, service.ErrQuickGenerateStorageUnavailable):
-			status = http.StatusBadGateway
-			message = service.ErrQuickGenerateStorageUnavailable.Error()
-		}
+		status, message := quickGenerateUploadErrorStatus(err)
+		common.ApiErrorStatus(c, status, common.NewMessage(message))
+		return
+	}
+	common.ApiSuccess(c, grant)
+}
+
+func BeginQuickGenerateMultipartUpload(c *gin.Context) {
+	var request service.QuickGenerateMultipartBeginRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	grant, err := service.BeginQuickGenerateMultipartUpload(c.Request.Context(), request)
+	c.Header("Cache-Control", "private, no-store")
+	if err != nil {
+		status, message := quickGenerateUploadErrorStatus(err)
+		common.ApiErrorStatus(c, status, common.NewMessage(message))
+		return
+	}
+	common.ApiSuccess(c, grant)
+}
+
+func CompleteQuickGenerateMultipartUpload(c *gin.Context) {
+	var request service.QuickGenerateMultipartCompleteRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	grant, err := service.CompleteQuickGenerateMultipartUpload(c.Request.Context(), request)
+	c.Header("Cache-Control", "private, no-store")
+	if err != nil {
+		status, message := quickGenerateUploadErrorStatus(err)
 		common.ApiErrorStatus(c, status, common.NewMessage(message))
 		return
 	}
@@ -37,5 +75,8 @@ func PrepareQuickGenerateUpload(c *gin.Context) {
 func QuickGenerateUploadEnabled(c *gin.Context) {
 	config, err := system_setting.LoadQuickGenerateUploadConfig()
 	c.Header("Cache-Control", "private, no-store")
-	common.ApiSuccess(c, gin.H{"enabled": err == nil && config.Endpoint != ""})
+	common.ApiSuccess(c, gin.H{
+		"enabled":           err == nil && config.Endpoint != "",
+		"multipart_enabled": err == nil && config.Endpoint != "",
+	})
 }
