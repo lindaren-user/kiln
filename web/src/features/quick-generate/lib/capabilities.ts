@@ -649,12 +649,16 @@ export function buildVideoRequest(
   references: string[] = [],
   mediaReferences: ReferenceAttachment[] = []
 ): VideoRequest {
-  let request: VideoRequest = {}
   const ratio = values.ratio ?? '16:9'
+  const metadata: NonNullable<VideoRequest['metadata']> = {
+    ratio,
+    aspect_ratio: ratio,
+  }
+  if (isAlibabaWan(model)) metadata.parameters = { ratio }
+
+  let request: VideoRequest = { metadata }
   const size = videoFrame(model, values.resolution ?? '720p', ratio)
   if (size) request.size = size
-  request.metadata = { ratio, aspect_ratio: ratio }
-  if (isAlibabaWan(model)) request.metadata.parameters = { ratio }
 
   const seconds = Number(values.seconds)
   if (Number.isFinite(seconds) && seconds > 0) {
@@ -663,17 +667,13 @@ export function buildVideoRequest(
     request.duration = Math.min(bounds.max, Math.max(bounds.min, rounded))
   }
   request = withReferences(request, model, 'video', references)
-  const metadata = request.metadata ?? {
-    ratio,
-    aspect_ratio: ratio,
-  }
-  request.metadata = metadata
-  const videos = mediaReferences
-    .filter((reference) => reference.mediaType.startsWith('video/'))
-    .map((reference) => reference.url)
-  const audios = mediaReferences
-    .filter((reference) => reference.mediaType.startsWith('audio/'))
-    .map((reference) => reference.url)
+
+  const urlsOfType = (prefix: string) =>
+    mediaReferences
+      .filter((reference) => reference.mediaType.startsWith(prefix))
+      .map((reference) => reference.url)
+  const videos = urlsOfType('video/')
+  const audios = urlsOfType('audio/')
   if (videos.length > 0) {
     request.reference_videos = videos
     metadata.reference_video = videos

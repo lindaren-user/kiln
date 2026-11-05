@@ -270,10 +270,14 @@ export function GenerateComposer(props: GenerateComposerProps) {
   const referenceImages = props.capability.referenceImages
   const acceptsReferences =
     Boolean(referenceImages) || props.capability.mediaNotice
+  const videoReferenceLimit = 5
   const maxReferences =
     props.capability.kind === 'video' && acceptsReferences
-      ? 5
+      ? videoReferenceLimit
       : (referenceImages?.max ?? 0)
+  const acceptedTypes = props.capability.mediaNotice
+    ? undefined
+    : REFERENCE_IMAGE_TYPES
   const handleSubmit = (message: PromptInputMessage) => {
     const prompt = message.text?.trim() ?? ''
     if (!prompt || !ready) return
@@ -296,11 +300,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
         'bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]',
         props.busy && 'bg-muted/50 focus-within:bg-background/95'
       )}
-      accept={
-        referenceImages && !props.capability.mediaNotice
-          ? REFERENCE_IMAGE_TYPES
-          : undefined
-      }
+      accept={referenceImages ? acceptedTypes : undefined}
       multiple={maxReferences > 1}
       maxFiles={maxReferences}
       maxFileSize={MAX_REFERENCE_MEDIA_BYTES}

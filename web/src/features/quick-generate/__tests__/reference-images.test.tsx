@@ -65,55 +65,42 @@ function renderComposer(model: string, kind: 'image' | 'video') {
   )
 }
 
-describe('reference image upload', () => {
-  it('offers an image picker when the model accepts reference images', () => {
+describe('reference media upload', () => {
+  it('offers an image-only picker when the model accepts reference images', () => {
     renderComposer('sora-2', 'video')
 
     expect(
-      screen.getByRole('button', { name: 'Add a reference image' })
+      screen.getByRole('button', { name: 'Add reference media' })
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Upload files')).toHaveAttribute(
       'accept',
       'image/*'
     )
-    expect(
-      screen.queryByText(
-        'Quick generate does not support reference video or audio. The API does.'
-      )
-    ).toBeNull()
   })
 
   it('hides the picker on a text-only image model', () => {
     renderComposer('dall-e-3', 'image')
 
     expect(
-      screen.queryByRole('button', { name: 'Add a reference image' })
+      screen.queryByRole('button', { name: 'Add reference media' })
     ).toBeNull()
   })
 
-  it('warns that reference video and audio are not sent', () => {
+  it('accepts any media type for a model that reads reference video and audio', () => {
     renderComposer('wan3.0-video', 'video')
 
     expect(
-      screen.getByText(
-        'Quick generate does not support reference video or audio. The API does.'
-      )
+      screen.getByRole('button', { name: 'Add reference media' })
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Add a reference image' })
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Upload files')).not.toHaveAttribute('accept')
   })
 
-  it('warns without a picker when the model needs audio and takes no image', () => {
+  it('keeps the picker for a speech-to-video model that also needs audio', () => {
     renderComposer('wan2.2-s2v', 'video')
 
     expect(
-      screen.getByText(
-        'Quick generate does not support reference video or audio. The API does.'
-      )
+      screen.getByRole('button', { name: 'Add reference media' })
     ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Add a reference image' })
-    ).toBeNull()
+    expect(screen.getByLabelText('Upload files')).not.toHaveAttribute('accept')
   })
 })

@@ -69,13 +69,49 @@ type QuickGenerateUploadStatusResponse = {
   data?: { enabled: boolean }
 }
 
-function hex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
-    ''
-  )
+function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  return crypto.subtle
+    .digest('SHA-256', bytes)
+    .then((digest) =>
+      Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, '0')
+      ).join('')
+    )
 }
 
-/** Uses a global content hash so identical files share one short-lived R2 object. */
+/** Reserves a slot for `blob`, uploading it first when it is not stored yet. */
+async function prepareQuickGenerateUpload(
+  blob: Blob,
+  mediaType: string,
+  digest: string
+): Promise<string> {
+  const response = await api.post<QuickGenerateUploadResponse>(
+    '/api/quick-generate/upload',
+    {
+      sha256: digest,
+      content_type: blob.type || mediaType,
+      size: blob.size,
+    }
+  )
+  const grant = response.data.data
+  if (!response.data.success || !grant?.url) {
+    throw createServerError(response.data, t('Generation failed'))
+  }
+  if (grant.exists) return grant.url
+  if (!grant.put_url) throw new Error(t('Generation failed'))
+  const upload = await fetch(grant.put_url, {
+    method: 'PUT',
+    headers: grant.headers,
+    body: blob,
+  })
+  if (!upload.ok) throw new Error(t('Generation failed'))
+  return grant.url
+}
+
+/**
+ * Moves local attachments into temporary object storage. Objects are keyed by
+ * content digest, so identical files share one upload and one stored object.
+ */
 export async function uploadQuickGenerateReferences(
   references: ReferenceAttachment[]
 ): Promise<ReferenceAttachment[]> {
@@ -88,8 +124,8 @@ export async function uploadQuickGenerateReferences(
     throw new Error(t('Temporary file storage is not configured'))
   }
 
-  const uploadedReferences: ReferenceAttachment[] = []
   const urlsByDigest = new Map<string, string>()
+  const uploadedReferences: ReferenceAttachment[] = []
   for (const reference of references) {
     if (!reference.url.startsWith('blob:')) {
       uploadedReferences.push(reference)
@@ -98,38 +134,13 @@ export async function uploadQuickGenerateReferences(
     const response = await fetch(reference.url)
     if (!response.ok) throw new Error(t('Generation failed'))
     const blob = await response.blob()
-    const digest = new Uint8Array(
-      await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
-    )
-    const digestHex = hex(digest)
-    const cachedURL = urlsByDigest.get(digestHex)
-    if (cachedURL) {
-      uploadedReferences.push({ ...reference, url: cachedURL })
-      continue
+    const digest = await sha256Hex(await blob.arrayBuffer())
+    let url = urlsByDigest.get(digest)
+    if (!url) {
+      url = await prepareQuickGenerateUpload(blob, reference.mediaType, digest)
+      urlsByDigest.set(digest, url)
     }
-    const grantResponse = await api.post<QuickGenerateUploadResponse>(
-      '/api/quick-generate/upload',
-      {
-        sha256: digestHex,
-        content_type: blob.type || reference.mediaType,
-        size: blob.size,
-      }
-    )
-    const grant = grantResponse.data.data
-    if (!grantResponse.data.success || !grant?.url) {
-      throw createServerError(grantResponse.data, t('Generation failed'))
-    }
-    if (!grant.exists) {
-      if (!grant.put_url) throw new Error(t('Generation failed'))
-      const uploadResponse = await fetch(grant.put_url, {
-        method: 'PUT',
-        headers: grant.headers,
-        body: blob,
-      })
-      if (!uploadResponse.ok) throw new Error(t('Generation failed'))
-    }
-    urlsByDigest.set(digestHex, grant.url)
-    uploadedReferences.push({ ...reference, url: grant.url })
+    uploadedReferences.push({ ...reference, url })
   }
   return uploadedReferences
 }

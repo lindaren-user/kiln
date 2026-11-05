@@ -17,20 +17,20 @@ func PrepareQuickGenerateUpload(c *gin.Context) {
 		return
 	}
 	grant, err := service.PrepareQuickGenerateUpload(c.Request.Context(), request)
+	c.Header("Cache-Control", "private, no-store")
 	if err != nil {
 		status := http.StatusBadRequest
-		if err == service.ErrQuickGenerateUploadDisabled {
-			status = http.StatusServiceUnavailable
-		}
 		message := err.Error()
-		if errors.Is(err, service.ErrQuickGenerateStorageUnavailable) {
+		switch {
+		case errors.Is(err, service.ErrQuickGenerateUploadDisabled):
+			status = http.StatusServiceUnavailable
+		case errors.Is(err, service.ErrQuickGenerateStorageUnavailable):
 			status = http.StatusBadGateway
 			message = service.ErrQuickGenerateStorageUnavailable.Error()
 		}
 		common.ApiErrorStatus(c, status, common.NewMessage(message))
 		return
 	}
-	c.Header("Cache-Control", "private, no-store")
 	common.ApiSuccess(c, grant)
 }
 
