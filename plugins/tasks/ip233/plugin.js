@@ -114,7 +114,10 @@ const VIDEO_MODELS = {
 // Image models that answer with a task id instead of the images themselves.
 // `size` selects the pixel-or-ratio field, `aspect` the aspect_ratio-only one.
 const IMAGE_MODELS = {
-  "gpt-image-2": { size: "size" },
+  // The gateway already serves `gpt-image-2` natively with its own builtin
+  // token pricing, so the IP233 task variant carries a prefix and the vendor
+  // body still names the real model.
+  "ip233-gpt-image-2": { size: "size", upstream: "gpt-image-2" },
   "gpt-image-2-1k": { size: "size" },
   "gpt-image-2-2k": { size: "size" },
   "gpt-image-2-4k": { size: "size" },
@@ -415,10 +418,10 @@ function isImageModel(ctx) {
 }
 
 function imageModel(ctx) {
-  const name = modelIdentity(ctx);
-  const spec = IMAGE_MODELS[name];
-  if (!spec) throw new Error((name || "model") + " is not an IP233 image model");
-  return { name, spec };
+  const declared = modelIdentity(ctx);
+  const spec = IMAGE_MODELS[declared];
+  if (!spec) throw new Error((declared || "model") + " is not an IP233 image model");
+  return { name: spec.upstream || declared, declared, spec };
 }
 
 function videoSeconds(request, spec) {
@@ -516,7 +519,7 @@ function imageVendorBody(identity, request, operation) {
   if (!prompt) throw new Error("prompt is required");
   const n = request.n === undefined || request.n === null || request.n === "" ? 1 : Number(request.n);
   if (!Number.isInteger(n) || n < 1) throw new Error("n must be a positive integer");
-  if (n > 1) throw new Error(identity.name + " generates one image per request; set n to 1");
+  if (n > 1) throw new Error(identity.declared + " generates one image per request; set n to 1");
 
   const images = firstURL(request, ["images", "image", "image_urls", "reference_images", "input_reference"], "reference images");
   if (operation === "edit" && !images.length) throw new Error("image is required");

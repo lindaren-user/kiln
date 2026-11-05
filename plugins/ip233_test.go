@@ -157,7 +157,8 @@ func TestIP233ImageSubmitRequest(t *testing.T) {
 	}
 
 	t.Run("size-based model keeps the ratio", func(t *testing.T) {
-		body := submit("gpt-image-2", map[string]any{"prompt": "p", "size": "1536x1024"})
+		body := submit("ip233-gpt-image-2", map[string]any{"prompt": "p", "size": "1536x1024"})
+		assert.Equal(t, "gpt-image-2", body["model"])
 		assert.Equal(t, "3:2", body["size"])
 		assert.Equal(t, true, body["async"])
 		assert.Equal(t, "url", body["response_format"])
@@ -187,7 +188,7 @@ func TestIP233ImageSubmitRequest(t *testing.T) {
 	})
 
 	t.Run("one image per request", func(t *testing.T) {
-		_, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", ip233SubmitContext("gpt-image-2", map[string]any{"prompt": "p", "n": 2}))
+		_, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", ip233SubmitContext("ip233-gpt-image-2", map[string]any{"prompt": "p", "n": 2}))
 		require.ErrorContains(t, err, "one image per request")
 	})
 }
@@ -250,7 +251,7 @@ func TestIP233CompletionUsageFacts(t *testing.T) {
 	}{
 		{
 			name:  "data array",
-			model: "gpt-image-2",
+			model: "ip233-gpt-image-2",
 			body:  `{"status":"completed","data":[{"url":"https://cdn.example/a.png"}]}`,
 			want:  map[string]any{"image_count": float64(1)},
 		},
@@ -262,7 +263,7 @@ func TestIP233CompletionUsageFacts(t *testing.T) {
 		},
 		{
 			name:  "a payload-less entry bills nothing",
-			model: "gpt-image-2",
+			model: "ip233-gpt-image-2",
 			body:  `{"status":"completed","data":[{"revised_prompt":"p"}]}`,
 			want:  map[string]any{},
 		},
@@ -322,12 +323,12 @@ func TestIP233ParseSubmitResponse(t *testing.T) {
 		assert.Equal(t, "task_1", parsed["taskId"])
 	})
 	t.Run("image create returns a task id", func(t *testing.T) {
-		parsed := callIP233Hook(t, plugin, "parseSubmitResponse", map[string]any{"model": "gpt-image-2"},
+		parsed := callIP233Hook(t, plugin, "parseSubmitResponse", map[string]any{"model": "ip233-gpt-image-2"},
 			map[string]any{"body": map[string]any{"task_id": "task_img_1", "status": "queued"}})
 		assert.Equal(t, "task_img_1", parsed["taskId"])
 	})
 	t.Run("an image answered at once completes immediately", func(t *testing.T) {
-		parsed := callIP233Hook(t, plugin, "parseSubmitResponse", map[string]any{"model": "gpt-image-2", "publicTaskId": "task_pub"},
+		parsed := callIP233Hook(t, plugin, "parseSubmitResponse", map[string]any{"model": "ip233-gpt-image-2", "publicTaskId": "task_pub"},
 			map[string]any{"body": map[string]any{"data": []any{map[string]any{"url": "https://cdn.example/a.png"}}}})
 		immediate, ok := parsed["immediate"].(map[string]any)
 		require.True(t, ok)

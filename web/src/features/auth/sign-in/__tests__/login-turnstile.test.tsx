@@ -24,6 +24,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import en from '@/i18n/locales/en.json'
 
+import { UserAuthForm } from '../components/user-auth-form'
+
 const loginMock = vi.fn()
 const resetTurnstileMock = vi.fn()
 const setTurnstileTokenMock = vi.fn()
@@ -95,10 +97,9 @@ vi.mock('@/lib/handle-server-error', () => ({
 }))
 
 vi.mock('@tanstack/react-router', async () => {
-  const actual =
-    await vi.importActual<typeof import('@tanstack/react-router')>(
-      '@tanstack/react-router'
-    )
+  const actual = await vi.importActual<typeof import('@tanstack/react-router')>(
+    '@tanstack/react-router'
+  )
   return {
     ...actual,
     Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
@@ -139,7 +140,6 @@ describe('UserAuthForm Turnstile', () => {
         })
     )
 
-    const { UserAuthForm } = await import('../components/user-auth-form')
     const user = userEvent.setup()
     render(
       <I18nextProvider i18n={i18n}>

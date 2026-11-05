@@ -24,6 +24,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import en from '@/i18n/locales/en.json'
 
+import { SignUpForm } from '../components/sign-up-form'
+
 const sendEmailVerificationMock = vi.fn()
 const resetTurnstileMock = vi.fn()
 const setTurnstileTokenMock = vi.fn()
@@ -117,7 +119,6 @@ beforeEach(async () => {
 
 describe('SignUpForm send-code Turnstile', () => {
   it('does not remount Turnstile after a successful verification email send', async () => {
-    const { SignUpForm } = await import('../components/sign-up-form')
     const user = userEvent.setup()
 
     render(
