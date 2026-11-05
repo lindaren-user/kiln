@@ -39,12 +39,21 @@ function model(overrides: Partial<PricingModel>): PricingModel {
 describe('generation model price', () => {
   it('shows a per-request price', () => {
     expect(
+      generationModelPrice(model({ quota_type: 1, model_price: 0.05 }), t, 'en')
+    ).toBe('$0.05 / call')
+  })
+
+  it('shows a fixed expression as one call', () => {
+    expect(
       generationModelPrice(
-        model({ quota_type: 1, model_price: 0.05 }),
+        model({
+          billing_mode: 'tiered_expr',
+          billing_expr: 'tier("request", fixed(0.018))',
+        }),
         t,
-        'en'
+        'zhCN'
       )
-    ).toBe('$0.05 / request')
+    ).toBe('$0.018 / call')
   })
 
   it('shows a task usage price with the schema unit', () => {
@@ -122,10 +131,9 @@ describe('generation model price', () => {
 
   it('prices one image run from the requested count', () => {
     expect(
-      generationRunPrice(
-        model({ quota_type: 1, model_price: 0.05 }),
-        { count: 4 }
-      )
+      generationRunPrice(model({ quota_type: 1, model_price: 0.05 }), {
+        count: 4,
+      })
     ).toBe('$0.2')
   })
 

@@ -1023,6 +1023,7 @@
     "Calculated ratio: {{ratio}}": "Tỷ lệ tính toán: {{ratio}}",
     "Calculating priority...": "Đang tính độ ưu tiên…",
     "Calculating...": "Đang tính...",
+    "call": "lần",
     "Call 1: the token group is premium": "Cuộc gọi 1: nhóm token là premium",
     "Call 2: the token group is default": "Cuộc gọi 2: nhóm token là default",
     "Call 3: the token has no group": "Cuộc gọi 3: token không có nhóm",

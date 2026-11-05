@@ -1023,6 +1023,7 @@
     "Calculated ratio: {{ratio}}": "計算倍率：{{ratio}}",
     "Calculating priority...": "優先度を計算中…",
     "Calculating...": "計算中...",
+    "call": "回",
     "Call 1: the token group is premium": "呼び出し①：トークングループは premium",
     "Call 2: the token group is default": "呼び出し②：トークングループは default",
     "Call 3: the token has no group": "呼び出し③：トークンにグループなし",

@@ -52,8 +52,13 @@ export function generationModelPrice(
       if (entry.unit === 'token') return []
       const amount = entry.formattedRange ?? entry.formatted
       if (!amount || amount === '-' || amount === '- – -') return []
-      const unitKey = getDynamicPriceUnitLabelKey(entry)
-      const unit = taskUsageUnitLabel(entry, language, unitKey ? t(unitKey) : '')
+      const unitKey =
+        entry.unit === 'request' ? 'call' : getDynamicPriceUnitLabelKey(entry)
+      const unit = taskUsageUnitLabel(
+        entry,
+        language,
+        unitKey ? t(unitKey) : ''
+      )
       return [unit ? `${amount} / ${unit}` : amount]
     })
     return parts.join(' · ')
@@ -81,14 +86,9 @@ export function generationModelPrice(
     return `${input} ${t('Input')} · ${output} ${t('Output')}`
   }
   if (!Number.isFinite(model.model_price)) return ''
-  const request = formatRequestPrice(
-    model,
-    false,
-    priceRate,
-    usdExchangeRate
-  )
+  const request = formatRequestPrice(model, false, priceRate, usdExchangeRate)
   if (request === '-') return ''
-  return `${request} / ${t('request')}`
+  return `${request} / ${t('call')}`
 }
 
 export type GenerationRunQuantity = {
@@ -139,7 +139,9 @@ export function generationRunPrice(
   if (dynamic) {
     const scaleRequest = !dynamic.primaryEntries.some(
       (entry) =>
-        entry.unit === 'second' || entry.unit === 'count' || entry.unit === 'image'
+        entry.unit === 'second' ||
+        entry.unit === 'count' ||
+        entry.unit === 'image'
     )
     let low = 0
     let high = 0
@@ -172,8 +174,7 @@ export function generationRunPrice(
   if (isUnconfiguredTaskUsageModel(model) || isTokenBasedModel(model)) return ''
   const unitPrice = model.model_price
   if (typeof unitPrice !== 'number' || !Number.isFinite(unitPrice)) return ''
-  const count =
-    quantities.count && quantities.count > 0 ? quantities.count : 1
+  const count = quantities.count && quantities.count > 0 ? quantities.count : 1
   const total = formatRequestPrice(
     { ...model, model_price: unitPrice * count },
     false,

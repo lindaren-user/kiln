@@ -1023,6 +1023,7 @@
     "Calculated ratio: {{ratio}}": "Расчётный коэффициент: {{ratio}}",
     "Calculating priority...": "Расчёт приоритета…",
     "Calculating...": "Вычисление...",
+    "call": "вызов",
     "Call 1: the token group is premium": "Вызов 1: группа токена — premium",
     "Call 2: the token group is default": "Вызов 2: группа токена — default",
     "Call 3: the token has no group": "Вызов 3: у токена нет группы",

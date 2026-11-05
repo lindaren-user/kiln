@@ -1023,6 +1023,7 @@
     "Calculated ratio: {{ratio}}": "Ratio calculé : {{ratio}}",
     "Calculating priority...": "Calcul de la priorité…",
     "Calculating...": "Calcul en cours...",
+    "call": "appel",
     "Call 1: the token group is premium": "Appel 1 : le groupe du jeton est premium",
     "Call 2: the token group is default": "Appel 2 : le groupe du jeton est default",
     "Call 3: the token has no group": "Appel 3 : le jeton n’a pas de groupe",

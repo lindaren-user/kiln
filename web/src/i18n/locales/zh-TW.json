@@ -1023,6 +1023,7 @@
     "Calculated ratio: {{ratio}}": "計算倍率：{{ratio}}",
     "Calculating priority...": "正在計算優先級…",
     "Calculating...": "計算中...",
+    "call": "次",
     "Call 1: the token group is premium": "呼叫 ①：令牌分組是 premium",
     "Call 2: the token group is default": "呼叫 ②：令牌分組是 default",
     "Call 3: the token has no group": "呼叫 ③：令牌沒設定分組",

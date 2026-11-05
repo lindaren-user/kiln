@@ -25,6 +25,7 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { useBillingTime } from '../hooks/use-billing-time'
 import {
+  formatTaskUsageUnitPrice,
   getDynamicDisplayGroupRatio,
   getDynamicPriceUnitLabelKey,
   getDynamicPricingSummary,
@@ -33,10 +34,7 @@ import {
 } from '../lib/dynamic-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
-import {
-  taskPriceLabel,
-  taskUsageUnitLabel,
-} from '../lib/task-price-display'
+import { taskPriceLabel, taskUsageUnitLabel } from '../lib/task-price-display'
 import type { PricingModel, TokenUnit } from '../types'
 
 export type ModelPriceCellOptions = {
@@ -138,34 +136,77 @@ export function ModelPriceCell(props: {
       0,
       hasRequestPrice ? 3 : 2
     )
-    metrics = visibleEntries.map((entry) => {
-      const unit = getDynamicPriceUnitLabelKey(entry)
-      const unitLabel = taskUsageUnitLabel(
-        entry,
-        i18n.language,
-        unit ? t(unit) : ''
-      )
-      let suffix = unitLabel ? ` / ${unitLabel}` : ''
-      if (hasRequestPrice && entry.unit === 'token') {
-        suffix = ` / ${t('{{unit}} tokens', { unit: tokenUnitLabel })}`
+    // One fixed price is a single amount. Several prices or tiers stay split.
+    let loneFixed: (typeof visibleEntries)[number] | undefined
+    if (
+      !dynamic.isTaskUsage &&
+      !dynamic.isMixedBilling &&
+      dynamic.tierCount <= 1 &&
+      visibleEntries.length === 1
+    ) {
+      const entry = visibleEntries[0]
+      if (entry.unit === 'request' || entry.unit === 'image') loneFixed = entry
+    }
+    if (loneFixed) {
+      const fixedPriceOptions = {
+        priceRate: options.priceRate,
+        usdExchangeRate: options.usdExchangeRate,
+        showRechargePrice: options.showRechargePrice,
+        tokenUnit,
+        showCurrencySymbol: true,
+        groupRatioMultiplier: getDynamicDisplayGroupRatio(
+          props.model,
+          options.selectedGroup
+        ),
       }
-      // Task schema fields already carry the unit in the value (e.g. $1 / 秒).
-      // Do not also print the raw field name like "seconds".
-      let label = ''
-      if (entry.labelKind !== 'schema') {
-        label = t(entry.shortLabel)
-      } else if (visibleEntries.length > 1) {
-        label = taskPriceLabel(
-          entry.description,
-          entry.shortLabel,
-          i18n.language
+      let amount = formatTaskUsageUnitPrice(loneFixed.value, fixedPriceOptions)
+      if (
+        loneFixed.minValue != null &&
+        loneFixed.maxValue != null &&
+        loneFixed.minValue !== loneFixed.maxValue
+      ) {
+        const low = formatTaskUsageUnitPrice(
+          loneFixed.minValue,
+          fixedPriceOptions
         )
+        const high = formatTaskUsageUnitPrice(
+          loneFixed.maxValue,
+          fixedPriceOptions
+        )
+        amount = `${low} – ${high}`
       }
-      return {
-        label,
-        value: `${entry.formattedRange ?? entry.formatted}${suffix}`,
-      }
-    })
+      const unitKey = loneFixed.unit === 'image' ? 'image' : 'call'
+      metrics = [{ label: '', value: `${amount} / ${t(unitKey)}` }]
+    } else {
+      metrics = visibleEntries.map((entry) => {
+        const unit = getDynamicPriceUnitLabelKey(entry)
+        const unitLabel = taskUsageUnitLabel(
+          entry,
+          i18n.language,
+          unit ? t(unit) : ''
+        )
+        let suffix = unitLabel ? ` / ${unitLabel}` : ''
+        if (hasRequestPrice && entry.unit === 'token') {
+          suffix = ` / ${t('{{unit}} tokens', { unit: tokenUnitLabel })}`
+        }
+        // Task schema fields already carry the unit in the value (e.g. $1 / 秒).
+        // Do not also print the raw field name like "seconds".
+        let label = ''
+        if (entry.labelKind !== 'schema') {
+          label = t(entry.shortLabel)
+        } else if (visibleEntries.length > 1) {
+          label = taskPriceLabel(
+            entry.description,
+            entry.shortLabel,
+            i18n.language
+          )
+        }
+        return {
+          label,
+          value: `${entry.formattedRange ?? entry.formatted}${suffix}`,
+        }
+      })
+    }
     if (metrics.length === 0) {
       return (
         <span className='text-muted-foreground text-sm'>
@@ -182,8 +223,8 @@ export function ModelPriceCell(props: {
         </span>
       )
     }
-    // Task unit prices already include the unit; a lone "USD" caption is noise.
-    if (dynamic.isTaskUsage) caption = ''
+    // The amount already includes the currency and unit.
+    if (dynamic.isTaskUsage || loneFixed) caption = ''
     else if (hasRequestPrice) caption = currencyLabel
     if (dynamic.isTimePricing) {
       caption = caption
@@ -258,18 +299,18 @@ export function ModelPriceCell(props: {
     } else {
       metrics = [
         {
-          label: t('Per-request'),
-          value: formatRequestPrice(
+          label: '',
+          value: `${formatRequestPrice(
             props.model,
             options.showRechargePrice,
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
-          ),
+            true
+          )} / ${t('call')}`,
         },
       ]
-      caption = `${currencyLabel} / ${t('request')}`
+      caption = ''
     }
   }
   return (
