@@ -165,7 +165,9 @@ describe('generateImages', () => {
   it('sends gpt-image references as files on the edits endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ data: [{ url: 'https://cdn.example.com/one.png' }] }),
+      json: async () => ({
+        data: [{ url: 'https://cdn.example.com/one.png' }],
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
     const dataUrl = 'data:image/png;base64,aGk='
@@ -201,10 +203,43 @@ describe('generateImages', () => {
     expect((files[0] as File).type).toBe('image/png')
   })
 
+  it('downloads an R2 reference URL into the file-based image edits request', async () => {
+    const remote = new Blob(['reference image'], { type: 'image/png' })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, blob: async () => remote })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [{ url: 'https://cdn.example.com/edited.png' }],
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      generateImages({
+        apiKey: 'sk-abc123',
+        model: 'gpt-image-2.5',
+        prompt: 'edit this',
+        size: 'auto',
+        count: 1,
+        images: ['https://bucket.r2.example/reference?signature=read'],
+      })
+    ).resolves.toEqual(['https://cdn.example.com/edited.png'])
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://bucket.r2.example/reference?signature=read'
+    )
+    expect(fetchMock.mock.calls[1][0]).toBe('/v1/images/edits')
+  })
+
   it('keeps a gpt-image prompt without references on generations', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ data: [{ url: 'https://cdn.example.com/one.png' }] }),
+      json: async () => ({
+        data: [{ url: 'https://cdn.example.com/one.png' }],
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -227,7 +262,9 @@ describe('generateImages', () => {
   it('still sends other models reference images as generations JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ data: [{ url: 'https://cdn.example.com/one.png' }] }),
+      json: async () => ({
+        data: [{ url: 'https://cdn.example.com/one.png' }],
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
     const dataUrl = 'data:image/png;base64,aGk='

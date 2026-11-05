@@ -129,15 +129,25 @@ describe('model capabilities', () => {
         'resolution',
         'seconds',
       ])
-      expect(selectValues(model, 'video', 'ratio')).toEqual(
-        model === 'kling-v2-5-turbo'
-          ? ['16:9', '9:16', '1:1']
-          : model === 'wan3.0-video'
-            ? ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive']
-            : model === 'grok-imagine-video'
-              ? ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '21:9', '5:2']
-              : ['16:9', '9:16']
-      )
+      let ratios = ['16:9', '9:16']
+      if (model === 'kling-v2-5-turbo') {
+        ratios = ['16:9', '9:16', '1:1']
+      } else if (model === 'wan3.0-video') {
+        ratios = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive']
+      } else if (model === 'grok-imagine-video') {
+        ratios = [
+          '1:1',
+          '16:9',
+          '9:16',
+          '4:3',
+          '3:4',
+          '3:2',
+          '2:3',
+          '21:9',
+          '5:2',
+        ]
+      }
+      expect(selectValues(model, 'video', 'ratio')).toEqual(ratios)
       expect(selectValues(model, 'video', 'resolution')).toEqual([
         '720p',
         '1080p',
@@ -165,7 +175,10 @@ describe('model capabilities', () => {
     expect(bounds('特价SD2.5-30图版-720p')).toEqual({ min: 4, max: 30 })
     expect(bounds('wan3-1080p')).toEqual({ min: 4, max: 30 })
     expect(bounds('kling-4.0-1080p')).toEqual({ min: 4, max: 30 })
-    expect(bounds('官转SD2.0-满血9图版-短剧专用-4K')).toEqual({ min: 4, max: 15 })
+    expect(bounds('官转SD2.0-满血9图版-短剧专用-4K')).toEqual({
+      min: 4,
+      max: 15,
+    })
     expect(bounds('sd2.0满血版')).toEqual({ min: 4, max: 15 })
     expect(bounds('sd2-fast')).toEqual({ min: 4, max: 15 })
     expect(bounds('Minimax-768P')).toEqual({ min: 4, max: 15 })
@@ -180,8 +193,12 @@ describe('model capabilities', () => {
       max: 30,
     })
 
-    expect(buildVideoRequest({ seconds: '1' }, '官转SD2.5-30图版-480P').duration).toBe(4)
-    expect(buildVideoRequest({ seconds: '40' }, '官转SD2.5-30图版-480P').duration).toBe(30)
+    expect(
+      buildVideoRequest({ seconds: '1' }, '官转SD2.5-30图版-480P').duration
+    ).toBe(4)
+    expect(
+      buildVideoRequest({ seconds: '40' }, '官转SD2.5-30图版-480P').duration
+    ).toBe(30)
     expect(buildVideoRequest({ seconds: '20' }, 'Minimax-2k').duration).toBe(15)
     expect(buildVideoRequest({ seconds: '8' }, 'kling-4.0').duration).toBe(8)
   })
@@ -247,7 +264,9 @@ describe('model capabilities', () => {
 
   it('maps the video ratio and resolution to pixels and keeps the duration', () => {
     const aspect = (ratio: string) => ({ ratio, aspect_ratio: ratio })
-    expect(buildVideoRequest({ ratio: '9:16', resolution: '720p', seconds: '8' })).toEqual({
+    expect(
+      buildVideoRequest({ ratio: '9:16', resolution: '720p', seconds: '8' })
+    ).toEqual({
       size: '720x1280',
       duration: 8,
       metadata: aspect('9:16'),
@@ -272,10 +291,12 @@ describe('model capabilities', () => {
       '3:4',
       '21:9',
     ])
-    expect(selectValues('sd2-933-720p-9:16', 'video', 'ratio')).toEqual(['9:16'])
-    expect(defaultValues(capabilityFor('sd2-933-720p-9:16', 'video')).ratio).toBe(
-      '9:16'
-    )
+    expect(selectValues('sd2-933-720p-9:16', 'video', 'ratio')).toEqual([
+      '9:16',
+    ])
+    expect(
+      defaultValues(capabilityFor('sd2-933-720p-9:16', 'video')).ratio
+    ).toBe('9:16')
     expect(
       compatibleValues(capabilityFor('sd2-933-720p-9:16', 'video'), {
         ratio: '16:9',
@@ -283,7 +304,8 @@ describe('model capabilities', () => {
       })
     ).toMatchObject({ ratio: '9:16', seconds: '8' })
     expect(
-      compatibleValues(capabilityFor('minimaxh3', 'video'), { ratio: '21:9' }).ratio
+      compatibleValues(capabilityFor('minimaxh3', 'video'), { ratio: '21:9' })
+        .ratio
     ).toBe('21:9')
     expect(selectValues('sd2.5-y', 'video', 'ratio')).toEqual([
       'auto',
@@ -330,7 +352,10 @@ describe('model capabilities', () => {
 
   it('sends the chosen ratio, and omits a size the vendor cannot map', () => {
     expect(
-      buildVideoRequest({ ratio: '1:1', resolution: '720p', seconds: '5' }, 'kling-4.0')
+      buildVideoRequest(
+        { ratio: '1:1', resolution: '720p', seconds: '5' },
+        'kling-4.0'
+      )
     ).toMatchObject({
       size: '720x720',
       metadata: { ratio: '1:1', aspect_ratio: '1:1' },
@@ -359,12 +384,17 @@ describe('model capabilities', () => {
     expect(capabilityFor('dall-e-3', 'image').referenceImages).toBeNull()
     expect(capabilityFor('qwen-image-max', 'image').referenceImages).toBeNull()
     expect(capabilityFor('z-image-turbo', 'image').referenceImages).toBeNull()
-    expect(capabilityFor('doubao-seedream-4-5-251128', 'image').referenceImages).toEqual({
+    expect(
+      capabilityFor('doubao-seedream-4-5-251128', 'image').referenceImages
+    ).toEqual({
       max: 14,
       field: 'image',
       encoding: 'dataUrl',
     })
-    expect(capabilityFor('doubao-seedream-5-0-pro-260628', 'image').referenceImages?.max).toBe(10)
+    expect(
+      capabilityFor('doubao-seedream-5-0-pro-260628', 'image').referenceImages
+        ?.max
+    ).toBe(10)
     expect(capabilityFor('qwen-image-2.0', 'image').referenceImages).toEqual({
       max: 3,
       field: 'images',
@@ -375,21 +405,25 @@ describe('model capabilities', () => {
       field: 'images',
       encoding: 'dataUrl',
     })
-    expect(capabilityFor('kling-v2-5-turbo', 'video').referenceImages?.max).toBe(2)
+    expect(
+      capabilityFor('kling-v2-5-turbo', 'video').referenceImages?.max
+    ).toBe(2)
     expect(capabilityFor('jimeng-video', 'video').referenceImages).toEqual({
       max: 4,
       field: 'images',
       encoding: 'base64',
     })
-    expect(capabilityFor('wan2.2-s2v', 'video').referenceImages).toBeNull()
+    expect(capabilityFor('wan2.2-s2v', 'video').referenceImages?.max).toBe(1)
     expect(capabilityFor('wan2.7-t2v', 'video').referenceImages).toBeNull()
   })
 
-  it('warns when the model can take reference audio or video', () => {
+  it('marks video models that accept reference audio or video', () => {
     expect(capabilityFor('sora-2', 'video').mediaNotice).toBe(false)
     expect(capabilityFor('wan3.0-video', 'video').mediaNotice).toBe(true)
     expect(capabilityFor('MiniMax-H3', 'video').mediaNotice).toBe(true)
-    expect(capabilityFor('doubao-seedance-2-5-260628', 'video').mediaNotice).toBe(true)
+    expect(
+      capabilityFor('doubao-seedance-2-5-260628', 'video').mediaNotice
+    ).toBe(true)
     expect(capabilityFor('grok-imagine-video', 'video').mediaNotice).toBe(true)
     expect(capabilityFor('kling-4.0', 'video').mediaNotice).toBe(true)
     expect(capabilityFor('wan2.2-s2v', 'video').mediaNotice).toBe(true)
@@ -399,21 +433,29 @@ describe('model capabilities', () => {
   it('puts reference images on the field the model reads', () => {
     const dataUrl = 'data:image/png;base64,aaa'
     expect(
-      buildImageRequest({ size: '1024x1024', count: '1' }, 'doubao-seedream-4-0', [dataUrl])
+      buildImageRequest(
+        { size: '1024x1024', count: '1' },
+        'doubao-seedream-4-0',
+        [dataUrl]
+      )
     ).toEqual({
       size: '1024x1024',
       count: 1,
       image: [dataUrl],
     })
     expect(
-      buildImageRequest({ size: '1024x1024', count: '1' }, 'qwen-image-2.0', [dataUrl])
+      buildImageRequest({ size: '1024x1024', count: '1' }, 'qwen-image-2.0', [
+        dataUrl,
+      ])
     ).toEqual({
       size: '1024x1024',
       count: 1,
       images: [dataUrl],
     })
     expect(
-      buildImageRequest({ size: '1024x1024', count: '1' }, 'dall-e-3', [dataUrl])
+      buildImageRequest({ size: '1024x1024', count: '1' }, 'dall-e-3', [
+        dataUrl,
+      ])
     ).toEqual({ size: '1024x1024', count: 1 })
     expect(
       buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'sora-2', [dataUrl])
@@ -424,12 +466,43 @@ describe('model capabilities', () => {
       metadata: { ratio: '16:9', aspect_ratio: '16:9' },
     })
     expect(
-      buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'jimeng-video', [dataUrl])
+      buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'jimeng-video', [
+        dataUrl,
+      ])
     ).toMatchObject({ images: ['aaa'] })
-    expect(buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'sora-2')).toEqual({
+    expect(
+      buildVideoRequest({ ratio: '16:9', seconds: '5' }, 'sora-2')
+    ).toEqual({
       size: '1280x720',
       duration: 5,
       metadata: { ratio: '16:9', aspect_ratio: '16:9' },
+    })
+  })
+
+  it('puts reference video and audio URLs on task requests', () => {
+    expect(
+      buildVideoRequest(
+        { ratio: '16:9', seconds: '5' },
+        'wan3.0-video',
+        [],
+        [
+          { url: 'https://r2.example/ref.mp4', mediaType: 'video/mp4' },
+          { url: 'https://r2.example/ref.mp3', mediaType: 'audio/mpeg' },
+        ]
+      )
+    ).toMatchObject({
+      reference_videos: ['https://r2.example/ref.mp4'],
+      reference_audios: ['https://r2.example/ref.mp3'],
+      metadata: {
+        reference_video: ['https://r2.example/ref.mp4'],
+        reference_audio: ['https://r2.example/ref.mp3'],
+        input: {
+          media: [
+            { type: 'reference_video', url: 'https://r2.example/ref.mp4' },
+            { type: 'reference_audio', url: 'https://r2.example/ref.mp3' },
+          ],
+        },
+      },
     })
   })
 

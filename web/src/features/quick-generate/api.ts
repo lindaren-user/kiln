@@ -18,9 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { t } from 'i18next'
 
+import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
 import type { VideoRequest } from './lib/capabilities'
+import type { ReferenceAttachment } from './types'
 
 type SubmitPayload = {
   task_id?: string
@@ -47,6 +49,89 @@ export type VideoTaskState = {
   progress: string
   resultUrl: string
   error: string
+}
+
+type QuickGenerateUploadGrant = {
+  exists: boolean
+  url: string
+  put_url?: string
+  headers?: Record<string, string>
+}
+
+type QuickGenerateUploadResponse = {
+  success: boolean
+  message?: string
+  data?: QuickGenerateUploadGrant
+}
+
+type QuickGenerateUploadStatusResponse = {
+  success: boolean
+  data?: { enabled: boolean }
+}
+
+function hex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    ''
+  )
+}
+
+/** Uses a global content hash so identical files share one short-lived R2 object. */
+export async function uploadQuickGenerateReferences(
+  references: ReferenceAttachment[]
+): Promise<ReferenceAttachment[]> {
+  if (references.length === 0) return []
+
+  const statusResponse = await api.get<QuickGenerateUploadStatusResponse>(
+    '/api/quick-generate/upload/status'
+  )
+  if (!statusResponse.data.success || !statusResponse.data.data?.enabled) {
+    throw new Error(t('Temporary file storage is not configured'))
+  }
+
+  const uploadedReferences: ReferenceAttachment[] = []
+  const urlsByDigest = new Map<string, string>()
+  for (const reference of references) {
+    if (!reference.url.startsWith('blob:')) {
+      uploadedReferences.push(reference)
+      continue
+    }
+    const response = await fetch(reference.url)
+    if (!response.ok) throw new Error(t('Generation failed'))
+    const blob = await response.blob()
+    const digest = new Uint8Array(
+      await crypto.subtle.digest('SHA-256', await blob.arrayBuffer())
+    )
+    const digestHex = hex(digest)
+    const cachedURL = urlsByDigest.get(digestHex)
+    if (cachedURL) {
+      uploadedReferences.push({ ...reference, url: cachedURL })
+      continue
+    }
+    const grantResponse = await api.post<QuickGenerateUploadResponse>(
+      '/api/quick-generate/upload',
+      {
+        sha256: digestHex,
+        content_type: blob.type || reference.mediaType,
+        size: blob.size,
+      }
+    )
+    const grant = grantResponse.data.data
+    if (!grantResponse.data.success || !grant?.url) {
+      throw createServerError(grantResponse.data, t('Generation failed'))
+    }
+    if (!grant.exists) {
+      if (!grant.put_url) throw new Error(t('Generation failed'))
+      const uploadResponse = await fetch(grant.put_url, {
+        method: 'PUT',
+        headers: grant.headers,
+        body: blob,
+      })
+      if (!uploadResponse.ok) throw new Error(t('Generation failed'))
+    }
+    urlsByDigest.set(digestHex, grant.url)
+    uploadedReferences.push({ ...reference, url: grant.url })
+  }
+  return uploadedReferences
 }
 
 const STATUS_MAP: Record<string, VideoTaskStatus> = {

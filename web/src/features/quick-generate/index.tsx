@@ -30,7 +30,7 @@ import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
-import { submitVideo } from './api'
+import { submitVideo, uploadQuickGenerateReferences } from './api'
 import { GenerateComposer } from './components/generate-composer'
 import { ImageLightbox } from './components/image-lightbox'
 import { ResultPanel } from './components/result-panel'
@@ -43,7 +43,12 @@ import {
 } from './lib/capabilities'
 import { downloadMedia, mediaFilename } from './lib/download-media'
 import { pollVideoTask } from './lib/poll-video'
-import type { Generation, GenerationParams, GenerationValues } from './types'
+import type {
+  Generation,
+  GenerationParams,
+  GenerationValues,
+  ReferenceAttachment,
+} from './types'
 
 /**
  * Single-result checks for image and video models. Each generation replaces
@@ -75,7 +80,7 @@ export function QuickGenerate() {
   const [zoomOpen, setZoomOpen] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState<{
     prompt: string
-    images: string[]
+    references: ReferenceAttachment[]
   } | null>(null)
   // Identifies the generation that may still write to state; a newer one, or
   // leaving the page, cancels the video poll of an older one.
@@ -151,6 +156,13 @@ export function QuickGenerate() {
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
         const parameterModel = params.parameterModel || params.model
+        const uploadedReferences = await uploadQuickGenerateReferences(
+          params.references
+        )
+        if (isCancelled()) return
+        const imageReferences = uploadedReferences
+          .filter((reference) => reference.mediaType.startsWith('image/'))
+          .map((reference) => reference.url)
 
         if (params.kind === 'video') {
           const taskId = await submitVideo({
@@ -160,7 +172,8 @@ export function QuickGenerate() {
             request: buildVideoRequest(
               params.values,
               parameterModel,
-              params.images
+              imageReferences,
+              uploadedReferences
             ),
           })
           const url = await pollVideoTask({
@@ -190,7 +203,7 @@ export function QuickGenerate() {
         const request = buildImageRequest(
           params.values,
           parameterModel,
-          params.images
+          imageReferences
         )
         const images = await generateImages({
           apiKey,
@@ -232,14 +245,14 @@ export function QuickGenerate() {
   )
 
   const generate = useCallback(
-    (prompt: string, images: string[]) =>
+    (prompt: string, references: ReferenceAttachment[]) =>
       runGeneration(
         {
           model,
           parameterModel,
           kind,
           values: effectiveValues,
-          images,
+          references,
         },
         prompt
       ),
@@ -254,7 +267,7 @@ export function QuickGenerate() {
         model: generation.model,
         kind: generation.kind,
         values: generation.values,
-        images: generation.images,
+        references: generation.references,
       },
       generation.prompt
     )
@@ -262,17 +275,17 @@ export function QuickGenerate() {
 
   /** Returns false when the prompt waits for the replace confirmation. */
   const submit = useCallback(
-    (prompt: string, images: string[]) => {
+    (prompt: string, references: ReferenceAttachment[]) => {
       const replacesResult =
         generation?.status === 'running' ||
         (generation?.status === 'done' &&
           generation.media.length > 0 &&
           !generation.saved)
       if (replacesResult) {
-        setPendingPrompt({ prompt, images })
+        setPendingPrompt({ prompt, references })
         return false
       }
-      void generate(prompt, images)
+      void generate(prompt, references)
       return true
     },
     [generate, generation]
@@ -347,7 +360,9 @@ export function QuickGenerate() {
         />
         <p>
           <span className='font-medium'>
-            {t('For testing only. Using this as a workbench is not recommended.')}
+            {t(
+              'For testing only. Using this as a workbench is not recommended.'
+            )}
           </span>{' '}
           {t(
             'Images are not saved. Videos can be opened from "Task logs → Artifacts". Download any image you want to keep before leaving or generating again.'
@@ -448,7 +463,7 @@ export function QuickGenerate() {
         handleConfirm={() => {
           const pending = pendingPrompt
           setPendingPrompt(null)
-          if (pending) void generate(pending.prompt, pending.images)
+          if (pending) void generate(pending.prompt, pending.references)
         }}
       />
     </div>

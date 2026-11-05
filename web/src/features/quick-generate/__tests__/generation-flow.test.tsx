@@ -26,7 +26,7 @@ import type { ApiKey } from '@/features/keys/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { QuickGenerate } from '..'
-import { submitVideo } from '../api'
+import { submitVideo, uploadQuickGenerateReferences } from '../api'
 import { useGenerationModels } from '../hooks/use-generation-models'
 import { downloadMedia } from '../lib/download-media'
 import { pollVideoTask } from '../lib/poll-video'
@@ -55,6 +55,7 @@ vi.mock('../hooks/use-generation-models', () => ({
 
 vi.mock('../api', () => ({
   submitVideo: vi.fn(),
+  uploadQuickGenerateReferences: vi.fn(),
   fetchVideoTask: vi.fn(),
 }))
 
@@ -74,6 +75,7 @@ vi.mock('@/features/system-settings/components/form-navigation-guard', () => ({
 
 const generateImagesMock = vi.mocked(generateImages)
 const submitVideoMock = vi.mocked(submitVideo)
+const uploadReferencesMock = vi.mocked(uploadQuickGenerateReferences)
 const pollVideoTaskMock = vi.mocked(pollVideoTask)
 const guardMock = vi.mocked(FormNavigationGuard)
 const resolveApiKeyMock = vi.mocked(resolveApiKey)
@@ -129,6 +131,7 @@ beforeEach(() => {
     isLoading: false,
   })
   resolveApiKeyMock.mockResolvedValue('sk-abc123')
+  uploadReferencesMock.mockImplementation(async (references) => references)
   downloadMediaMock.mockResolvedValue(true)
 })
 
@@ -182,6 +185,38 @@ describe('quick generate', () => {
       },
     })
     expect(generateImagesMock).not.toHaveBeenCalled()
+  })
+
+  it('uploads reference video and audio as URLs for supported video models', async () => {
+    mockModels([{ name: 'wan3.0-video', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
+    uploadReferencesMock.mockImplementation(async (references) =>
+      references.map((reference, index) => ({
+        ...reference,
+        url: `https://r2.example/reference-${index}`,
+      }))
+    )
+
+    render(<QuickGenerate />)
+    const videoFile = new File(['video'], 'reference.mp4', {
+      type: 'video/mp4',
+    })
+    const audioFile = new File(['audio'], 'reference.mp3', {
+      type: 'audio/mpeg',
+    })
+    fireEvent.change(screen.getByLabelText('Upload files'), {
+      target: { files: [videoFile, audioFile] },
+    })
+    await submitPrompt('match the reference media')
+
+    await waitFor(() => expect(submitVideoMock).toHaveBeenCalled())
+    const request = submitVideoMock.mock.calls[0][0].request
+    expect(request.reference_videos).toHaveLength(1)
+    expect(request.reference_audios).toHaveLength(1)
+    expect(request.reference_videos?.[0]).toBe('https://r2.example/reference-0')
+    expect(request.reference_audios?.[0]).toBe('https://r2.example/reference-1')
+    expect(request.metadata?.input?.media).toHaveLength(2)
   })
 
   it('replaces the frame contents when generation fails', async () => {
@@ -247,7 +282,9 @@ describe('quick generate', () => {
     await screen.findByText('Generating... 0:00')
 
     expect(
-      screen.getByRole('textbox', { name: 'Prompt' }).closest('[data-slot=input-group]')
+      screen
+        .getByRole('textbox', { name: 'Prompt' })
+        .closest('[data-slot=input-group]')
     ).toHaveClass('bg-muted/50')
 
     await submitPrompt('a second kiln')

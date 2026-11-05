@@ -384,6 +384,12 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("", middleware.AdminAuth(), controller.GetAllTask)
 			taskRoute.GET("/:task_id/artifacts", middleware.UserAuth(), controller.GetDashboardTaskArtifacts)
 		}
+		quickGenerateRoute := apiRouter.Group("/quick-generate")
+		quickGenerateRoute.Use(middleware.UserAuth(), middleware.UserCriticalRateLimit("quick-generate-upload"), middleware.DisableCache())
+		{
+			quickGenerateRoute.GET("/upload/status", controller.QuickGenerateUploadEnabled)
+			quickGenerateRoute.POST("/upload", controller.PrepareQuickGenerateUpload)
+		}
 
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())

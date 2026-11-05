@@ -42,7 +42,7 @@ import type { ApiKey } from '@/features/keys/types'
 import { cn } from '@/lib/utils'
 
 import type { ModelCapability, ParamField } from '../lib/capabilities'
-import type { GenerationValues } from '../types'
+import type { GenerationValues, ReferenceAttachment } from '../types'
 import { PromptMentionInput } from './prompt-mention-input'
 
 type MenuItem = {
@@ -67,7 +67,7 @@ type GenerateComposerProps = {
   selectedKeyId: number | null
   onKeyChange: (id: number) => void
   /** Returns false when the prompt was held back (e.g. waiting on a confirm). */
-  onSubmit: (prompt: string, images: string[]) => boolean
+  onSubmit: (prompt: string, references: ReferenceAttachment[]) => boolean
   busy: boolean
   disabled: boolean
 }
@@ -171,8 +171,7 @@ function ParamNumber(props: ParamNumberProps) {
 }
 
 const REFERENCE_IMAGE_TYPES = 'image/*'
-/** Keeps a data URL small enough for the JSON generation body. */
-const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
+const MAX_REFERENCE_MEDIA_BYTES = 100 * 1024 * 1024
 
 /** Opens the image picker. Dragging onto the prompt does the same. */
 function AddReferenceImage(props: { disabled?: boolean }) {
@@ -180,7 +179,7 @@ function AddReferenceImage(props: { disabled?: boolean }) {
   const attachments = usePromptInputAttachments()
   return (
     <PromptInputButton
-      aria-label={t('Add a reference image')}
+      aria-label={t('Add reference media')}
       disabled={props.disabled}
       onClick={() => attachments.openFileDialog()}
     >
@@ -269,13 +268,22 @@ export function GenerateComposer(props: GenerateComposerProps) {
     text.trim() !== ''
 
   const referenceImages = props.capability.referenceImages
+  const acceptsReferences =
+    Boolean(referenceImages) || props.capability.mediaNotice
+  const maxReferences =
+    props.capability.kind === 'video' && acceptsReferences
+      ? 5
+      : (referenceImages?.max ?? 0)
   const handleSubmit = (message: PromptInputMessage) => {
     const prompt = message.text?.trim() ?? ''
     if (!prompt || !ready) return
-    const images = (message.files ?? [])
-      .map((file) => file.url)
-      .filter((url): url is string => Boolean(url))
-    props.onSubmit(prompt, images)
+    const references = (message.files ?? [])
+      .filter((file) => Boolean(file.url))
+      .map((file) => ({
+        url: file.url,
+        mediaType: file.mediaType ?? 'application/octet-stream',
+      }))
+    props.onSubmit(prompt, references)
     // Keep the prompt and the files. PromptInput clears attachments when
     // submit resolves, so this rejection leaves them in place.
     return Promise.reject(new Error('keep'))
@@ -288,12 +296,16 @@ export function GenerateComposer(props: GenerateComposerProps) {
         'bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]',
         props.busy && 'bg-muted/50 focus-within:bg-background/95'
       )}
-      accept={referenceImages ? REFERENCE_IMAGE_TYPES : undefined}
-      multiple={(referenceImages?.max ?? 0) > 1}
-      maxFiles={referenceImages?.max ?? 0}
-      maxFileSize={MAX_REFERENCE_IMAGE_BYTES}
+      accept={
+        referenceImages && !props.capability.mediaNotice
+          ? REFERENCE_IMAGE_TYPES
+          : undefined
+      }
+      multiple={maxReferences > 1}
+      maxFiles={maxReferences}
+      maxFileSize={MAX_REFERENCE_MEDIA_BYTES}
       onError={(error) => {
-        if (referenceImages) toast.error(error.message)
+        if (acceptsReferences) toast.error(error.message)
       }}
       onSubmit={handleSubmit}
     >
@@ -304,19 +316,11 @@ export function GenerateComposer(props: GenerateComposerProps) {
         label={t('Prompt')}
         disabled={props.disabled}
       />
-      {props.capability.mediaNotice && (
-        <p className='text-warning px-3 pt-1 text-xs'>
-          {t(
-            'Quick generate does not support reference video or audio. The API does.'
-          )}
-        </p>
-      )}
-
       {/* Every parameter shares one row and wraps only when the width runs
           out; the send button stays pinned to the bottom-right corner. */}
       <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 items-end gap-2 border-t px-3 py-2'>
         <PromptInputTools className='min-w-0 flex-1 flex-wrap items-center gap-1'>
-          {referenceImages && <AddReferenceImage disabled={props.disabled} />}
+          {acceptsReferences && <AddReferenceImage disabled={props.disabled} />}
           <ParamSelect
             label={t('Model')}
             items={props.modelItems}
