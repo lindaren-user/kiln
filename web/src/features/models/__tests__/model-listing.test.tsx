@@ -578,7 +578,7 @@ it.each([
     name: 'free-request',
     effective: { ModelPrice: 0 },
     catalog: { quota_type: 1, model_price: 0 },
-    text: 'Per-request0USD/request',
+    text: '$0/call',
   },
   {
     name: 'free-tokens',
