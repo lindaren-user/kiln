@@ -25,6 +25,7 @@ import { PublicLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
+import { docsOpenAIBaseUrl, resolveDocsSiteOrigin } from './lib/base-url'
 import { DOCS_ENDPOINT_GROUPS, DOCS_ENDPOINTS } from './lib/endpoints'
 import {
   buildDocsMarkdown,
@@ -134,13 +135,12 @@ export function DocsPage() {
   const { t } = useTranslation()
   const { status } = useStatus()
 
-  const origin =
-    (typeof status?.server_address === 'string' && status.server_address) ||
-    (typeof window !== 'undefined'
-      ? window.location.origin
-      : 'https://example.com')
-  const siteOrigin = String(origin).replace(/\/$/, '')
-  const baseUrl = `${siteOrigin}/v1`
+  const siteOrigin = resolveDocsSiteOrigin({
+    serverAddress:
+      typeof status?.server_address === 'string' ? status.server_address : '',
+    pageOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+  })
+  const baseUrl = docsOpenAIBaseUrl(siteOrigin)
 
   const intro = t(
     'Call Kiln with an OpenAI-compatible API. Create a key in the console, then send requests to the base URL below.'
