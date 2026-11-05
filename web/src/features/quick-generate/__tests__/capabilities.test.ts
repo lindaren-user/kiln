@@ -22,6 +22,7 @@ import {
   buildImageRequest,
   buildVideoRequest,
   capabilityFor,
+  capabilityModelName,
   compatibleValues,
   defaultValues,
   summarizeValues,
@@ -173,6 +174,11 @@ describe('model capabilities', () => {
     expect(bounds('minimaxh3')).toEqual({ min: 4, max: 30 })
     expect(bounds('sd2.5-y')).toEqual({ min: 4, max: 30 })
     expect(bounds('seedance_v2.5')).toEqual({ min: 4, max: 30 })
+    expect(bounds('seedance2.5')).toEqual({ min: 1, max: 60 })
+    expect(bounds(capabilityModelName('任意名字', 'seedance_v2.5'))).toEqual({
+      min: 4,
+      max: 30,
+    })
 
     expect(buildVideoRequest({ seconds: '1' }, '官转SD2.5-30图版-480P').duration).toBe(4)
     expect(buildVideoRequest({ seconds: '40' }, '官转SD2.5-30图版-480P').duration).toBe(30)
@@ -295,6 +301,13 @@ describe('model capabilities', () => {
       '4:3',
       '3:4',
     ])
+    expect(
+      selectValues(
+        capabilityModelName('seedance2.5', 'seedance_v2.5'),
+        'video',
+        'ratio'
+      )
+    ).toEqual(['16:9', '9:16', '1:1', '4:3', '3:4'])
     expect(selectValues('kling-4.0', 'video', 'ratio')).toEqual([
       '16:9',
       '9:16',

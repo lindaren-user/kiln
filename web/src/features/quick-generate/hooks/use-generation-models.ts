@@ -27,6 +27,7 @@ import {
 } from '@/features/pricing/lib/filters'
 import type { PricingModel } from '@/features/pricing/types'
 
+import { capabilityModelName } from '../lib/capabilities'
 import {
   generationModelPrice,
   generationRunPrice,
@@ -37,6 +38,8 @@ import type { GenerationKind } from '../types'
 export type GenerationModel = {
   name: string
   kind: GenerationKind
+  /** Upstream model when a channel mapping renames the published model. */
+  parameterModel: string
 }
 
 type ListedModel = GenerationModel & { source: PricingModel }
@@ -49,7 +52,12 @@ function modelsFor(
   return sortModels(
     filterByEndpointType(models, endpointType),
     SORT_OPTIONS.NAME
-  ).map((model) => ({ name: model.model_name, kind, source: model }))
+  ).map((model) => ({
+    name: model.model_name,
+    kind,
+    parameterModel: capabilityModelName(model.model_name, model.upstream_model),
+    source: model,
+  }))
 }
 
 /**
@@ -74,14 +82,16 @@ export function useGenerationModels() {
     )
     const taken = new Set(images.map((model) => model.name))
 
-    return [
-      ...images,
-      ...videos.filter((model) => !taken.has(model.name)),
-    ]
+    return [...images, ...videos.filter((model) => !taken.has(model.name))]
   }, [pricing.models])
 
   const models = useMemo<GenerationModel[]>(
-    () => listed.map(({ name, kind }) => ({ name, kind })),
+    () =>
+      listed.map(({ name, kind, parameterModel }) => ({
+        name,
+        kind,
+        parameterModel,
+      })),
     [listed]
   )
 
@@ -97,15 +107,26 @@ export function useGenerationModels() {
           pricing.priceRate,
           pricing.usdExchangeRate
         ),
+        title: model.source.description?.trim() || undefined,
       })),
-    [i18n.language, i18n.resolvedLanguage, listed, pricing.priceRate, pricing.usdExchangeRate, t]
+    [
+      i18n.language,
+      i18n.resolvedLanguage,
+      listed,
+      pricing.priceRate,
+      pricing.usdExchangeRate,
+      t,
+    ]
   )
 
-  const descriptionFor = useCallback((name: string) => {
-    const description = listed.find((item) => item.name === name)?.source
-      .description
-    return description?.trim() ?? ''
-  }, [listed])
+  const descriptionFor = useCallback(
+    (name: string) => {
+      const description = listed.find((item) => item.name === name)?.source
+        .description
+      return description?.trim() ?? ''
+    },
+    [listed]
+  )
 
   const priceForRun = useCallback(
     (name: string, quantities: GenerationRunQuantity) => {

@@ -36,6 +36,8 @@ export type GeneratedMedia = {
  */
 export type GenerationParams = {
   model: string
+  /** Upstream model used to choose parameters. Absent when it is the published name. */
+  parameterModel?: string
   kind: GenerationKind
   values: GenerationValues
   /** Data URLs, or raw base64 when the model stores image bytes that way. */

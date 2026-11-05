@@ -123,10 +123,7 @@ const VIDEO_RATIO_RULES: { test: RegExp; ratios: string[] }[] = [
     test: /^sd2\.5-y$/,
     ratios: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
   },
-  {
-    test: /^seedance_v2\.5$/,
-    ratios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
-  },
+  { test: /^seedance_v2\.5$/, ratios: ['16:9', '9:16', '1:1', '4:3', '3:4'] },
   { test: /^kling-4\.0/, ratios: ['16:9', '9:16', '1:1', '21:9'] },
   { test: /^kling/i, ratios: ['16:9', '9:16', '1:1'] },
   {
@@ -447,6 +444,19 @@ function withReferences<T extends ImageRequest | VideoRequest>(
     return { ...request, image: encoded }
   }
   return { ...request, images: encoded }
+}
+
+/**
+ * Name passed to the parameter rules. A mapped model uses the upstream name.
+ * A model that is not a mapping key uses its own name.
+ */
+export function capabilityModelName(
+  modelName: string,
+  upstreamModel?: string
+): string {
+  const upstream = upstreamModel?.trim() ?? ''
+  if (!upstream || upstream === modelName) return modelName
+  return upstream
 }
 
 /** The controls a model shows: its endpoint type decides the shape, its name the options. */

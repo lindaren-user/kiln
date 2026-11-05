@@ -59,6 +59,8 @@ export type PricingModel = {
   billing_plugin_variants?: BillingPluginVariant[]
   id: number
   model_name: string
+  /** Mapped upstream model. Parameter lists follow this name, not the published alias. */
+  upstream_model?: string
   description?: string
   icon?: string
   vendor_id?: number

@@ -31,7 +31,6 @@ import {
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -40,13 +39,22 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ApiKey } from '@/features/keys/types'
+import { cn } from '@/lib/utils'
 
 import type { ModelCapability, ParamField } from '../lib/capabilities'
 import type { GenerationValues } from '../types'
 import { PromptMentionInput } from './prompt-mention-input'
 
+type MenuItem = {
+  value: string
+  label: string
+  hint?: string
+  /** Native tooltip. Model rows use the catalog description. */
+  title?: string
+}
+
 type GenerateComposerProps = {
-  modelItems: { value: string; label: string; hint?: string }[]
+  modelItems: MenuItem[]
   model: string
   /** Shown in the empty prompt. The page supplies the model description. */
   promptPlaceholder: string
@@ -72,7 +80,7 @@ function ParamLabel(props: { children: string }) {
 
 type ParamSelectProps = {
   label: string
-  items: { value: string; label: string; hint?: string }[]
+  items: MenuItem[]
   value: string
   onValueChange: (value: string) => void
   disabled?: boolean
@@ -99,10 +107,15 @@ function ParamSelect(props: ParamSelectProps) {
       </SelectTrigger>
       <SelectContent
         alignItemWithTrigger={false}
-        className='max-h-60 w-auto min-w-(--anchor-width) max-w-[min(20rem,calc(100vw-1.5rem))] overflow-x-auto overflow-y-auto'
+        className='max-h-60 w-auto max-w-[min(20rem,calc(100vw-1.5rem))] min-w-(--anchor-width) overflow-x-auto overflow-y-auto'
       >
         {props.items.map((item) => (
-          <SelectItem key={item.value} value={item.value} className='w-max min-w-full'>
+          <SelectItem
+            key={item.value}
+            value={item.value}
+            title={item.title}
+            className='w-max min-w-full'
+          >
             <span>{item.label}</span>
             {item.hint ? (
               <span className='text-muted-foreground ml-auto pl-3 text-xs tabular-nums'>
@@ -235,13 +248,13 @@ export function GenerateComposer(props: GenerateComposerProps) {
       if (field.type !== 'select') return field
       return {
         ...field,
-        options: field.options.map((option) =>
-          option.value === 'auto'
-            ? { ...option, label: t('Auto') }
-            : option.value === 'adaptive'
-              ? { ...option, label: t('Adaptive') }
-              : option
-        ),
+        options: field.options.map((option) => {
+          if (option.value === 'auto') return { ...option, label: t('Auto') }
+          if (option.value === 'adaptive') {
+            return { ...option, label: t('Adaptive') }
+          }
+          return option
+        }),
       }
     })
   }, [props.capability, t])

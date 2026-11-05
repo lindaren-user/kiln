@@ -89,9 +89,13 @@ export function QuickGenerate() {
   const promptPlaceholder = modelDescription
     ? modelDescription
     : t('This model has no description yet.')
-  const kind =
-    models.find((item) => item.name === model)?.kind ?? ('image' as const)
-  const capability = useMemo(() => capabilityFor(model, kind), [model, kind])
+  const selectedModel = models.find((item) => item.name === model)
+  const kind = selectedModel?.kind ?? ('image' as const)
+  const parameterModel = selectedModel?.parameterModel || model
+  const capability = useMemo(
+    () => capabilityFor(parameterModel, kind),
+    [parameterModel, kind]
+  )
   const effectiveValues = useMemo(
     () => compatibleValues(capability, values),
     [capability, values]
@@ -100,13 +104,13 @@ export function QuickGenerate() {
     if (!model) return ''
     if (kind === 'video') {
       return priceForRun(model, {
-        seconds: buildVideoRequest(effectiveValues, model).duration,
+        seconds: buildVideoRequest(effectiveValues, parameterModel).duration,
       })
     }
     return priceForRun(model, {
-      count: buildImageRequest(effectiveValues, model).count,
+      count: buildImageRequest(effectiveValues, parameterModel).count,
     })
-  }, [effectiveValues, kind, model, priceForRun])
+  }, [effectiveValues, kind, model, parameterModel, priceForRun])
 
   // A different model accepts a different set of parameters, so switching the
   // model drops the previous model's values instead of sending them again.
@@ -146,13 +150,18 @@ export function QuickGenerate() {
 
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
+        const parameterModel = params.parameterModel || params.model
 
         if (params.kind === 'video') {
           const taskId = await submitVideo({
             apiKey,
             model: params.model,
             prompt,
-            request: buildVideoRequest(params.values, params.model, params.images),
+            request: buildVideoRequest(
+              params.values,
+              parameterModel,
+              params.images
+            ),
           })
           const url = await pollVideoTask({
             apiKey,
@@ -180,7 +189,7 @@ export function QuickGenerate() {
 
         const request = buildImageRequest(
           params.values,
-          params.model,
+          parameterModel,
           params.images
         )
         const images = await generateImages({
@@ -227,13 +236,14 @@ export function QuickGenerate() {
       runGeneration(
         {
           model,
+          parameterModel,
           kind,
           values: effectiveValues,
           images,
         },
         prompt
       ),
-    [effectiveValues, kind, model, runGeneration]
+    [effectiveValues, kind, model, parameterModel, runGeneration]
   )
 
   /** Replays the failed request with the parameters it was sent with. */

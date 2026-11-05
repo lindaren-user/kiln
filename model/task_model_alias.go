@@ -2,6 +2,7 @@ package model
 
 import (
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -230,4 +231,80 @@ func followChannelModelMapping(modelMap map[string]string, start string) (string
 		visited[mapped] = true
 		current = mapped
 	}
+}
+
+var (
+	publicUpstreamMu    sync.Mutex
+	publicUpstreamNames map[string]string
+	publicUpstreamUntil time.Time
+)
+
+// PublicModelUpstreams maps a published model name to its mapped upstream name.
+// A name that is not a model-mapping key is absent, so callers look up
+// parameters by the published name. Distinct upstreams leave the name absent.
+// The result is cached briefly with the task-alias view.
+func PublicModelUpstreams() map[string]string {
+	publicUpstreamMu.Lock()
+	defer publicUpstreamMu.Unlock()
+	if publicUpstreamNames != nil && time.Now().Before(publicUpstreamUntil) {
+		return publicUpstreamNames
+	}
+	publicUpstreamNames = loadPublicModelUpstreams()
+	publicUpstreamUntil = time.Now().Add(taskAliasViewTTL)
+	return publicUpstreamNames
+}
+
+func loadPublicModelUpstreams() map[string]string {
+	if DB == nil {
+		return map[string]string{}
+	}
+	var channels []Channel
+	err := DB.Select("status", "models", "model_mapping").
+		Where("status = ?", common.ChannelStatusEnabled).
+		Find(&channels).Error
+	if err != nil {
+		common.SysError(common.LogText("public model upstreams: %s", err.Error()))
+		return map[string]string{}
+	}
+	return upstreamNamesForChannels(channels)
+}
+
+// upstreamNamesForChannels keeps a published name only when model_mapping
+// renames it. An unmapped name is omitted. A cyclic mapping is ignored. When
+// enabled channels map one name to different upstreams, that name is omitted.
+func upstreamNamesForChannels(channels []Channel) map[string]string {
+	upstreams := make(map[string]string)
+	conflict := make(map[string]bool)
+	for i := range channels {
+		channel := &channels[i]
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		raw := strings.TrimSpace(channel.GetModelMapping())
+		if raw == "" || raw == "{}" {
+			continue
+		}
+		var mapping map[string]string
+		if err := common.UnmarshalJsonStr(raw, &mapping); err != nil {
+			continue
+		}
+		for _, name := range channel.GetModels() {
+			name = strings.TrimSpace(name)
+			if name == "" || mapping[name] == "" || conflict[name] {
+				continue
+			}
+			resolved, cyclic := followChannelModelMapping(mapping, name)
+			if cyclic || resolved == "" || resolved == name {
+				continue
+			}
+			previous, seen := upstreams[name]
+			if seen && previous != resolved {
+				delete(upstreams, name)
+				conflict[name] = true
+				continue
+			}
+			upstreams[name] = resolved
+		}
+	}
+	return upstreams
 }
