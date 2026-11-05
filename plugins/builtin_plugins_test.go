@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var expectedKeys = []string{"alibaba", "asdada", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "top-image", "vertex-ai", "vidu", "xai"}
+var expectedKeys = []string{"alibaba", "asdada", "doubao", "google", "hailuo", "ip233", "jimeng", "kling", "sora", "sunoapi", "top-image", "vertex-ai", "vidu", "xai"}
 
 func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing.T) {
 	generation := jsplugin.DefaultRegistry.Generation()
@@ -540,7 +540,7 @@ func TestTopImageVideoDriver(t *testing.T) {
 		assert.Equal(t, "https://topimage.top/video.mp4", completed["url"])
 		stored := call(t, "buildContentRequest", map[string]any{
 			"artifactKey": "video", "upstreamTaskId": "vid_1", "baseUrl": "https://topimage.top", "apiKey": "secret",
-			"data": map[string]any{"video_url": "https://cdn.example/video.mp4?token=signed"},
+			"data":          map[string]any{"video_url": "https://cdn.example/video.mp4?token=signed"},
 			"clientRequest": map[string]any{"method": "GET"},
 		})
 		assert.Equal(t, "https://cdn.example/video.mp4?token=signed", stored["url"])
@@ -634,7 +634,7 @@ func TestAsdadaVideoDriver(t *testing.T) {
 		assert.False(t, hasURL)
 		content := call(t, "buildContentRequest", map[string]any{
 			"artifactKey": "video", "upstreamTaskId": "task_up", "baseUrl": "https://asdada.site", "apiKey": "secret",
-			"data": map[string]any{"video_url": "/api/tasks/task_up/content"},
+			"data":          map[string]any{"video_url": "/api/tasks/task_up/content"},
 			"clientRequest": map[string]any{"method": "GET"},
 		})
 		assert.Equal(t, "https://asdada.site/v1/videos/task_up/content", content["url"])
@@ -642,7 +642,7 @@ func TestAsdadaVideoDriver(t *testing.T) {
 		assert.Equal(t, "Bearer secret", headers["Authorization"])
 		signed := call(t, "buildContentRequest", map[string]any{
 			"artifactKey": "video", "upstreamTaskId": "task_up", "baseUrl": "https://asdada.site", "apiKey": "secret",
-			"data": map[string]any{"video_url": "https://cdn.example/video.mp4"},
+			"data":          map[string]any{"video_url": "https://cdn.example/video.mp4"},
 			"clientRequest": map[string]any{"method": "GET"},
 		})
 		assert.Equal(t, "https://cdn.example/video.mp4", signed["url"])
