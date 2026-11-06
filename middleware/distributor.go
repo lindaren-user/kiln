@@ -45,20 +45,23 @@ func allowDeclaredTaskPlugins(c *gin.Context, modelName string) {
 	if generation == nil {
 		return
 	}
-	lookup := modelName
-	if declared, ok := generation.CanonicalModel(modelName); ok {
-		lookup = declared
-	} else if target, ok := model.ResolveTaskModelAlias(generation, modelName); ok && target.Declared != "" {
-		lookup = target.Declared
+	// A mapped alias can also match another plugin's declared spelling.
+	// Include the mapped provider without excluding channels serving that name.
+	lookups := []string{modelName}
+	if upstream := model.PublicModelUpstreams()[modelName]; upstream != "" {
+		lookups = append(lookups, upstream)
 	}
-	plugins := generation.PluginsByModel(lookup)
-	if len(plugins) == 0 {
-		return
-	}
-	keys := make([]string, 0, len(plugins))
-	for _, plugin := range plugins {
-		if plugin != nil && plugin.Meta.Key != "" {
-			keys = append(keys, plugin.Meta.Key)
+	var keys []string
+	for _, lookup := range lookups {
+		if declared, ok := generation.CanonicalModel(lookup); ok {
+			lookup = declared
+		} else if target, ok := model.ResolveTaskModelAlias(generation, lookup); ok && target.Declared != "" {
+			lookup = target.Declared
+		}
+		for _, plugin := range generation.PluginsByModel(lookup) {
+			if plugin != nil && plugin.Meta.Key != "" && !slices.Contains(keys, plugin.Meta.Key) {
+				keys = append(keys, plugin.Meta.Key)
+			}
 		}
 	}
 	if len(keys) == 0 {

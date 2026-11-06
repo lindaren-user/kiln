@@ -102,6 +102,54 @@ func TestPricingTaskPluginVideoModelsUseVideoEndpoint(t *testing.T) {
 	}, byModel["sd2.0满血版"])
 }
 
+func TestPricingMappedTaskModelsKeepGenerationEndpoints(t *testing.T) {
+	for _, memoryCache := range []bool{true, false} {
+		t.Run(fmt.Sprintf("memory_cache=%t", memoryCache), func(t *testing.T) {
+			resetPricingEndpointTestTables(t)
+			common.MemoryCacheEnabled = memoryCache
+			setting := `{"task_plugin_key":"ip233"}`
+			aliasMapping := `{
+				"minimax-h3":"ip233-minimax-h3",
+				"public-video":"intermediate-video",
+				"intermediate-video":"ip233-minimax-h3",
+				"public-image":"ip233-gpt-image-2"
+			}`
+			vendorMapping := `{"ip233-minimax-h3":"vendor-endpoint"}`
+			for _, channel := range []*Channel{
+				{
+					Id: 310, Type: constant.ChannelTypeTaskPlugin, Key: "key-310", Status: common.ChannelStatusEnabled,
+					Name: "aliases", Setting: &setting, ModelMapping: &aliasMapping,
+					Models: "minimax-h3,public-video,public-image,IP233-MINIMAX-H3,unknown-model",
+				},
+				{
+					Id: 311, Type: constant.ChannelTypeTaskPlugin, Key: "key-311", Status: common.ChannelStatusEnabled,
+					Name: "vendor-id", Setting: &setting, ModelMapping: &vendorMapping, Models: "ip233-minimax-h3",
+				},
+			} {
+				require.NoError(t, DB.Create(channel).Error)
+				for _, name := range channel.GetModels() {
+					insertPricingEndpointAbility(t, channel.Id, name)
+				}
+			}
+
+			byModel := pricingEndpointTypesByModel(t)
+			videoEndpoints := []constant.EndpointType{constant.EndpointTypeOpenAIVideo, constant.EndpointTypeOpenAIResponse}
+			for _, name := range []string{"minimax-h3", "public-video", "IP233-MINIMAX-H3", "ip233-minimax-h3"} {
+				assert.Equal(t, videoEndpoints, byModel[name], "catalog model %q must remain selectable as a video", name)
+			}
+			assert.Equal(t, []constant.EndpointType{constant.EndpointTypeImageGeneration, constant.EndpointTypeOpenAIResponse}, byModel["public-image"])
+			assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["unknown-model"])
+			require.Equal(t, "ip233-minimax-h3", PublicModelUpstreams()["minimax-h3"])
+
+			updatedMapping := `{"minimax-h3":"ip233-gpt-image-2"}`
+			require.NoError(t, DB.Model(&Channel{}).Where("id = ?", 310).Update("model_mapping", updatedMapping).Error)
+			updated := pricingEndpointTypesByModel(t)
+			assert.Equal(t, []constant.EndpointType{constant.EndpointTypeImageGeneration, constant.EndpointTypeOpenAIResponse}, updated["minimax-h3"])
+			assert.Equal(t, "ip233-gpt-image-2", PublicModelUpstreams()["minimax-h3"], "channel changes must refresh the menu's upstream identity")
+		})
+	}
+}
+
 func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 

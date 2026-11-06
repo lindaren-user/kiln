@@ -430,3 +430,30 @@ func TestLegacyVideoGenerationsAdmitsDeclaredTaskPlugin(t *testing.T) {
 	allowDeclaredTaskPlugins(unknown, "not-a-declared-video-model")
 	assert.Empty(t, unknownConstraints.Filters[0].TaskPluginKeys)
 }
+
+func TestLegacyVideoGenerationsAdmitsMappedTaskPlugin(t *testing.T) {
+	setupOriginTaskDB(t)
+	model.InvalidatePricingCache()
+	t.Cleanup(model.InvalidatePricingCache)
+	mapping := `{"minimax-h3":"ip233-minimax-h3"}`
+	channel := &model.Channel{
+		Name: "mapped-video", Key: "test-key", Status: common.ChannelStatusEnabled,
+		Type: constant.ChannelTypeTaskPlugin, Models: "minimax-h3", ModelMapping: &mapping,
+	}
+	channel.SetSetting(dto.ChannelSettings{TaskPluginKey: "ip233"})
+	require.NoError(t, model.DB.Create(channel).Error)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	constraints := service.GetChannelConstraints(c)
+	constraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+
+	allowDeclaredTaskPlugins(c, "minimax-h3")
+
+	assert.Contains(t, constraints.Filters[0].TaskPluginKeys, "ip233")
+	allowed, _ := model.ChannelSatisfiesFilters(channel, "minimax-h3", constraints.Filters)
+	assert.True(t, allowed, "a selectable mapped video must reach its bound plugin")
+	unrelated := &model.Channel{Type: constant.ChannelTypeTaskPlugin}
+	unrelated.SetSetting(dto.ChannelSettings{TaskPluginKey: "top-image"})
+	allowed, _ = model.ChannelSatisfiesFilters(unrelated, "minimax-h3", constraints.Filters)
+	assert.False(t, allowed, "unrelated plugins must remain excluded")
+}

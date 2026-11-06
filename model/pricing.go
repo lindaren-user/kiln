@@ -97,6 +97,12 @@ func InvalidatePricingCache() {
 	pricingMap = nil
 	vendorsList = nil
 	lastGetPricingTime = time.Time{}
+
+	// Channel mapping changes must refresh the parameter and routing identity too.
+	publicUpstreamMu.Lock()
+	publicUpstreamNames = nil
+	publicUpstreamUntil = time.Time{}
+	publicUpstreamMu.Unlock()
 }
 
 // GetVendors 返回当前定价接口使用到的供应商信息
@@ -120,9 +126,18 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 	return make([]constant.EndpointType, 0)
 }
 
-func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig, taskPluginKeys map[int]string) []constant.EndpointType {
+func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig, taskPluginConfigs map[int]pricingTaskPluginConfig) []constant.EndpointType {
 	if ability.ChannelType == constant.ChannelTypeTaskPlugin {
-		if endpoints, ok := taskPluginPricingEndpoints(taskPluginKeys[ability.ChannelId], ability.Model); ok {
+		config := taskPluginConfigs[ability.ChannelId]
+		upstream, cyclic := followChannelModelMapping(config.modelMapping, ability.Model)
+		if !cyclic {
+			if endpoints, ok := taskPluginPricingEndpoints(config.key, upstream); ok {
+				return endpoints
+			}
+		}
+		// A declared model may map to an opaque vendor endpoint ID. Its
+		// protocol claims still describe how clients call the public model.
+		if endpoints, ok := taskPluginPricingEndpoints(config.key, ability.Model); ok {
 			return endpoints
 		}
 	}
@@ -188,10 +203,15 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 	return configs
 }
 
-// loadPricingTaskPluginKeys reads the plugin bound to each type-61 channel.
+type pricingTaskPluginConfig struct {
+	key          string
+	modelMapping map[string]string
+}
+
+// loadPricingTaskPluginConfigs reads the plugin and mapping of each type-61 channel.
 // The pricing refresh holds updatePricingLock and may take channelSyncLock
 // here, the same order as loadPricingAdvancedCustomConfigs.
-func loadPricingTaskPluginKeys(enableAbilities []AbilityWithChannel) map[int]string {
+func loadPricingTaskPluginConfigs(enableAbilities []AbilityWithChannel) map[int]pricingTaskPluginConfig {
 	channelIDs := make([]int, 0)
 	seen := make(map[int]struct{})
 	for _, ability := range enableAbilities {
@@ -207,41 +227,48 @@ func loadPricingTaskPluginKeys(enableAbilities []AbilityWithChannel) map[int]str
 	if len(channelIDs) == 0 {
 		return nil
 	}
-	keys := make(map[int]string, len(channelIDs))
+	channels := make([]*Channel, 0, len(channelIDs))
 	if common.MemoryCacheEnabled {
 		channelSyncLock.RLock()
-		defer channelSyncLock.RUnlock()
 		for _, channelID := range channelIDs {
-			channel := channelsIDM[channelID]
-			if channel == nil {
-				continue
+			if channel := channelsIDM[channelID]; channel != nil {
+				channels = append(channels, channel)
 			}
-			keys[channelID] = strings.TrimSpace(channel.GetSetting().TaskPluginKey)
 		}
-		return keys
-	}
-	var channels []Channel
-	if err := DB.Select("id", "setting").Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
+		channelSyncLock.RUnlock()
+	} else if err := DB.Select("id", "setting", "model_mapping").Where("id IN ?", channelIDs).Find(&channels).Error; err != nil {
 		common.SysLog(common.LogText("load task plugin keys for pricing: %v", err))
-		return keys
+		return nil
 	}
-	for i := range channels {
-		keys[channels[i].Id] = strings.TrimSpace(channels[i].GetSetting().TaskPluginKey)
+	configs := make(map[int]pricingTaskPluginConfig, len(channels))
+	for _, channel := range channels {
+		config := pricingTaskPluginConfig{key: strings.TrimSpace(channel.GetSetting().TaskPluginKey)}
+		if raw := strings.TrimSpace(channel.GetModelMapping()); raw != "" && raw != "{}" {
+			if err := common.UnmarshalJsonStr(raw, &config.modelMapping); err != nil {
+				config.modelMapping = nil
+			}
+		}
+		configs[channel.Id] = config
 	}
-	return keys
+	return configs
 }
 
 // taskPluginPricingEndpoints reports the host endpoints a task plugin actually
 // serves. A video plugin must be tagged openai-video so quick generate lists
 // its models; the type-61 default of the chat endpoint does not.
 func taskPluginPricingEndpoints(pluginKey, model string) ([]constant.EndpointType, bool) {
-	plugin, ok := jsplugin.DefaultRegistry.Get(strings.TrimSpace(pluginKey))
+	generation := jsplugin.DefaultRegistry.Generation()
+	plugin, ok := generation.Get(strings.TrimSpace(pluginKey))
 	if !ok {
+		return nil, false
+	}
+	declared, ok := generation.CanonicalModel(model)
+	if !ok || !slices.Contains(plugin.Meta.Models, declared) {
 		return nil, false
 	}
 	var video, image, responses bool
 	for _, claim := range plugin.Meta.Protocols {
-		if len(claim.Models) > 0 && !slices.Contains(claim.Models, model) {
+		if len(claim.Models) > 0 && !slices.Contains(claim.Models, declared) {
 			continue
 		}
 		switch claim.Name {
@@ -330,12 +357,12 @@ func updatePricing() {
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
-	taskPluginKeys := loadPricingTaskPluginKeys(enableAbilities)
+	taskPluginConfigs := loadPricingTaskPluginConfigs(enableAbilities)
 
 	// 先根据已有能力填充原生端点
 	for _, ability := range enableAbilities {
 		endpoints := modelSupportEndpointsStr[ability.Model]
-		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs, taskPluginKeys)
+		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs, taskPluginConfigs)
 		for _, channelType := range channelTypes {
 			if !common.StringsContains(endpoints, string(channelType)) {
 				endpoints = append(endpoints, string(channelType))
