@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -12,12 +13,13 @@ import (
 
 // quickGenerateUploadErrorStatus maps an upload failure onto the status and
 // message the console shows; storage outages never leak the vendor response.
-func quickGenerateUploadErrorStatus(err error) (int, string) {
+func quickGenerateUploadErrorStatus(c *gin.Context, err error) (int, string) {
 	switch {
 	case errors.Is(err, service.ErrQuickGenerateUploadDisabled),
 		errors.Is(err, service.ErrQuickGenerateMultipartDisabled):
 		return http.StatusServiceUnavailable, err.Error()
 	case errors.Is(err, service.ErrQuickGenerateStorageUnavailable):
+		logger.LogError(c.Request.Context(), common.LogText("quick generate upload storage operation failed: %v", err))
 		return http.StatusBadGateway, service.ErrQuickGenerateStorageUnavailable.Error()
 	default:
 		return http.StatusBadRequest, err.Error()
@@ -33,7 +35,7 @@ func PrepareQuickGenerateUpload(c *gin.Context) {
 	grant, err := service.PrepareQuickGenerateUpload(c.Request.Context(), request)
 	c.Header("Cache-Control", "private, no-store")
 	if err != nil {
-		status, message := quickGenerateUploadErrorStatus(err)
+		status, message := quickGenerateUploadErrorStatus(c, err)
 		common.ApiErrorStatus(c, status, common.NewMessage(message))
 		return
 	}
@@ -49,7 +51,7 @@ func BeginQuickGenerateMultipartUpload(c *gin.Context) {
 	grant, err := service.BeginQuickGenerateMultipartUpload(c.Request.Context(), request)
 	c.Header("Cache-Control", "private, no-store")
 	if err != nil {
-		status, message := quickGenerateUploadErrorStatus(err)
+		status, message := quickGenerateUploadErrorStatus(c, err)
 		common.ApiErrorStatus(c, status, common.NewMessage(message))
 		return
 	}
@@ -65,7 +67,7 @@ func CompleteQuickGenerateMultipartUpload(c *gin.Context) {
 	grant, err := service.CompleteQuickGenerateMultipartUpload(c.Request.Context(), request)
 	c.Header("Cache-Control", "private, no-store")
 	if err != nil {
-		status, message := quickGenerateUploadErrorStatus(err)
+		status, message := quickGenerateUploadErrorStatus(c, err)
 		common.ApiErrorStatus(c, status, common.NewMessage(message))
 		return
 	}

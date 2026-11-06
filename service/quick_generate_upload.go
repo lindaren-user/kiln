@@ -156,7 +156,7 @@ func (s quickGenerateUploadStorage) findObject(ctx context.Context, objectURL st
 	exists, err := s.objectExists(ctx, objectURL, input.Size, input.ContentType)
 	if err != nil {
 		if errors.Is(err, ErrQuickGenerateStorageUnavailable) {
-			return false, ErrQuickGenerateStorageUnavailable
+			return false, fmt.Errorf("check existing object: %w", err)
 		}
 		return false, err
 	}
@@ -192,7 +192,7 @@ func quickGenerateUploadCacheStore(objectURL string, input QuickGenerateUploadRe
 func (s quickGenerateUploadStorage) grantExistingObject(objectURL string) (*QuickGenerateUploadGrant, error) {
 	readURL, err := s.presign(http.MethodGet, objectURL, s.config.TTLSeconds)
 	if err != nil {
-		return nil, ErrQuickGenerateStorageUnavailable
+		return nil, fmt.Errorf("%w: sign download URL: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	return &QuickGenerateUploadGrant{Exists: true, URL: readURL}, nil
 }
@@ -204,7 +204,7 @@ func (s quickGenerateUploadStorage) grantNewObject(ctx context.Context, objectUR
 	}
 	readURL, err := s.presign(http.MethodGet, objectURL, s.config.TTLSeconds)
 	if err != nil {
-		return nil, ErrQuickGenerateStorageUnavailable
+		return nil, fmt.Errorf("%w: sign download URL: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	return &QuickGenerateUploadGrant{URL: readURL, PutURL: putURL, Headers: headers}, nil
 }
@@ -212,14 +212,14 @@ func (s quickGenerateUploadStorage) grantNewObject(ctx context.Context, objectUR
 func (s quickGenerateUploadStorage) objectExists(ctx context.Context, objectURL string, expectedSize int64, expectedType string) (bool, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, objectURL, nil)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("%w: create object HEAD request: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	if err = s.sign(ctx, request); err != nil {
-		return false, err
+		return false, fmt.Errorf("%w: sign object HEAD request: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	response, err := quickGenerateUploadHTTPClient.Do(request)
 	if err != nil {
-		return false, fmt.Errorf("%w: %v", ErrQuickGenerateStorageUnavailable, err)
+		return false, fmt.Errorf("%w: object HEAD request failed: %v", ErrQuickGenerateStorageUnavailable, quickGenerateStorageRequestCause(err))
 	}
 	response.Body.Close()
 	switch response.StatusCode {
@@ -231,8 +231,12 @@ func (s quickGenerateUploadStorage) objectExists(ctx context.Context, objectURL 
 	case http.StatusNotFound:
 		return false, nil
 	default:
-		return false, fmt.Errorf("%w: object check returned status %d", ErrQuickGenerateStorageUnavailable, response.StatusCode)
+		return false, quickGenerateStorageResponseError(http.MethodHead, response)
 	}
+}
+
+func quickGenerateStorageResponseError(method string, response *http.Response) error {
+	return fmt.Errorf("%w: %s returned status %d (R2 request_id=%q, cf_ray=%q)", ErrQuickGenerateStorageUnavailable, method, response.StatusCode, response.Header.Get("x-amz-request-id"), response.Header.Get("cf-ray"))
 }
 
 func (s quickGenerateUploadStorage) presignPut(ctx context.Context, objectURL string, input QuickGenerateUploadRequest) (string, map[string]string, error) {
@@ -252,7 +256,7 @@ func (s quickGenerateUploadStorage) presignPut(ctx context.Context, objectURL st
 		options.DisableHeaderHoisting = true
 	})
 	if err != nil {
-		return "", nil, ErrQuickGenerateStorageUnavailable
+		return "", nil, fmt.Errorf("%w: sign upload URL: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	headers := map[string]string{
 		"Content-Type":          input.ContentType,
@@ -262,6 +266,14 @@ func (s quickGenerateUploadStorage) presignPut(ctx context.Context, objectURL st
 		headers["Content-Type"] = values[0]
 	}
 	return putURL, headers, nil
+}
+
+func quickGenerateStorageRequestCause(err error) error {
+	var requestError *url.Error
+	if errors.As(err, &requestError) {
+		return requestError.Err
+	}
+	return err
 }
 
 func (s quickGenerateUploadStorage) presign(method, objectURL string, ttlSeconds int) (string, error) {

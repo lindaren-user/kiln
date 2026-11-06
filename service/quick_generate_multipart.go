@@ -120,7 +120,7 @@ func BeginQuickGenerateMultipartUpload(ctx context.Context, input QuickGenerateM
 	for number := 1; number <= partCount; number++ {
 		partURL, err := storage.presignPart(objectURL, uploadID, number)
 		if err != nil {
-			return nil, ErrQuickGenerateStorageUnavailable
+			return nil, fmt.Errorf("%w: sign multipart part URL: %v", ErrQuickGenerateStorageUnavailable, err)
 		}
 		parts = append(parts, QuickGenerateMultipartPart{PartNumber: number, URL: partURL})
 	}
@@ -191,8 +191,11 @@ func (s quickGenerateUploadStorage) initiateMultipart(ctx context.Context, objec
 		return "", err
 	}
 	var result quickGenerateInitiateMultipartResult
-	if err := xml.Unmarshal(response, &result); err != nil || result.UploadID == "" {
-		return "", ErrQuickGenerateStorageUnavailable
+	if err := xml.Unmarshal(response, &result); err != nil {
+		return "", fmt.Errorf("%w: parse multipart initiation response: %v", ErrQuickGenerateStorageUnavailable, err)
+	}
+	if result.UploadID == "" {
+		return "", fmt.Errorf("%w: multipart initiation response has no upload ID", ErrQuickGenerateStorageUnavailable)
 	}
 	return result.UploadID, nil
 }
@@ -260,11 +263,11 @@ func (s quickGenerateUploadStorage) send(ctx context.Context, method string, end
 	}
 	sum := sha256.Sum256(payload)
 	if err := s.signer.SignHTTP(ctx, s.credentials, request, hex.EncodeToString(sum[:]), "s3", s.config.Region, time.Now()); err != nil {
-		return nil, ErrQuickGenerateStorageUnavailable
+		return nil, fmt.Errorf("%w: sign %s request: %v", ErrQuickGenerateStorageUnavailable, method, err)
 	}
 	response, err := quickGenerateUploadHTTPClient.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrQuickGenerateStorageUnavailable, err)
+		return nil, fmt.Errorf("%w: %s request failed: %v", ErrQuickGenerateStorageUnavailable, method, quickGenerateStorageRequestCause(err))
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
@@ -272,7 +275,7 @@ func (s quickGenerateUploadStorage) send(ctx context.Context, method string, end
 		return nil, fmt.Errorf("%w: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("%w: object store returned status %d", ErrQuickGenerateStorageUnavailable, response.StatusCode)
+		return nil, quickGenerateStorageResponseError(method, response)
 	}
 	return body, nil
 }
