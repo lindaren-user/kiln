@@ -17,23 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import { resolvePublicOrigin } from '@/lib/public-origin'
+
 function trimTrailingSlashes(value: string): string {
   return value.trim().replace(/\/+$/, '')
-}
-
-function isLoopbackUrl(value: string): boolean {
-  try {
-    const host = new URL(value).hostname.toLowerCase()
-    return (
-      host === 'localhost' ||
-      host.endsWith('.localhost') ||
-      host === '::1' ||
-      host === '[::1]' ||
-      host.startsWith('127.')
-    )
-  } catch {
-    return false
-  }
 }
 
 /** Ignore a loopback ServerAddress when the docs page is opened on a public host. */
@@ -41,17 +28,7 @@ export function resolveDocsSiteOrigin(input: {
   serverAddress?: string
   pageOrigin?: string
 }): string {
-  const serverAddress = trimTrailingSlashes(input.serverAddress ?? '')
-  const pageOrigin = trimTrailingSlashes(input.pageOrigin ?? '')
-  if (
-    serverAddress &&
-    pageOrigin &&
-    isLoopbackUrl(serverAddress) &&
-    !isLoopbackUrl(pageOrigin)
-  ) {
-    return pageOrigin
-  }
-  return serverAddress || pageOrigin || 'https://example.com'
+  return resolvePublicOrigin(input)
 }
 
 export function docsOpenAIBaseUrl(siteOrigin: string): string {
