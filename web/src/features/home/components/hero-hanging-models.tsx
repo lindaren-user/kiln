@@ -34,7 +34,7 @@ const MODELS = [
   { id: 'kling', label: 'Kling', icon: 'Kling.Color' },
   { id: 'minimax', label: 'MiniMax', icon: 'Minimax.Color' },
   { id: 'openai', label: 'OpenAI', icon: 'OpenAI.Color' },
-  { id: 'qwen', label: 'Qwen', icon: 'Qwen.Color' },
+  { id: 'wan', label: 'Wan', icon: 'Wan' },
   { id: 'gemini', label: 'Gemini', icon: 'Gemini.Color' },
 ] as const
 
