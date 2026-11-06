@@ -243,8 +243,9 @@ export async function uploadQuickGenerateReferences(
   }
   const multipartAllowed = Boolean(statusResponse.data.data.multipart_enabled)
 
-  const localReferences = references.filter((reference) =>
-    reference.url.startsWith('blob:')
+  const localReferences = references.filter(
+    (reference) =>
+      reference.url.startsWith('blob:') || reference.url.startsWith('data:')
   )
   const total = localReferences.length
   let done = 0
@@ -255,7 +256,10 @@ export async function uploadQuickGenerateReferences(
   const urlsByDigest = new Map<string, string>()
   const uploadedReferences: ReferenceAttachment[] = []
   for (const reference of references) {
-    if (!reference.url.startsWith('blob:')) {
+    if (
+      !reference.url.startsWith('blob:') &&
+      !reference.url.startsWith('data:')
+    ) {
       uploadedReferences.push(reference)
       continue
     }

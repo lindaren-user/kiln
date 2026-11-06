@@ -65,6 +65,47 @@ describe('uploadQuickGenerateReferences', () => {
     URL.revokeObjectURL(blobURL)
   })
 
+  it('uploads data URL references to OSS before returning them', async () => {
+    const blob = new Blob(['image bytes'], { type: 'image/png' })
+    const dataURL = 'data:image/png;base64,aW1hZ2UgYnl0ZXM='
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, blob: async () => blob })
+      .mockResolvedValueOnce({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+    apiMock.get.mockResolvedValue({
+      data: { success: true, data: { enabled: true } },
+    } as never)
+    apiMock.post.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          exists: false,
+          url: 'https://bucket.r2.example/read?signature=read',
+          put_url: 'https://bucket.r2.example/put?signature=put',
+          headers: { 'Content-Type': 'image/png' },
+        },
+      },
+    } as never)
+
+    await expect(
+      uploadQuickGenerateReferences([{ url: dataURL, mediaType: 'image/png' }])
+    ).resolves.toEqual([
+      {
+        url: 'https://bucket.r2.example/read?signature=read',
+        mediaType: 'image/png',
+      },
+    ])
+    expect(fetchMock.mock.calls[0][0]).toBe(dataURL)
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://bucket.r2.example/put?signature=put'
+    )
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'PUT',
+      body: blob,
+    })
+  })
+
   it('uses a previously stored object without uploading', async () => {
     const blobURL = URL.createObjectURL(
       new Blob(['same image'], { type: 'image/png' })
