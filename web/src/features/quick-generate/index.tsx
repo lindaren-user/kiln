@@ -99,10 +99,9 @@ export function QuickGenerate() {
     : t('This model has no description yet.')
   const selectedModel = models.find((item) => item.name === model)
   const kind = selectedModel?.kind ?? ('image' as const)
-  const parameterModel = selectedModel?.parameterModel || model
   const capability = useMemo(
-    () => capabilityFor(parameterModel, kind),
-    [parameterModel, kind]
+    () => selectedModel?.capability ?? capabilityFor(kind),
+    [kind, selectedModel]
   )
   const effectiveValues = useMemo(
     () => compatibleValues(capability, values),
@@ -112,13 +111,13 @@ export function QuickGenerate() {
     if (!model) return ''
     if (kind === 'video') {
       return priceForRun(model, {
-        seconds: buildVideoRequest(effectiveValues, parameterModel).duration,
+        seconds: Number(effectiveValues.seconds ?? 0),
       })
     }
     return priceForRun(model, {
-      count: buildImageRequest(effectiveValues, parameterModel).count,
+      count: Number(effectiveValues.count ?? 1),
     })
-  }, [effectiveValues, kind, model, parameterModel, priceForRun])
+  }, [effectiveValues, kind, model, priceForRun])
 
   // A different model accepts a different set of parameters, so switching the
   // model drops the previous model's values instead of sending them again.
@@ -158,7 +157,6 @@ export function QuickGenerate() {
 
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
-        const parameterModel = params.parameterModel || params.model
         setUploadingReferences(params.references.length > 0)
         const uploadedReferences = await uploadQuickGenerateReferences(
           params.references
@@ -176,7 +174,7 @@ export function QuickGenerate() {
             prompt,
             request: buildVideoRequest(
               params.values,
-              parameterModel,
+              params.capability,
               imageReferences,
               uploadedReferences
             ),
@@ -207,18 +205,15 @@ export function QuickGenerate() {
 
         const request = buildImageRequest(
           params.values,
-          parameterModel,
+          params.capability,
           imageReferences
         )
         const images = await generateImages({
           apiKey,
           model: params.model,
           prompt,
-          size: request.size,
-          count: request.count,
-          quality: request.quality,
-          image: request.image,
-          images: request.images,
+          parameters: request,
+          operation: params.capability.referenceImages?.edit ? 'edit' : 'generate',
         })
         if (isCancelled()) return
         setGeneration((current) =>
@@ -255,14 +250,14 @@ export function QuickGenerate() {
       runGeneration(
         {
           model,
-          parameterModel,
           kind,
+          capability,
           values: effectiveValues,
           references,
         },
         prompt
       ),
-    [effectiveValues, kind, model, parameterModel, runGeneration]
+    [capability, effectiveValues, kind, model, runGeneration]
   )
 
   /** Replays the failed request with the parameters it was sent with. */
@@ -272,6 +267,7 @@ export function QuickGenerate() {
       {
         model: generation.model,
         kind: generation.kind,
+        capability: generation.capability,
         values: generation.values,
         references: generation.references,
       },

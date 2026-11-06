@@ -493,8 +493,7 @@ function videoBody(ctx) {
   if (spec.frames) {
     const first = firstURL(request, ["first_frame"], "first frame");
     const last = firstURL(request, ["last_frame"], "last frame");
-    if (first.length && last.length && (videos.length || images.length))
-      throw new Error("first_frame and last_frame cannot be combined with reference media");
+    if (first.length && last.length && (videos.length || images.length)) throw new Error("first_frame and last_frame cannot be combined with reference media");
     if (first.length !== last.length) throw new Error("first_frame and last_frame must be provided together");
     if (first.length) body.first_frame = first[0];
     if (last.length) body.last_frame = last[0];
@@ -657,8 +656,7 @@ export function extractUsageOnComplete(ctx, _result, body) {
 export function buildQueryRequest(ctx) {
   const taskId = trimmed(ctx.taskId);
   if (!taskId) throw new Error("task id is required");
-  if (isImageModel(ctx))
-    return { url: ctx.baseUrl + "/v1/images/generations/" + encodeURIComponent(taskId), method: "GET", headers: authHeaders(ctx) };
+  if (isImageModel(ctx)) return { url: ctx.baseUrl + "/v1/images/generations/" + encodeURIComponent(taskId), method: "GET", headers: authHeaders(ctx) };
   return { url: ctx.baseUrl + "/v1/videos/" + encodeURIComponent(taskId), method: "GET", headers: authHeaders(ctx) };
 }
 
@@ -669,8 +667,7 @@ export function parseTaskResult(_ctx, body) {
   const progress = Number(body.progress);
   if (Number.isFinite(progress) && progress >= 0 && progress <= 100) result.progress = Math.round(progress) + "%";
   if (status === "queued" || status === "pending") return Object.assign(result, { status: "QUEUED" });
-  if (status === "in_progress" || status === "processing" || status === "running")
-    return Object.assign(result, { status: "IN_PROGRESS" });
+  if (status === "in_progress" || status === "processing" || status === "running") return Object.assign(result, { status: "IN_PROGRESS" });
   // A completed video can still be waiting for the vendor's billing figure;
   // the task is only settled once that clears.
   if (status === "completed" && body.billing_pending === true) return Object.assign(result, { status: "IN_PROGRESS" });
@@ -781,8 +778,7 @@ export const protocols = {
       if (!ctx.body || ctx.body.kind !== "json") throw new Error("JSON body required");
       const req = plainObject(ctx.body.value);
       if (!req) throw new Error("request body must be an object");
-      if (req.input !== undefined && typeof req.input !== "string" && !Array.isArray(req.input))
-        throw new Error("input must be a string or array");
+      if (req.input !== undefined && typeof req.input !== "string" && !Array.isArray(req.input)) throw new Error("input must be a string or array");
       const input = responsesInput(req);
       const prompt = input.prompt || trimmed(req.prompt);
       if (!prompt) throw new Error("input is required");
@@ -808,10 +804,8 @@ export const protocols = {
         const events = previousState && previousState.status === status ? [] : [{ type: "output", data: responsesOutputText(ctx, task) }];
         return { events, state, done: true };
       }
-      if (status === "FAILURE")
-        return { events: [{ type: "error", code: "task_failed", message: task.fail_reason || "task failed" }], state, done: true };
-      if (previousState && previousState.status === status && previousState.progress === progress)
-        return { events: [], state, done: false };
+      if (status === "FAILURE") return { events: [{ type: "error", code: "task_failed", message: task.fail_reason || "task failed" }], state, done: true };
+      if (previousState && previousState.status === status && previousState.progress === progress) return { events: [], state, done: false };
       const event = { type: "progress", message: status.toLowerCase() };
       if (progress !== null) event.progress = progress;
       return { events: [event], state, done: false };
@@ -881,3 +875,64 @@ export const protocols = {
     },
   },
 };
+
+// The console reads the same per-model contract that videoBody/imageVendorBody enforce.
+meta.generationProfiles = VIDEO_MODEL_NAMES.map((name) => {
+  const spec = VIDEO_MODELS[name];
+  const duration = { key: "seconds", labelKey: "Duration", requestPath: ["duration"] };
+  if (spec.seconds.list)
+    Object.assign(duration, {
+      type: "select",
+      valueType: "number",
+      defaultValue: String(spec.seconds.def),
+      options: spec.seconds.list.map((value) => ({ value: String(value), label: String(value) })),
+    });
+  else Object.assign(duration, { type: "number", defaultValue: spec.seconds.def, min: spec.seconds.min, max: spec.seconds.max });
+  const fields = [duration].concat(
+    [
+      ["ratio", "Aspect Ratio", spec.aspects, ["metadata", "aspect_ratio"], spec.aspects.includes("16:9") ? "16:9" : spec.aspects[0]],
+      ["resolution", "Resolution", spec.resolutions, ["metadata", "resolution"], spec.resolutions[spec.resolutions.length - 1]],
+    ].map(([key, labelKey, values, requestPath, defaultValue]) => ({
+      key,
+      labelKey,
+      type: "select",
+      defaultValue,
+      requestPath,
+      options: values.map((value) => ({ value, label: value })),
+    }))
+  );
+  return { models: [name], kind: "video", fields, referenceImages: { max: 5, field: "images", encoding: "dataUrl" }, mediaNotice: true };
+}).concat(
+  IMAGE_MODEL_NAMES.map((name) => {
+    const spec = IMAGE_MODELS[name];
+    const fields = [];
+    if (spec.aspects)
+      fields.push({
+        key: "size",
+        labelKey: "Aspect Ratio",
+        type: "select",
+        defaultValue: "1:1",
+        requestPath: ["size"],
+        options: spec.aspects.map((value) => ({ value, label: value })),
+      });
+    if (spec.quality)
+      fields.push({
+        key: "quality",
+        labelKey: spec.tieredQuality ? "Resolution" : "Quality",
+        type: "select",
+        defaultValue: spec.tieredQuality ? "1K" : "medium",
+        requestPath: ["quality"],
+        options: spec.quality.map((value) => ({ value, label: value })),
+      });
+    fields.push({
+      key: "count",
+      labelKey: "Count",
+      type: "select",
+      valueType: "number",
+      defaultValue: "1",
+      requestPath: ["n"],
+      options: [{ value: "1", label: "1" }],
+    });
+    return { models: [name], kind: "image", fields, referenceImages: { max: 5, field: "images", encoding: "dataUrl" } };
+  })
+);

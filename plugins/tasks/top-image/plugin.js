@@ -135,9 +135,16 @@ function videoBody(ctx) {
   const body = { model: model, prompt: prompt };
   const duration = durationOf(req, model);
   if (duration !== undefined) body.duration = duration;
-  const ratio = firstString(req, ["ratio", "aspect_ratio"]) || RATIO_BY_SIZE[trimmed(req.size)] || (/^\d+:\d+$/.test(trimmed(req.size)) ? trimmed(req.size) : "");
+  const ratio =
+    firstString(req, ["ratio", "aspect_ratio"]) || RATIO_BY_SIZE[trimmed(req.size)] || (/^\d+:\d+$/.test(trimmed(req.size)) ? trimmed(req.size) : "");
   if (ratio) body.ratio = ratio;
-  const images = stringList(req.referenceImages).concat(stringList(req.images), stringList(req.imageUrls), stringList(req.image_urls), stringList(req.image), stringList(req.image_url));
+  const images = stringList(req.referenceImages).concat(
+    stringList(req.images),
+    stringList(req.imageUrls),
+    stringList(req.image_urls),
+    stringList(req.image),
+    stringList(req.image_url)
+  );
   const referenceImages = [];
   for (const image of images) {
     if (!referenceImages.includes(image)) referenceImages.push(image);
@@ -173,7 +180,9 @@ function usageFacts(ctx, body) {
   if (body && typeof body === "object") {
     const billed = positiveSeconds(body.billing_seconds);
     if (billed) return { seconds: billed };
-    const output = positiveSeconds(body.actualDuration !== undefined && body.actualDuration !== null && body.actualDuration !== "" ? body.actualDuration : body.duration);
+    const output = positiveSeconds(
+      body.actualDuration !== undefined && body.actualDuration !== null && body.actualDuration !== "" ? body.actualDuration : body.duration
+    );
     const reference = positiveSeconds(body.reference_video_duration);
     if (output || reference) return { seconds: Math.min(output + reference, 3600) };
   }
@@ -211,7 +220,14 @@ export function buildSubmitRequest(ctx) {
       if (["images", "image", "image_url", "input_reference"].includes(name)) name = name === "input_reference" ? "first_image" : "referenceImages";
       parts.push({ name: name, fileRef: file.ref, filename: file.filename });
     }
-    return { url: ctx.baseUrl + "/openapi/v1/videos", method: "POST", headers: headers, bodyType: "multipart", parts: parts, action: body.referenceImages || body.first_image ? "image_to_video" : "text_to_video" };
+    return {
+      url: ctx.baseUrl + "/openapi/v1/videos",
+      method: "POST",
+      headers: headers,
+      bodyType: "multipart",
+      parts: parts,
+      action: body.referenceImages || body.first_image ? "image_to_video" : "text_to_video",
+    };
   }
   headers["Content-Type"] = "application/json";
   return {
@@ -360,7 +376,8 @@ export const protocols = {
         const events = previousState && previousState.status === status ? [] : [{ type: "output", data: responsesVideoText(ctx) }];
         return { events: events, state: state, done: true };
       }
-      if (status === "FAILURE") return { events: [{ type: "error", code: "task_failed", message: task.fail_reason || "task failed" }], state: state, done: true };
+      if (status === "FAILURE")
+        return { events: [{ type: "error", code: "task_failed", message: task.fail_reason || "task failed" }], state: state, done: true };
       if (previousState && previousState.status === status && previousState.progress === progress) return { events: [], state: state, done: false };
       const event = { type: "progress", message: status.toLowerCase() };
       if (progress !== null) event.progress = progress;
@@ -368,7 +385,14 @@ export const protocols = {
     },
     renderFinal: function (ctx, _task) {
       return {
-        output: [{ type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: responsesVideoText(ctx), annotations: [], logprobs: [] }] }],
+        output: [
+          {
+            type: "message",
+            status: "completed",
+            role: "assistant",
+            content: [{ type: "output_text", text: responsesVideoText(ctx), annotations: [], logprobs: [] }],
+          },
+        ],
         metadata: { vendor: "top-image" },
       };
     },
@@ -394,3 +418,21 @@ export const protocols = {
     },
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => ({
+  models: [name],
+  kind: "video",
+  fields: [
+    { key: "seconds", labelKey: "Duration", type: "number", defaultValue: 5, min: 4, max: maxSeconds(name), requestPath: ["duration"] },
+    {
+      key: "ratio",
+      labelKey: "Aspect Ratio",
+      type: "select",
+      defaultValue: "16:9",
+      requestPath: ["metadata", "ratio"],
+      options: ["16:9", "9:16", "1:1"].map((value) => ({ value, label: value })),
+    },
+  ],
+  referenceImages: { max: name.includes("SD2.5") ? 30 : 9, field: "images", encoding: "dataUrl" },
+  mediaNotice: true,
+}));

@@ -188,7 +188,10 @@ function listedProfile(action, model) {
 // model the plugin does not list those of every Vidu model.
 function dearestSettings(action, model) {
   let profiles = [listedProfile(action, model)];
-  if (!profiles[0]) profiles = Object.keys(ENDPOINT_MODELS).map((name) => listedProfile(name, model)).filter(Boolean);
+  if (!profiles[0])
+    profiles = Object.keys(ENDPOINT_MODELS)
+      .map((name) => listedProfile(name, model))
+      .filter(Boolean);
   if (!profiles.length) {
     for (const name of Object.keys(ENDPOINT_MODELS)) profiles = profiles.concat(Object.keys(ENDPOINT_MODELS[name]).map((key) => ENDPOINT_MODELS[name][key]));
   }
@@ -604,3 +607,39 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = meta.models
+  .map((name) => {
+    const specs = Object.values(ENDPOINT_MODELS)
+      .map((models) => models[name])
+      .filter(Boolean);
+    if (specs.length === 0) return null;
+    const minDuration = Math.max(...specs.map((spec) => spec.durations[0]));
+    const maxDuration = Math.min(...specs.map((spec) => spec.durations[1]));
+    const resolutions = specs[0].resolutions.filter((resolution) => specs.every((spec) => spec.resolutions.includes(resolution)));
+    if (minDuration > maxDuration || resolutions.length === 0) return null;
+    return {
+      models: [name],
+      kind: "video",
+      fields: [
+        {
+          key: "seconds",
+          labelKey: "Duration",
+          type: "number",
+          defaultValue: Math.min(maxDuration, Math.max(minDuration, specs[0].durations[2])),
+          min: minDuration,
+          max: maxDuration,
+          requestPath: ["duration"],
+        },
+        {
+          key: "resolution",
+          labelKey: "Resolution",
+          type: "select",
+          defaultValue: resolutions[0],
+          requestPath: ["metadata", "resolution"],
+          options: resolutions.map((value) => ({ value, label: value })),
+        },
+      ],
+    };
+  })
+  .filter(Boolean);

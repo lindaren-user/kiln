@@ -44,8 +44,15 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-function renderComposer(model: string, kind: 'image' | 'video') {
-  const capability = capabilityFor(model, kind)
+function renderComposer(
+  model: string,
+  kind: 'image' | 'video',
+  options: {
+    referenceImages?: { max: number; field: 'image' | 'images'; encoding: 'dataUrl' | 'base64' }
+    mediaNotice?: boolean
+  } = {}
+) {
+  const capability = capabilityFor(kind, { fields: [], ...options })
   render(
     <GenerateComposer
       modelItems={[{ value: model, label: model }]}
@@ -67,7 +74,9 @@ function renderComposer(model: string, kind: 'image' | 'video') {
 
 describe('reference media upload', () => {
   it('offers an image-only picker when the model accepts reference images', () => {
-    renderComposer('sora-2', 'video')
+    renderComposer('sora-2', 'video', {
+      referenceImages: { max: 1, field: 'images', encoding: 'dataUrl' },
+    })
 
     expect(
       screen.getByRole('button', { name: 'Add reference media' })
@@ -87,7 +96,7 @@ describe('reference media upload', () => {
   })
 
   it('accepts any media type for a model that reads reference video and audio', () => {
-    renderComposer('wan3.0-video', 'video')
+    renderComposer('wan3.0-video', 'video', { mediaNotice: true })
 
     expect(
       screen.getByRole('button', { name: 'Add reference media' })
@@ -96,7 +105,7 @@ describe('reference media upload', () => {
   })
 
   it('keeps the picker for a speech-to-video model that also needs audio', () => {
-    renderComposer('wan2.2-s2v', 'video')
+    renderComposer('wan2.2-s2v', 'video', { mediaNotice: true })
 
     expect(
       screen.getByRole('button', { name: 'Add reference media' })

@@ -21,10 +21,39 @@
     ]}},
     "submitResponseTypes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["json", "sse"]}},
     "requiredCapabilities": {"type": "array", "uniqueItems": true, "items": {"enum": ["json-clone@1", "submit-sse-delta@1", "json-order@1", "duration-auto@1"]}},
-    "routes": {"type": "array", "items": {"$ref": "#/$defs/route"}}, "usageSchema": {"type": "object", "additionalProperties": {"$ref": "#/$defs/usageField"}}, "usageExamples": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["label", "facts"], "properties": {"label": {"type": "string"}, "facts": {"type": "object"}}}}, "usageProfiles": {"type": "array", "items": {"$ref": "#/$defs/usageProfile"}}, "auth": {}
+    "routes": {"type": "array", "items": {"$ref": "#/$defs/route"}}, "usageSchema": {"type": "object", "additionalProperties": {"$ref": "#/$defs/usageField"}}, "usageExamples": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["label", "facts"], "properties": {"label": {"type": "string"}, "facts": {"type": "object"}}}}, "usageProfiles": {"type": "array", "items": {"$ref": "#/$defs/usageProfile"}}, "generationProfiles": {"type": "array", "maxItems": 1024, "items": {"$ref": "#/$defs/generationProfile"}}, "auth": {}
   },
   "allOf": [{"if": {"required": ["requiredCapabilities"], "properties": {"requiredCapabilities": {"contains": {"const": "submit-sse-delta@1"}}}}, "then": {"required": ["submitResponseTypes"], "properties": {"submitResponseTypes": {"contains": {"const": "sse"}}}}}],
   "$defs": {
+    "generationProfile": {
+      "type": "object", "additionalProperties": false, "required": ["models", "kind", "fields"],
+      "properties": {
+        "models": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "kind": {"enum": ["image", "video"]},
+        "fields": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/generationField"}},
+        "referenceImages": {"$ref": "#/$defs/generationReferenceImages"},
+        "mediaNotice": {"type": "boolean"}
+      }
+    },
+    "generationField": {
+      "type": "object", "additionalProperties": false, "required": ["key", "labelKey", "type", "defaultValue", "requestPath"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1}, "labelKey": {"type": "string", "minLength": 1},
+        "label": {"$ref": "#/$defs/localizedText"}, "type": {"enum": ["select", "number"]},
+        "defaultValue": {}, "options": {"type": "array", "maxItems": 128, "items": {"type": "object", "additionalProperties": false, "required": ["value", "label"], "properties": {"value": {"type": "string", "minLength": 1}, "label": {"type": "string", "minLength": 1}}}},
+        "min": {"type": "number"}, "max": {"type": "number"},
+        "requestPath": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "minLength": 1}},
+        "valueType": {"enum": ["number", "boolean"]}
+      },
+      "oneOf": [
+        {"properties": {"type": {"const": "select"}, "defaultValue": {"type": "string"}}, "required": ["options"]},
+        {"properties": {"type": {"const": "number"}, "defaultValue": {"type": "number"}}, "required": ["min", "max"], "not": {"required": ["options"]}}
+      ]
+    },
+    "generationReferenceImages": {
+      "type": "object", "additionalProperties": false, "required": ["max", "field", "encoding"],
+      "properties": {"max": {"type": "integer", "minimum": 1, "maximum": 128}, "field": {"enum": ["image", "images"]}, "encoding": {"enum": ["dataUrl", "base64"]}, "edit": {"type": "boolean"}}
+    },
     "jsonChange": {
       "type": "object", "additionalProperties": false, "required": ["op", "path", "value"],
       "properties": {

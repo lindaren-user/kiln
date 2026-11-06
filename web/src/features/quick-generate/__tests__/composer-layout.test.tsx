@@ -24,6 +24,13 @@ import type { ApiKey } from '@/features/keys/types'
 import { GenerateComposer } from '../components/generate-composer'
 import { capabilityFor, defaultValues } from '../lib/capabilities'
 
+const imageSchema = {
+  fields: [
+    { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select' as const, defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
+    { key: 'count', labelKey: 'Count', type: 'select' as const, defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'] },
+  ],
+}
+
 const API_KEY: ApiKey = {
   id: 7,
   name: 'Quick key',
@@ -45,7 +52,7 @@ const API_KEY: ApiKey = {
 }
 
 function renderComposer() {
-  const capability = capabilityFor('z-image', 'image')
+  const capability = capabilityFor('image', imageSchema)
   render(
     <GenerateComposer
       modelItems={[{ value: 'z-image', label: 'z-image' }]}
@@ -94,7 +101,7 @@ describe('composer footer layout', () => {
   })
 
   it('keeps the prompt when the model changes', () => {
-    const first = capabilityFor('z-image', 'image')
+    const first = capabilityFor('image', imageSchema)
     const view = render(
       <GenerateComposer
         modelItems={[{ value: 'z-image', label: 'z-image' }]}
@@ -116,7 +123,7 @@ describe('composer footer layout', () => {
     editor.textContent = 'keep this prompt'
     fireEvent.input(editor)
 
-    const next = capabilityFor('sora-2', 'video')
+    const next = capabilityFor('video', { fields: [] })
     view.rerender(
       <GenerateComposer
         modelItems={[{ value: 'sora-2', label: 'sora-2' }]}

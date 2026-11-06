@@ -106,6 +106,7 @@ type Meta struct {
 	UsageSchema          map[string]UsageFieldSchema `json:"usageSchema,omitempty"`
 	UsageExamples        []UsageExample              `json:"usageExamples,omitempty"`
 	UsageProfiles        []UsageProfile              `json:"usageProfiles,omitempty"`
+	GenerationProfiles   []GenerationProfile         `json:"generationProfiles,omitempty"`
 	Auth                 AuthMeta                    `json:"auth"`
 }
 
@@ -881,6 +882,11 @@ func (r *Registry) Snapshot() RegistrySnapshot {
 }
 
 func cloneMeta(meta Meta) Meta {
+	meta.GenerationProfiles = slices.Clone(meta.GenerationProfiles)
+	for i := range meta.GenerationProfiles {
+		meta.GenerationProfiles[i].Models = slices.Clone(meta.GenerationProfiles[i].Models)
+		meta.GenerationProfiles[i].GenerationSchema = CloneGenerationSchema(meta.GenerationProfiles[i].GenerationSchema)
+	}
 	meta.SubmitResponseTypes = slices.Clone(meta.SubmitResponseTypes)
 	meta.RequiredCapabilities = slices.Clone(meta.RequiredCapabilities)
 	meta.ChannelTypes = append([]int(nil), meta.ChannelTypes...)
@@ -1028,13 +1034,19 @@ func decodeMeta(value any) (Meta, error) {
 	}
 	for field := range object {
 		switch field {
-		case "requiredCapabilities", "submitResponseTypes", "sortPriority", "website", "apiVersion", "key", "name", "icon", "description", "version", "author", "baseUrl", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "upstreams", "routes", "protocols", "usageSchema", "usageExamples", "usageProfiles", "auth", "endpoints", "submitPaths", "actions":
+		case "generationProfiles", "requiredCapabilities", "submitResponseTypes", "sortPriority", "website", "apiVersion", "key", "name", "icon", "description", "version", "author", "baseUrl", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "upstreams", "routes", "protocols", "usageSchema", "usageExamples", "usageProfiles", "auth", "endpoints", "submitPaths", "actions":
 		default:
 			return Meta{}, &UnknownMetaFieldError{Field: field}
 		}
 	}
 	meta := Meta{}
 	var err error
+	if profiles, present := object["generationProfiles"]; present {
+		meta.GenerationProfiles, err = decodeGenerationProfiles(profiles)
+		if err != nil {
+			return Meta{}, err
+		}
+	}
 	meta.APIVersion, err = integerMetaField(object, "apiVersion")
 	if err != nil {
 		return Meta{}, err
@@ -1206,6 +1218,9 @@ func ValidateV1Meta(meta Meta) error {
 }
 
 func normalizeV1Meta(meta *Meta) error {
+	if err := validateGenerationProfiles(meta); err != nil {
+		return err
+	}
 	seenCapabilities := make(map[string]bool, len(meta.RequiredCapabilities))
 	for _, name := range meta.RequiredCapabilities {
 		if !HasCapability(name) || seenCapabilities[name] {

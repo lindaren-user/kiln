@@ -4,8 +4,26 @@
 // GET /v1/models on https://asdada.site.
 const MODELS = {
   minimaxh3: { min: 4, max: 30, durations: [], resolutions: [], aspects: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], images: 0, videos: 0, audios: 0 },
-  "sd2-933-720p-9:16": { min: 5, max: 15, durations: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], resolutions: ["720p"], aspects: ["9:16"], images: 9, videos: 3, audios: 3 },
-  "sd2.5-y": { min: 4, max: 30, durations: [], resolutions: ["720p"], aspects: ["auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], images: 30, videos: 10, audios: 10 },
+  "sd2-933-720p-9:16": {
+    min: 5,
+    max: 15,
+    durations: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    resolutions: ["720p"],
+    aspects: ["9:16"],
+    images: 9,
+    videos: 3,
+    audios: 3,
+  },
+  "sd2.5-y": {
+    min: 4,
+    max: 30,
+    durations: [],
+    resolutions: ["720p"],
+    aspects: ["auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+    images: 30,
+    videos: 10,
+    audios: 10,
+  },
   "seedance_v2.5": { min: 4, max: 30, durations: [], resolutions: [], aspects: ["16:9", "9:16", "1:1", "4:3", "3:4"], images: 30, videos: 0, audios: 0 },
 };
 
@@ -309,7 +327,8 @@ export const protocols = {
         const events = previousState && previousState.status === status ? [] : [{ type: "output", data: responsesVideoText(ctx) }];
         return { events: events, state: state, done: true };
       }
-      if (status === "FAILURE") return { events: [{ type: "error", code: "task_failed", message: task.fail_reason || "task failed" }], state: state, done: true };
+      if (status === "FAILURE")
+        return { events: [{ type: "error", code: "task_failed", message: task.fail_reason || "task failed" }], state: state, done: true };
       if (previousState && previousState.status === status && previousState.progress === progress) return { events: [], state: state, done: false };
       const event = { type: "progress", message: status.toLowerCase() };
       if (progress !== null) event.progress = progress;
@@ -317,7 +336,14 @@ export const protocols = {
     },
     renderFinal: function (ctx, _task) {
       return {
-        output: [{ type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", text: responsesVideoText(ctx), annotations: [], logprobs: [] }] }],
+        output: [
+          {
+            type: "message",
+            status: "completed",
+            role: "assistant",
+            content: [{ type: "output_text", text: responsesVideoText(ctx), annotations: [], logprobs: [] }],
+          },
+        ],
         metadata: { vendor: "asdada" },
       };
     },
@@ -343,3 +369,34 @@ export const protocols = {
     },
   },
 };
+
+meta.generationProfiles = Object.keys(MODELS).map((name) => {
+  const spec = MODELS[name];
+  const seconds = { key: "seconds", labelKey: "Duration", requestPath: ["duration"] };
+  if (spec.durations.length)
+    Object.assign(seconds, {
+      type: "select",
+      valueType: "number",
+      defaultValue: String(spec.durations[0]),
+      options: spec.durations.map((value) => ({ value: String(value), label: String(value) })),
+    });
+  else Object.assign(seconds, { type: "number", defaultValue: Math.max(spec.min, 5), min: spec.min, max: spec.max });
+  const fields = [seconds].concat(
+    [
+      ["ratio", "Aspect Ratio", spec.aspects, ["metadata", "aspect_ratio"]],
+      ["resolution", "Resolution", spec.resolutions, ["metadata", "resolution"]],
+    ]
+      .filter((entry) => entry[2].length)
+      .map(([key, labelKey, values, requestPath]) => ({
+        key,
+        labelKey,
+        type: "select",
+        defaultValue: values[0],
+        requestPath,
+        options: values.map((value) => ({ value, label: value })),
+      }))
+  );
+  const profile = { models: [name], kind: "video", fields, mediaNotice: spec.videos > 0 || spec.audios > 0 };
+  if (spec.images) profile.referenceImages = { max: spec.images, field: "images", encoding: "dataUrl" };
+  return profile;
+});

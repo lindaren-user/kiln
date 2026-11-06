@@ -21,7 +21,6 @@ import { t } from 'i18next'
 import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
-import type { VideoRequest } from './lib/capabilities'
 import type { ReferenceAttachment } from './types'
 
 type SubmitPayload = {
@@ -301,7 +300,7 @@ export async function submitVideo(params: {
   apiKey: string
   model: string
   prompt: string
-  request: VideoRequest
+  request: Record<string, unknown>
 }): Promise<string> {
   const response = await fetch('/v1/video/generations', {
     method: 'POST',

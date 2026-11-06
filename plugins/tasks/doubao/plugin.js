@@ -1279,3 +1279,44 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = Object.keys(VIDEO_MODELS)
+  .map((name) => {
+    const spec = VIDEO_MODELS[name];
+    return {
+      models: [name],
+      kind: "video",
+      fields: [
+        { key: "seconds", labelKey: "Duration", type: "number", defaultValue: 5, min: 4, max: spec.maxDuration, requestPath: ["duration"] },
+        {
+          key: "resolution",
+          labelKey: "Resolution",
+          type: "select",
+          defaultValue: spec.resolutions.includes("1080p") ? "1080p" : "720p",
+          requestPath: ["metadata", "resolution"],
+          options: spec.resolutions.map((value) => ({ value, label: value })),
+        },
+      ],
+      referenceImages: { max: 1, field: "images", encoding: "dataUrl" },
+    };
+  })
+  .concat(
+    Object.keys(IMAGE_MODELS).map((name) => {
+      const spec = IMAGE_MODELS[name];
+      return {
+        models: [name],
+        kind: "image",
+        fields: [
+          {
+            key: "size",
+            labelKey: "Size",
+            type: "select",
+            defaultValue: spec.presets[0],
+            requestPath: ["size"],
+            options: spec.presets.map((value) => ({ value, label: value })),
+          },
+        ],
+        referenceImages: { max: spec.maxReferenceImages, field: "image", encoding: "dataUrl" },
+      };
+    })
+  );

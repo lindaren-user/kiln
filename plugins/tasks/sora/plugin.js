@@ -315,3 +315,31 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => ({
+  models: [name],
+  kind: "video",
+  fields: [
+    {
+      key: "size",
+      labelKey: "Size",
+      type: "select",
+      defaultValue: "1280x720",
+      requestPath: ["size"],
+      options: (name === "sora-2-pro" ? ["1280x720", "720x1280", "1792x1024", "1024x1792"] : ["1280x720", "720x1280"]).map((value) => ({
+        value,
+        label: value,
+      })),
+    },
+    {
+      key: "seconds",
+      labelKey: "Duration",
+      type: "select",
+      valueType: "number",
+      defaultValue: "4",
+      requestPath: ["duration"],
+      options: ["4", "8", "12"].map((value) => ({ value, label: value })),
+    },
+  ],
+  referenceImages: { max: 1, field: "images", encoding: "dataUrl" },
+}));

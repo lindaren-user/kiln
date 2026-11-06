@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ApiKey } from '@/features/keys/types'
+import { resolveLocalizedText } from '@/lib/localized-text'
 import { cn } from '@/lib/utils'
 
 import type { ModelCapability, ParamField } from '../lib/capabilities'
@@ -197,32 +198,28 @@ function ParamFieldControl(props: {
   onValueChange: (value: string) => void
   disabled?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const label = props.field.label
+    ? resolveLocalizedText(props.field.label, i18n.language)
+    : t(props.field.labelKey)
   if (props.field.type === 'select') {
     return (
       <ParamSelect
-        label={t(props.field.labelKey)}
-        items={props.field.options}
+        label={label}
+        items={props.field.options ?? []}
         value={props.value}
         onValueChange={props.onValueChange}
         disabled={props.disabled}
       />
     )
   }
-  const label =
-    props.field.key === 'seconds'
-      ? t('Duration {{min}}-{{max}}s', {
-          min: props.field.min,
-          max: props.field.max,
-        })
-      : t(props.field.labelKey)
   return (
     <ParamNumber
       label={label}
       value={props.value}
-      min={props.field.min}
-      max={props.field.max}
-      suffix={props.field.suffix}
+      min={props.field.min ?? 0}
+      max={props.field.max ?? Number.MAX_SAFE_INTEGER}
+      suffix={props.field.key === 'seconds' ? 's' : undefined}
       onValueChange={props.onValueChange}
       disabled={props.disabled}
     />
@@ -237,28 +234,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
 
-  // Option arrays depend on the model capability or the key list, not on typing.
-  // TODO: Hide resolution until a model declares the sizes its upstream
-  // actually accepts. Most of these interfaces have no resolution choice,
-  // and a shared list sends sizes they reject. The default is still sent.
-  const fields = useMemo<ParamField[]>(() => {
-    const visible = props.capability.fields.filter(
-      (field) => field.key !== 'resolution'
-    )
-    return visible.map((field) => {
-      if (field.type !== 'select') return field
-      return {
-        ...field,
-        options: field.options.map((option) => {
-          if (option.value === 'auto') return { ...option, label: t('Auto') }
-          if (option.value === 'adaptive') {
-            return { ...option, label: t('Adaptive') }
-          }
-          return option
-        }),
-      }
-    })
-  }, [props.capability, t])
+  const fields = props.capability.fields
   const keyItems = useMemo(
     () => props.keys.map((key) => ({ value: String(key.id), label: key.name })),
     [props.keys]
@@ -272,11 +248,8 @@ export function GenerateComposer(props: GenerateComposerProps) {
   const referenceImages = props.capability.referenceImages
   const acceptsReferences =
     Boolean(referenceImages) || props.capability.mediaNotice
-  const videoReferenceLimit = 5
   const maxReferences =
-    props.capability.kind === 'video' && acceptsReferences
-      ? videoReferenceLimit
-      : (referenceImages?.max ?? 0)
+    referenceImages?.max ?? (props.capability.mediaNotice ? 5 : 0)
   const acceptedTypes = props.capability.mediaNotice
     ? undefined
     : REFERENCE_IMAGE_TYPES

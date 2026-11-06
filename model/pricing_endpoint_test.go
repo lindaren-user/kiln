@@ -2,10 +2,12 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	_ "github.com/QuantumNous/new-api/plugins"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/stretchr/testify/assert"
@@ -148,6 +150,101 @@ func TestPricingMappedTaskModelsKeepGenerationEndpoints(t *testing.T) {
 			assert.Equal(t, "ip233-gpt-image-2", PublicModelUpstreams()["minimax-h3"], "channel changes must refresh the menu's upstream identity")
 		})
 	}
+}
+
+func TestPricingGenerationSchemasFollowMappedChannelModels(t *testing.T) {
+	abilities := []AbilityWithChannel{{
+		Ability:     Ability{Model: "minimax-h3", ChannelId: 310},
+		ChannelType: constant.ChannelTypeTaskPlugin,
+	}}
+	configs := map[int]pricingTaskPluginConfig{
+		310: {
+			key:          "ip233",
+			modelMapping: map[string]string{"minimax-h3": "ip233-minimax-h3"},
+		},
+	}
+
+	schemas := pricingGenerationSchemas(abilities, nil, configs)
+	videoSchema, ok := schemas["minimax-h3"]["video"]
+	require.True(t, ok)
+	field := func(key string) (jsplugin.GenerationField, bool) {
+		index := slices.IndexFunc(videoSchema.Fields, func(field jsplugin.GenerationField) bool {
+			return field.Key == key
+		})
+		if index < 0 {
+			return jsplugin.GenerationField{}, false
+		}
+		return videoSchema.Fields[index], true
+	}
+
+	seconds, ok := field("seconds")
+	require.True(t, ok)
+	require.NotNil(t, seconds.Min)
+	require.NotNil(t, seconds.Max)
+	assert.Equal(t, 4.0, *seconds.Min)
+	assert.Equal(t, 15.0, *seconds.Max)
+
+	resolution, ok := field("resolution")
+	require.True(t, ok)
+	assert.Equal(t, "768p", resolution.DefaultValue)
+	assert.Equal(t, []jsplugin.GenerationOption{{Value: "768p", Label: "768p"}}, resolution.Options)
+}
+
+func TestPricingGenerationSchemasUseNativeImageChannelModel(t *testing.T) {
+	schemas := pricingGenerationSchemas([]AbilityWithChannel{{
+		Ability:     Ability{Model: "gpt-image-1", ChannelId: 410},
+		ChannelType: constant.ChannelTypeOpenAI,
+	}}, nil, nil)
+
+	imageSchema, ok := schemas["gpt-image-1"]["image"]
+	require.True(t, ok)
+	require.Len(t, imageSchema.Fields, 3)
+	assert.Equal(t, "size", imageSchema.Fields[0].Key)
+	assert.Equal(t, "count", imageSchema.Fields[1].Key)
+	assert.Equal(t, "quality", imageSchema.Fields[2].Key)
+	require.NotNil(t, imageSchema.ReferenceImages)
+	assert.True(t, imageSchema.ReferenceImages.Edit)
+}
+
+func TestPricingGenerationSchemasIntersectProvidersForPublicModel(t *testing.T) {
+	abilities := []AbilityWithChannel{
+		{Ability: Ability{Model: "minimax-h3", ChannelId: 420}, ChannelType: constant.ChannelTypeTaskPlugin},
+		{Ability: Ability{Model: "minimax-h3", ChannelId: 421}, ChannelType: constant.ChannelTypeTaskPlugin},
+	}
+	configs := map[int]pricingTaskPluginConfig{
+		420: {key: "ip233", modelMapping: map[string]string{"minimax-h3": "ip233-minimax-h3"}},
+		421: {key: "hailuo", modelMapping: map[string]string{"minimax-h3": "MiniMax-H3"}},
+	}
+
+	schemas := pricingGenerationSchemas(abilities, nil, configs)
+	videoSchema := schemas["minimax-h3"]["video"]
+	require.Len(t, videoSchema.Fields, 1)
+	assert.Equal(t, "seconds", videoSchema.Fields[0].Key)
+	assert.Equal(t, 4.0, *videoSchema.Fields[0].Min)
+	assert.Equal(t, 15.0, *videoSchema.Fields[0].Max)
+	require.NotNil(t, videoSchema.ReferenceImages)
+	assert.Equal(t, 2, videoSchema.ReferenceImages.Max)
+	assert.True(t, videoSchema.MediaNotice)
+}
+
+func TestIntersectGenerationSchemasKeepsOnlySharedInputs(t *testing.T) {
+	minimumA, maximumA := 4.0, 15.0
+	minimumB, maximumB := 6.0, 12.0
+	first := jsplugin.GenerationSchema{Fields: []jsplugin.GenerationField{
+		{Key: "seconds", Type: "number", Min: &minimumA, Max: &maximumA, RequestPath: []string{"duration"}},
+		{Key: "ratio", Type: "select", RequestPath: []string{"metadata", "ratio"}, Options: []jsplugin.GenerationOption{{Value: "16:9", Label: "16:9"}, {Value: "9:16", Label: "9:16"}}},
+	}}
+	second := jsplugin.GenerationSchema{Fields: []jsplugin.GenerationField{
+		{Key: "seconds", Type: "number", Min: &minimumB, Max: &maximumB, RequestPath: []string{"duration"}},
+		{Key: "ratio", Type: "select", RequestPath: []string{"metadata", "ratio"}, Options: []jsplugin.GenerationOption{{Value: "9:16", Label: "9:16"}}},
+	}}
+
+	merged := intersectGenerationSchemas(first, second)
+	require.Len(t, merged.Fields, 2)
+	assert.Equal(t, 6.0, *merged.Fields[0].Min)
+	assert.Equal(t, 12.0, *merged.Fields[0].Max)
+	assert.Equal(t, 6.0, merged.Fields[0].DefaultValue)
+	assert.Equal(t, []jsplugin.GenerationOption{{Value: "9:16", Label: "9:16"}}, merged.Fields[1].Options)
 }
 
 func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {

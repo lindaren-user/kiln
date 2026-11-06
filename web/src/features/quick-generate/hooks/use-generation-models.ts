@@ -27,19 +27,18 @@ import {
 } from '@/features/pricing/lib/filters'
 import type { PricingModel } from '@/features/pricing/types'
 
-import { capabilityModelName } from '../lib/capabilities'
 import {
   generationModelPrice,
   generationRunPrice,
   type GenerationRunQuantity,
 } from '../lib/model-price'
+import type { ModelCapability } from '../lib/capabilities'
 import type { GenerationKind } from '../types'
 
 export type GenerationModel = {
   name: string
   kind: GenerationKind
-  /** Upstream model when a channel mapping renames the published model. */
-  parameterModel: string
+  capability: ModelCapability
 }
 
 type ListedModel = GenerationModel & { source: PricingModel }
@@ -55,7 +54,12 @@ function modelsFor(
   ).map((model) => ({
     name: model.model_name,
     kind,
-    parameterModel: capabilityModelName(model.model_name, model.upstream_model),
+    capability: {
+      kind,
+      fields: model.generation_schemas?.[kind]?.fields ?? [],
+      referenceImages: model.generation_schemas?.[kind]?.referenceImages ?? null,
+      mediaNotice: model.generation_schemas?.[kind]?.mediaNotice ?? false,
+    },
     source: model,
   }))
 }
@@ -87,10 +91,10 @@ export function useGenerationModels() {
 
   const models = useMemo<GenerationModel[]>(
     () =>
-      listed.map(({ name, kind, parameterModel }) => ({
+      listed.map(({ name, kind, capability }) => ({
         name,
         kind,
-        parameterModel,
+        capability,
       })),
     [listed]
   )

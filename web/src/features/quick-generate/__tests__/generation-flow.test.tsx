@@ -23,6 +23,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
 import type { ApiKey } from '@/features/keys/types'
+import type { GenerationSchema } from '@/features/pricing/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { QuickGenerate } from '..'
@@ -103,11 +104,22 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
+function mockModels(
+  models: {
+    name: string
+    kind: 'image' | 'video'
+    schema?: GenerationSchema
+  }[]
+) {
   useGenerationModelsMock.mockReturnValue({
     models: models.map((model) => ({
       ...model,
-      parameterModel: model.name,
+      capability: {
+        kind: model.kind,
+        fields: model.schema?.fields ?? [],
+        referenceImages: model.schema?.referenceImages ?? null,
+        mediaNotice: model.schema?.mediaNotice ?? false,
+      },
     })),
     items: models.map((model) => ({
       value: model.name,
@@ -123,7 +135,18 @@ function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
 }
 
 beforeEach(() => {
-  mockModels([{ name: 'z-image', kind: 'image' }])
+  mockModels([
+    {
+      name: 'z-image',
+      kind: 'image',
+      schema: {
+        fields: [
+          { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select', defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
+          { key: 'count', labelKey: 'Count', type: 'select', defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'], valueType: 'number' },
+        ],
+      },
+    },
+  ])
   useImageApiKeysMock.mockReturnValue({
     keys: [API_KEY],
     selectedKeyId: API_KEY.id,
@@ -158,13 +181,24 @@ describe('quick generate', () => {
       apiKey: 'sk-abc123',
       model: 'z-image',
       prompt: 'a kiln at dusk',
-      size: '1024x1024',
-      count: 1,
+      parameters: { size: '1:1', n: 1 },
+      operation: 'generate',
     })
   })
 
   it('shows the video result in the preview frame', async () => {
-    mockModels([{ name: 'sora-2', kind: 'video' }])
+    mockModels([
+      {
+        name: 'sora-2',
+        kind: 'video',
+        schema: {
+          fields: [
+            { key: 'size', labelKey: 'Size', type: 'select', defaultValue: '1280x720', options: [{ value: '1280x720', label: '1280x720' }], requestPath: ['size'] },
+            { key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 5, min: 1, max: 60, requestPath: ['duration'], valueType: 'number' },
+          ],
+        },
+      },
+    ])
     submitVideoMock.mockResolvedValue('task-1')
     pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
 
@@ -181,14 +215,22 @@ describe('quick generate', () => {
       request: {
         size: '1280x720',
         duration: 5,
-        metadata: { ratio: '16:9', aspect_ratio: '16:9' },
       },
     })
     expect(generateImagesMock).not.toHaveBeenCalled()
   })
 
   it('uploads reference video and audio as URLs for supported video models', async () => {
-    mockModels([{ name: 'wan3.0-video', kind: 'video' }])
+    mockModels([
+      {
+        name: 'wan3.0-video',
+        kind: 'video',
+        schema: {
+          fields: [],
+          mediaNotice: true,
+        },
+      },
+    ])
     submitVideoMock.mockResolvedValue('task-1')
     pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
     uploadReferencesMock.mockImplementation(async (references) =>
@@ -212,11 +254,16 @@ describe('quick generate', () => {
 
     await waitFor(() => expect(submitVideoMock).toHaveBeenCalled())
     const request = submitVideoMock.mock.calls[0][0].request
-    expect(request.reference_videos).toHaveLength(1)
-    expect(request.reference_audios).toHaveLength(1)
-    expect(request.reference_videos?.[0]).toBe('https://r2.example/reference-0')
-    expect(request.reference_audios?.[0]).toBe('https://r2.example/reference-1')
-    expect(request.metadata?.input?.media).toHaveLength(2)
+    expect(request).toMatchObject({
+      reference_videos: ['https://r2.example/reference-0'],
+      reference_audios: ['https://r2.example/reference-1'],
+      metadata: {
+        input: { media: [
+          { type: 'reference_video', url: 'https://r2.example/reference-0' },
+          { type: 'reference_audio', url: 'https://r2.example/reference-1' },
+        ] },
+      },
+    })
   })
 
   it('replaces the frame contents when generation fails', async () => {
@@ -359,49 +406,53 @@ describe('quick generate', () => {
     expect(screen.getByLabelText('API key')).toHaveTextContent('Quick key')
   })
 
-  it('shows the fixed size list for an OpenAI image model', () => {
-    mockModels([{ name: 'gpt-image-1', kind: 'image' }])
+  it('shows the size list declared by a channel for its public image model', () => {
+    mockModels([{ name: 'renamed-image', kind: 'image', schema: {
+      fields: [{ key: 'size', labelKey: 'Size', type: 'select', defaultValue: 'auto', options: [{ value: 'auto', label: 'Auto' }], requestPath: ['size'] }],
+    } }])
 
     render(<QuickGenerate />)
 
     expect(screen.getByLabelText('Size')).toHaveTextContent('Auto')
-    expect(screen.getByLabelText('Count')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Count')).toBeNull()
     expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
     expect(screen.queryByLabelText('Resolution')).toBeNull()
   })
 
-  it('shows a duration and no image-only controls for a video model', () => {
-    mockModels([{ name: 'sora-2', kind: 'video' }])
+  it('shows the duration bounds declared by the channel', () => {
+    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
+      fields: [{ key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 4, min: 4, max: 15, requestPath: ['duration'] }],
+    } }])
 
     render(<QuickGenerate />)
 
-    expect(screen.getByLabelText('Duration 1-60s')).toHaveValue(5)
-    expect(screen.getByLabelText('Duration 1-60s')).toHaveAttribute('min', '1')
-    expect(screen.getByLabelText('Duration 1-60s')).toHaveAttribute('max', '60')
-    expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
+    expect(screen.getByLabelText('Duration')).toHaveValue(4)
+    expect(screen.getByLabelText('Duration')).toHaveAttribute('min', '4')
+    expect(screen.getByLabelText('Duration')).toHaveAttribute('max', '15')
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
     expect(screen.queryByLabelText('Count')).toBeNull()
     expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.queryByLabelText('Size')).toBeNull()
   })
 
-  it('labels the duration with the range that model accepts', () => {
-    mockModels([{ name: '官转SD2.5-30图版-480P', kind: 'video' }])
+  it('offers no guessed controls when the channel has no input declaration', () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
 
     render(<QuickGenerate />)
 
-    const duration = screen.getByLabelText('Duration 4-30s')
-    expect(duration).toHaveValue(5)
-    expect(duration).toHaveAttribute('min', '4')
-    expect(duration).toHaveAttribute('max', '30')
+    expect(screen.queryByLabelText('Duration')).toBeNull()
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
   })
 
-  it('keeps resolution hidden for a video model that accepts more than one', () => {
-    mockModels([{ name: 'veo-3.0-generate-001', kind: 'video' }])
+  it('shows resolution when the channel explicitly declares it', () => {
+    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
+      fields: [{ key: 'resolution', labelKey: 'Resolution', type: 'select', defaultValue: '768p', options: [{ value: '768p', label: '768p' }], requestPath: ['metadata', 'resolution'] }],
+    } }])
 
     render(<QuickGenerate />)
 
-    expect(screen.queryByLabelText('Resolution')).toBeNull()
-    expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
+    expect(screen.getByLabelText('Resolution')).toHaveTextContent('768p')
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
     expect(screen.queryByLabelText('Count')).toBeNull()
   })
 

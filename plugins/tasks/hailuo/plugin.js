@@ -78,7 +78,13 @@ const H3_METADATA_FIELDS = ["aigc_watermark"];
 // with the code in base_resp.
 const V1_ERROR_CODES = { 400: 2013, 401: 1004, 403: 1004, 404: 2013, 413: 2013, 429: 1002 };
 // The /v2 error types by HTTP status.
-const V2_ERROR_TYPES = { 401: "authorized_error", 402: "insufficient_balance_error", 403: "authorized_error", 422: "unprocessable_entity_error", 429: "rate_limit_error" };
+const V2_ERROR_TYPES = {
+  401: "authorized_error",
+  402: "insufficient_balance_error",
+  403: "authorized_error",
+  422: "unprocessable_entity_error",
+  429: "rate_limit_error",
+};
 
 export const meta = {
   apiVersion: 1,
@@ -566,7 +572,12 @@ export const native = {
     if (!Array.isArray(body.content)) throw new Error("content must be an array");
     const content = validateH3Content(body.content);
     h3Duration(body.duration);
-    return { kind: "submit", model: body.model, action: h3HasVisualContent(content) ? "image_to_video" : "text_to_video", requestBody: { model: body.model, vendorBody: body } };
+    return {
+      kind: "submit",
+      model: body.model,
+      action: h3HasVisualContent(content) ? "image_to_video" : "text_to_video",
+      requestBody: { model: body.model, vendorBody: body },
+    };
   },
   // MiniMax answers /v1 with a base_resp envelope and /v2 with a bare task_id.
   taskCreated: function (ctx, task) {
@@ -707,7 +718,8 @@ export function extractUsage(ctx) {
         : 0,
     };
   }
-  if (req.vendorBody) return { seconds: outboundDuration(req.vendorBody), resolution: v1NativeResolution(model, req.vendorBody), input_images: 0, input_video_seconds: 0 };
+  if (req.vendorBody)
+    return { seconds: outboundDuration(req.vendorBody), resolution: v1NativeResolution(model, req.vendorBody), input_images: 0, input_video_seconds: 0 };
   return { seconds: outboundDuration(req), resolution: outboundResolution(req, model), input_images: 0, input_video_seconds: 0 };
 }
 
@@ -996,3 +1008,57 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => {
+  if (name === H3_MODEL)
+    return {
+      models: [name],
+      kind: "video",
+      fields: [
+        {
+          key: "seconds",
+          labelKey: "Duration",
+          type: "number",
+          defaultValue: H3_DEFAULT_DURATION,
+          min: H3_MIN_DURATION,
+          max: H3_MAX_DURATION,
+          requestPath: ["duration"],
+        },
+        {
+          key: "resolution",
+          labelKey: "Resolution",
+          type: "select",
+          defaultValue: "768P",
+          requestPath: ["metadata", "resolution"],
+          options: ["768P", "2K"].map((value) => ({ value, label: value })),
+        },
+      ],
+      referenceImages: { max: H3_MAX_FRAME_IMAGES, field: "images", encoding: "dataUrl" },
+      mediaNotice: true,
+    };
+  const resolutions = v1Resolutions(name, false, false);
+  return {
+    models: [name],
+    kind: "video",
+    fields: [
+      {
+        key: "seconds",
+        labelKey: "Duration",
+        type: "select",
+        valueType: "number",
+        defaultValue: "6",
+        requestPath: ["duration"],
+        options: [{ value: "6", label: "6" }],
+      },
+      {
+        key: "resolution",
+        labelKey: "Resolution",
+        type: "select",
+        defaultValue: defaultResolution(name),
+        requestPath: ["metadata", "resolution"],
+        options: resolutions.map((value) => ({ value, label: value })),
+      },
+    ],
+    referenceImages: { max: 1, field: "images", encoding: "dataUrl" },
+  };
+});

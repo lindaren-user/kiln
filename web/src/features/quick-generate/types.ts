@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { ModelCapability } from './lib/capabilities'
 /** Which endpoint the model answers on: an image or a video generation. */
 export type GenerationKind = 'image' | 'video'
 
@@ -41,9 +42,8 @@ export type ReferenceAttachment = {
  */
 export type GenerationParams = {
   model: string
-  /** Upstream model used to choose parameters. Absent when it is the published name. */
-  parameterModel?: string
   kind: GenerationKind
+  capability: ModelCapability
   values: GenerationValues
   /** Local attachments before upload, and temporary object URLs afterward. */
   references: ReferenceAttachment[]
