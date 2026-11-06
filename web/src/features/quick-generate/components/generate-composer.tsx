@@ -174,6 +174,7 @@ function ParamNumber(props: ParamNumberProps) {
 }
 
 const REFERENCE_IMAGE_TYPES = 'image/*'
+const REFERENCE_VIDEO_AUDIO_TYPES = 'video/*,audio/*'
 const MAX_REFERENCE_MEDIA_BYTES = 100 * 1024 * 1024
 
 /** Opens the image picker. Dragging onto the prompt does the same. */
@@ -250,9 +251,14 @@ export function GenerateComposer(props: GenerateComposerProps) {
     Boolean(referenceImages) || props.capability.mediaNotice
   const maxReferences =
     referenceImages?.max ?? (props.capability.mediaNotice ? 5 : 0)
-  const acceptedTypes = props.capability.mediaNotice
-    ? undefined
-    : REFERENCE_IMAGE_TYPES
+  // A model accepts only the media kinds its capability routes: images when it
+  // declares referenceImages, audio and video when it sets mediaNotice.
+  const acceptedTypes = [
+    referenceImages ? REFERENCE_IMAGE_TYPES : '',
+    props.capability.mediaNotice ? REFERENCE_VIDEO_AUDIO_TYPES : '',
+  ]
+    .filter(Boolean)
+    .join(',')
   const handleSubmit = (message: PromptInputMessage) => {
     const prompt = message.text?.trim() ?? ''
     if (!prompt || !ready) return
@@ -275,7 +281,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
         'bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]',
         props.busy && 'bg-muted/50 focus-within:bg-background/95'
       )}
-      accept={referenceImages ? acceptedTypes : undefined}
+      accept={acceptsReferences ? acceptedTypes : undefined}
       multiple={maxReferences > 1}
       maxFiles={maxReferences}
       maxFileSize={MAX_REFERENCE_MEDIA_BYTES}
