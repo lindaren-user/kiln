@@ -26,7 +26,7 @@ afterEach(() => {
 })
 
 function editorTree(value: string) {
-  // A fresh inline onKeyDown per call mirrors PlaygroundMessageEditor, which
+  // A fresh inline onKeyDown per call mirrors the message editor, which
   // recreates its handler on every keystroke-driven render.
   return (
     <CodeBlockEditor

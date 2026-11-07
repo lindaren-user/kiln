@@ -22,15 +22,13 @@ import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
 
 export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
-export type HeaderNavModule = 'rankings' | 'pricing'
+export type HeaderNavModule = 'pricing'
 
 export type HeaderNavModules = {
   home: boolean
   console: boolean
   pricing: ModuleAccess
-  rankings: ModuleAccess
   docs: boolean
-  about: boolean
   [key: string]: boolean | ModuleAccess
 }
 
@@ -38,21 +36,24 @@ const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   home: true,
   console: true,
   pricing: { enabled: true, requireAuth: false },
-  rankings: { enabled: true, requireAuth: false },
   docs: true,
-  about: true,
 }
+
+export type SidebarSectionConfig = {
+  enabled: boolean
+  [key: string]: boolean
+}
+
+export type SidebarModulesConfig = Record<string, SidebarSectionConfig>
 
 const DEFAULTS: Record<HeaderNavModule, ModuleAccess> = {
   pricing: DEFAULT_HEADER_NAV_MODULES.pricing,
-  rankings: DEFAULT_HEADER_NAV_MODULES.rankings,
 }
 
 function cloneHeaderNavDefaults(): HeaderNavModules {
   return {
     ...DEFAULT_HEADER_NAV_MODULES,
     pricing: { ...DEFAULT_HEADER_NAV_MODULES.pricing },
-    rankings: { ...DEFAULT_HEADER_NAV_MODULES.rankings },
   }
 }
 
@@ -114,10 +115,6 @@ export function parseHeaderNavModules(raw: unknown): HeaderNavModules {
   Object.entries(parsed).forEach(([key, value]) => {
     if (key === 'pricing') {
       result.pricing = parseAccess(value, result.pricing)
-      return
-    }
-    if (key === 'rankings') {
-      result.rankings = parseAccess(value, result.rankings)
       return
     }
 
@@ -194,6 +191,55 @@ export async function getModuleAccessForGuard(
 }
 
 /**
+ * Parse a user's saved `sidebar_modules` value, as a JSON string or an object.
+ *
+ * Returns `null` when the value is empty, unparsable, or not a section map.
+ * Callers read `null` as "do not narrow": a legacy user with no saved
+ * configuration keeps everything the admin layer allows.
+ */
+export function parseSidebarModulesUser(
+  value: unknown
+): SidebarModulesConfig | null {
+  if (typeof value === 'string') {
+    if (value.trim() === '') return null
+    try {
+      return parseSidebarModulesUser(JSON.parse(value))
+    } catch {
+      return null
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return migrateSidebarSections(value as SidebarModulesConfig)
+}
+
+/**
+ * Bring saved sidebar sections up to the current shape, in one place.
+ *
+ * - Configurations saved before the console was renamed still key the Canvas
+ *   tool under `chat`, with a `chat` module that no longer exists: fold them
+ *   into `create`.
+ * - The Playground page is gone: drop its module key so no consumer keeps
+ *   offering a toggle for a page that no longer exists.
+ *
+ * Migrating on read keeps saved admin and user settings applying without a
+ * data migration.
+ */
+export function migrateSidebarSections(
+  config: SidebarModulesConfig
+): SidebarModulesConfig {
+  const legacy = config.chat
+  if (!legacy && config.create?.playground === undefined) return config
+
+  const migrated = { ...config }
+  delete migrated.chat
+  const create = { ...legacy, ...config.create }
+  delete create.chat
+  delete create.playground
+  migrated.create = create
+  return migrated
+}
+
+/**
  * Whether an admin sidebar entry is enabled by `SidebarModulesAdmin`.
  *
  * Fails open: an absent, blank, or unparsable configuration keeps every module
@@ -210,10 +256,9 @@ export function isSidebarModuleEnabled(
   if (!raw || String(raw).trim() === '') return true
 
   try {
-    const parsed = JSON.parse(String(raw)) as Record<
-      string,
-      Record<string, boolean>
-    >
+    const parsed = migrateSidebarSections(
+      JSON.parse(String(raw)) as SidebarModulesConfig
+    )
     const sectionConfig = parsed[section]
     if (!sectionConfig) return true
     if (sectionConfig.enabled === false) return false

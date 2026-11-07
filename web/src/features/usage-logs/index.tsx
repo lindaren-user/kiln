@@ -17,12 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { Info } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import type { NavGroup } from '@/components/layout/types'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { CacheStatsDialog } from '@/features/system-settings/general/channel-affinity/cache-stats-dialog'
 import { useSidebarConfig } from '@/hooks/use-sidebar-config'
 
@@ -37,22 +43,91 @@ import { UsageLogsTable } from './components/usage-logs-table'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
+  USAGE_LOGS_SECTION_IDS,
   type UsageLogsSectionId,
 } from './section-registry'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const TASK_LOG_SECTIONS = ['drawing', 'task'] as const
+const TASK_LOG_SECTIONS = USAGE_LOGS_SECTION_IDS.filter(
+  (section) => section !== USAGE_LOGS_DEFAULT_SECTION
+)
 
-const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
+/** One labelled line of the title tooltip. */
+type SectionHint = { labelKey?: string; textKey: string }
+
+type SectionMeta = {
+  titleKey: string
+  /** Shown next to the page title. Only the sections that own the title have one. */
+  hints?: SectionHint[]
+}
+
+const SECTION_META: Record<UsageLogsSectionId, SectionMeta> = {
   common: {
     titleKey: 'Common Logs',
+    hints: [
+      {
+        textKey:
+          'Synchronous requests — chat, image and other direct API calls. Billing is recorded here.',
+      },
+    ],
   },
   drawing: {
     titleKey: 'Drawing Logs',
   },
   task: {
     titleKey: 'Task Logs',
+    // Both sections share this title, so the hint has to say which is which.
+    hints: [
+      {
+        labelKey: 'Drawing Logs',
+        textKey:
+          'Midjourney proxy jobs (imagine, upscale, variation) with progress and results.',
+      },
+      {
+        labelKey: 'Task Logs',
+        textKey:
+          'Other asynchronous jobs such as music or video generation, with status, progress and artifacts.',
+      },
+    ],
   },
+}
+
+/** Page title, plus the info hint for the sections that need one. */
+function SectionTitle(props: { meta: SectionMeta }) {
+  const { t } = useTranslation()
+
+  return (
+    <span className='inline-flex items-center gap-2'>
+      {t(props.meta.titleKey)}
+      {props.meta.hints && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type='button'
+                aria-label={t('What is recorded here?')}
+                className='text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex size-5 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none'
+              />
+            }
+          >
+            <Info className='size-3.5' aria-hidden='true' />
+          </TooltipTrigger>
+          <TooltipContent className='max-w-72 items-start'>
+            <div className='space-y-1.5 text-start'>
+              {props.meta.hints.map((hint) => (
+                <p key={hint.textKey}>
+                  {hint.labelKey && (
+                    <span className='font-medium'>{t(hint.labelKey)}:</span>
+                  )}{' '}
+                  {t(hint.textKey)}
+                </p>
+              ))}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </span>
+  )
 }
 
 function UsageLogsContent() {
@@ -126,7 +201,7 @@ function UsageLogsContent() {
     <>
       <SectionPageLayout fixedContent>
         <SectionPageLayout.Title>
-          {t(pageMeta.titleKey)}
+          <SectionTitle meta={pageMeta} />
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
           {canManageScope && (

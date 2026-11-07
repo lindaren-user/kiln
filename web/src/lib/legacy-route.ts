@@ -25,13 +25,20 @@ const legacyConsoleRoutes: Record<string, string> = {
   '/console/subscription': '/subscriptions',
   '/console/channel': '/channels',
   '/console/token': '/keys',
-  '/console/playground': '/playground',
+  '/console/playground': '/quick-generate',
   '/console/redemption': '/redemption-codes',
   '/console/user': '/users',
   '/console/personal': '/profile',
   '/console/log': '/usage-logs',
   '/console/midjourney': '/usage-logs/drawing',
   '/console/task': '/usage-logs/task',
+}
+
+/** Pages that no longer exist, so saved bookmarks keep working. */
+const retiredRoutes: Record<string, string> = {
+  '/playground': '/quick-generate',
+  '/canvas': '/quick-generate',
+  '/rankings': '/',
 }
 
 const legacySettingsTabs: Record<string, string> = {
@@ -93,6 +100,9 @@ export function resolveLegacyRoute(rawHref: string): string | null {
     const chatID = pathname.slice('/console/chat/'.length)
     return buildTargetHref(chatID ? `/chat/${chatID}` : '/dashboard', source)
   }
+
+  const retired = retiredRoutes[pathname]
+  if (retired) return buildTargetHref(retired, source)
 
   const target = legacyConsoleRoutes[pathname]
   if (target) return buildTargetHref(target, source)

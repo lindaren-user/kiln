@@ -141,6 +141,37 @@ describe('security sidebar visibility', () => {
   })
 })
 
+describe('create sidebar section', () => {
+  it('shows Canvas by default and never offers the removed Playground entry', () => {
+    const { result } = sidebarFor()
+    const titles = result.current
+      .flatMap((group) => group.items)
+      .map((item) => item.title)
+    expect(titles).toContain('Canvas')
+    expect(titles).not.toContain('Playground')
+  })
+
+  it('drops a saved Playground module from the admin form', () => {
+    const config = parseSidebarModulesAdmin(
+      '{"create":{"enabled":true,"playground":true,"canvas":true}}'
+    )
+    expect(config.create.playground).toBeUndefined()
+    expect(config.create.canvas).toBe(true)
+  })
+
+  it('keeps legacy chat configurations controlling Canvas', () => {
+    const { result } = sidebarFor(
+      { chat: { enabled: true, playground: false, chat: true } },
+      { chat: { enabled: true, canvas: false } }
+    )
+    const titles = result.current
+      .flatMap((group) => group.items)
+      .map((item) => item.title)
+    expect(titles).not.toContain('Playground')
+    expect(titles).not.toContain('Canvas')
+  })
+})
+
 describe('audit log sidebar entry', () => {
   it('admin settings default Audit Logs to visible and preserve its independent toggle when saved', () => {
     const config = parseSidebarModulesAdmin(

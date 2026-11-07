@@ -31,7 +31,7 @@ describe('legacy frontend route migration', () => {
       '/console/subscription': '/subscriptions',
       '/console/channel': '/channels',
       '/console/token': '/keys',
-      '/console/playground': '/playground',
+      '/console/playground': '/quick-generate',
       '/console/redemption': '/redemption-codes',
       '/console/user': '/users',
       '/console/personal': '/profile',
@@ -39,6 +39,8 @@ describe('legacy frontend route migration', () => {
       '/console/midjourney': '/usage-logs/drawing',
       '/console/task': '/usage-logs/task',
       '/console/chat/42': '/chat/42',
+      '/playground': '/quick-generate',
+      '/rankings': '/',
     }
 
     for (const [source, target] of Object.entries(routes)) {
