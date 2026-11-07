@@ -18,13 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useEffect, useRef } from 'react'
 
-declare global {
-  interface Window {
-    turnstile?: {
-      render: (element: HTMLElement, options: Record<string, unknown>) => void
-    }
-  }
-}
+import { useTheme } from '@/context/theme-provider'
+import { ensureTurnstile, type TurnstileApi } from '@/lib/turnstile'
+import { cn } from '@/lib/utils'
 
 interface TurnstileProps {
   siteKey: string
@@ -33,44 +29,84 @@ interface TurnstileProps {
   className?: string
 }
 
-export function Turnstile({
-  siteKey,
-  onVerify,
-  onExpire,
-  className,
-}: TurnstileProps) {
-  const ref = useRef<HTMLDivElement | null>(null)
+/**
+ * Cloudflare Turnstile widget.
+ *
+ * Rendered with `size: 'flexible'` so it spans the form column like the inputs
+ * around it, and with the app's resolved theme so it does not stay a light box
+ * in dark mode. The widget is removed before a re-render and on unmount, since
+ * Cloudflare rejects rendering twice into the same container.
+ */
+export function Turnstile(props: TurnstileProps) {
+  const { resolvedTheme } = useTheme()
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const widgetIdRef = useRef<string | null>(null)
+  const apiRef = useRef<TurnstileApi | null>(null)
+  // Callbacks are read through a ref so an inline lambda at the call site does
+  // not tear down and rebuild the widget on every render.
+  const callbacksRef = useRef({
+    onVerify: props.onVerify,
+    onExpire: props.onExpire,
+  })
 
   useEffect(() => {
-    const render = () => {
-      if (!ref.current || !window.turnstile) return
+    callbacksRef.current = {
+      onVerify: props.onVerify,
+      onExpire: props.onExpire,
+    }
+  })
+
+  useEffect(() => {
+    if (!props.siteKey) return
+
+    let cancelled = false
+
+    const removeWidget = () => {
+      const api = apiRef.current
+      if (!api || !widgetIdRef.current) return
       try {
-        window.turnstile.render(ref.current, {
-          sitekey: siteKey,
-          callback: (token: string) => onVerify(token),
-          'error-callback': () => onExpire?.(),
-          'expired-callback': () => onExpire?.(),
-        })
+        api.remove(widgetIdRef.current)
       } catch {
-        /* empty */
+        // The widget may already be gone; nothing left to clean up.
       }
+      widgetIdRef.current = null
     }
 
-    if (window.turnstile) {
-      render()
-      return
-    }
-    const scriptId = 'cf-turnstile'
-    if (document.getElementById(scriptId)) return
-    const s = document.createElement('script')
-    s.id = scriptId
-    s.src =
-      'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
-    s.async = true
-    s.defer = true
-    s.onload = () => render()
-    document.head.appendChild(s)
-  }, [siteKey, onVerify, onExpire])
+    ensureTurnstile()
+      .then((api) => {
+        const container = containerRef.current
+        if (cancelled || !container) return
+        apiRef.current = api
+        removeWidget()
+        try {
+          widgetIdRef.current = api.render(container, {
+            sitekey: props.siteKey,
+            theme: resolvedTheme === 'dark' ? 'dark' : 'light',
+            size: 'flexible',
+            callback: (token: string) => callbacksRef.current.onVerify(token),
+            'error-callback': () => callbacksRef.current.onExpire?.(),
+            'expired-callback': () => callbacksRef.current.onExpire?.(),
+          })
+        } catch {
+          // Widget initialisation failed (e.g. a domain the site key does not
+          // allow); the form still renders and the server decides.
+        }
+      })
+      .catch(() => {
+        // The script is blocked or unreachable: same as above, the form still
+        // renders and the server rejects the request if it must.
+      })
 
-  return <div ref={ref} className={className} />
+    return () => {
+      cancelled = true
+      removeWidget()
+    }
+  }, [props.siteKey, resolvedTheme])
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn('w-full [&_iframe]:w-full', props.className)}
+    />
+  )
 }
