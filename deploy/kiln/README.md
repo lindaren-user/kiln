@@ -140,3 +140,15 @@ rm /tmp/kiln-restore.sql
 ```bash
 0 3 * * * cd /opt/kiln && docker compose exec -T postgres pg_dump -U kiln kiln | gzip > backups/daily-$(date +\%Y\%m\%d).sql.gz
 ```
+
+## Cloudflare R2 for Quick Generate
+
+Quick Generate reference images, videos, and audio can upload directly from the browser to R2 (up to 100 MiB per file). Set the optional `QUICK_GENERATE_UPLOAD_S3_*` values in `.env`; the R2 credentials stay in the kiln container. Create an R2 API token scoped to a dedicated bucket with object read/write permissions. `QUICK_GENERATE_UPLOAD_URL_TTL_SECONDS` controls the signed download URL lifetime (default 21600 seconds, maximum 86400 seconds).
+
+Configure the bucket CORS policy for your exact Kiln site origin, methods `GET` and `PUT`, and headers `content-type` and `x-amz-checksum-sha256`. Add an R2 lifecycle rule for the configured prefix (default `quick-generate/`) to delete objects after 2 days. Object keys use the global SHA-256 digest, so identical files share an object until lifecycle cleanup removes it. R2 lifecycle cleanup is asynchronous, so expired objects may remain briefly.
+
+After changing the R2 values in `.env`, recreate only the application container:
+
+```bash
+docker compose up -d --force-recreate --no-deps kiln
+```

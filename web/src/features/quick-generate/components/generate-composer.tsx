@@ -31,7 +31,6 @@ import {
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -40,13 +39,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ApiKey } from '@/features/keys/types'
+import { resolveLocalizedText } from '@/lib/localized-text'
+import { cn } from '@/lib/utils'
 
 import type { ModelCapability, ParamField } from '../lib/capabilities'
-import type { GenerationValues } from '../types'
+import type { GenerationValues, ReferenceAttachment } from '../types'
 import { PromptMentionInput } from './prompt-mention-input'
 
+type MenuItem = {
+  value: string
+  label: string
+  hint?: string
+  /** Native tooltip. Model rows use the catalog description. */
+  title?: string
+}
+
 type GenerateComposerProps = {
-  modelItems: { value: string; label: string; hint?: string }[]
+  modelItems: MenuItem[]
   model: string
   /** Shown in the empty prompt. The page supplies the model description. */
   promptPlaceholder: string
@@ -59,8 +68,10 @@ type GenerateComposerProps = {
   selectedKeyId: number | null
   onKeyChange: (id: number) => void
   /** Returns false when the prompt was held back (e.g. waiting on a confirm). */
-  onSubmit: (prompt: string, images: string[]) => boolean
+  onSubmit: (prompt: string, references: ReferenceAttachment[]) => boolean
   busy: boolean
+  /** Reference media is still travelling to storage; no success toast. */
+  uploading?: boolean
   disabled: boolean
 }
 
@@ -72,7 +83,7 @@ function ParamLabel(props: { children: string }) {
 
 type ParamSelectProps = {
   label: string
-  items: { value: string; label: string; hint?: string }[]
+  items: MenuItem[]
   value: string
   onValueChange: (value: string) => void
   disabled?: boolean
@@ -99,10 +110,15 @@ function ParamSelect(props: ParamSelectProps) {
       </SelectTrigger>
       <SelectContent
         alignItemWithTrigger={false}
-        className='max-h-60 w-auto min-w-(--anchor-width) max-w-[min(20rem,calc(100vw-1.5rem))] overflow-x-auto overflow-y-auto'
+        className='max-h-60 w-auto max-w-[min(20rem,calc(100vw-1.5rem))] min-w-(--anchor-width) overflow-x-auto overflow-y-auto'
       >
         {props.items.map((item) => (
-          <SelectItem key={item.value} value={item.value} className='w-max min-w-full'>
+          <SelectItem
+            key={item.value}
+            value={item.value}
+            title={item.title}
+            className='w-max min-w-full'
+          >
             <span>{item.label}</span>
             {item.hint ? (
               <span className='text-muted-foreground ml-auto pl-3 text-xs tabular-nums'>
@@ -158,8 +174,8 @@ function ParamNumber(props: ParamNumberProps) {
 }
 
 const REFERENCE_IMAGE_TYPES = 'image/*'
-/** Keeps a data URL small enough for the JSON generation body. */
-const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024
+const REFERENCE_VIDEO_AUDIO_TYPES = 'video/*,audio/*'
+const MAX_REFERENCE_MEDIA_BYTES = 100 * 1024 * 1024
 
 /** Opens the image picker. Dragging onto the prompt does the same. */
 function AddReferenceImage(props: { disabled?: boolean }) {
@@ -167,7 +183,7 @@ function AddReferenceImage(props: { disabled?: boolean }) {
   const attachments = usePromptInputAttachments()
   return (
     <PromptInputButton
-      aria-label={t('Add a reference image')}
+      aria-label={t('Add reference media')}
       disabled={props.disabled}
       onClick={() => attachments.openFileDialog()}
     >
@@ -183,32 +199,28 @@ function ParamFieldControl(props: {
   onValueChange: (value: string) => void
   disabled?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const label = props.field.label
+    ? resolveLocalizedText(props.field.label, i18n.language)
+    : t(props.field.labelKey)
   if (props.field.type === 'select') {
     return (
       <ParamSelect
-        label={t(props.field.labelKey)}
-        items={props.field.options}
+        label={label}
+        items={props.field.options ?? []}
         value={props.value}
         onValueChange={props.onValueChange}
         disabled={props.disabled}
       />
     )
   }
-  const label =
-    props.field.key === 'seconds'
-      ? t('Duration {{min}}-{{max}}s', {
-          min: props.field.min,
-          max: props.field.max,
-        })
-      : t(props.field.labelKey)
   return (
     <ParamNumber
       label={label}
       value={props.value}
-      min={props.field.min}
-      max={props.field.max}
-      suffix={props.field.suffix}
+      min={props.field.min ?? 0}
+      max={props.field.max ?? Number.MAX_SAFE_INTEGER}
+      suffix={props.field.key === 'seconds' ? 's' : undefined}
       onValueChange={props.onValueChange}
       disabled={props.disabled}
     />
@@ -223,28 +235,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
 
-  // Option arrays depend on the model capability or the key list, not on typing.
-  // TODO: Hide resolution until a model declares the sizes its upstream
-  // actually accepts. Most of these interfaces have no resolution choice,
-  // and a shared list sends sizes they reject. The default is still sent.
-  const fields = useMemo<ParamField[]>(() => {
-    const visible = props.capability.fields.filter(
-      (field) => field.key !== 'resolution'
-    )
-    return visible.map((field) => {
-      if (field.type !== 'select') return field
-      return {
-        ...field,
-        options: field.options.map((option) =>
-          option.value === 'auto'
-            ? { ...option, label: t('Auto') }
-            : option.value === 'adaptive'
-              ? { ...option, label: t('Adaptive') }
-              : option
-        ),
-      }
-    })
-  }, [props.capability, t])
+  const fields = props.capability.fields
   const keyItems = useMemo(
     () => props.keys.map((key) => ({ value: String(key.id), label: key.name })),
     [props.keys]
@@ -256,13 +247,28 @@ export function GenerateComposer(props: GenerateComposerProps) {
     text.trim() !== ''
 
   const referenceImages = props.capability.referenceImages
+  const acceptsReferences =
+    Boolean(referenceImages) || props.capability.mediaNotice
+  const maxReferences =
+    referenceImages?.max ?? (props.capability.mediaNotice ? 5 : 0)
+  // A model accepts only the media kinds its capability routes: images when it
+  // declares referenceImages, audio and video when it sets mediaNotice.
+  const acceptedTypes = [
+    referenceImages ? REFERENCE_IMAGE_TYPES : '',
+    props.capability.mediaNotice ? REFERENCE_VIDEO_AUDIO_TYPES : '',
+  ]
+    .filter(Boolean)
+    .join(',')
   const handleSubmit = (message: PromptInputMessage) => {
     const prompt = message.text?.trim() ?? ''
     if (!prompt || !ready) return
-    const images = (message.files ?? [])
-      .map((file) => file.url)
-      .filter((url): url is string => Boolean(url))
-    props.onSubmit(prompt, images)
+    const references = (message.files ?? [])
+      .filter((file) => Boolean(file.url))
+      .map((file) => ({
+        url: file.url,
+        mediaType: file.mediaType ?? 'application/octet-stream',
+      }))
+    props.onSubmit(prompt, references)
     // Keep the prompt and the files. PromptInput clears attachments when
     // submit resolves, so this rejection leaves them in place.
     return Promise.reject(new Error('keep'))
@@ -275,12 +281,12 @@ export function GenerateComposer(props: GenerateComposerProps) {
         'bg-background/95 dark:bg-background/80 border-border/70 rounded-xl shadow-[0_18px_60px_-32px_rgba(0,0,0,0.65)]',
         props.busy && 'bg-muted/50 focus-within:bg-background/95'
       )}
-      accept={referenceImages ? REFERENCE_IMAGE_TYPES : undefined}
-      multiple={(referenceImages?.max ?? 0) > 1}
-      maxFiles={referenceImages?.max ?? 0}
-      maxFileSize={MAX_REFERENCE_IMAGE_BYTES}
+      accept={acceptsReferences ? acceptedTypes : undefined}
+      multiple={maxReferences > 1}
+      maxFiles={maxReferences}
+      maxFileSize={MAX_REFERENCE_MEDIA_BYTES}
       onError={(error) => {
-        if (referenceImages) toast.error(error.message)
+        if (acceptsReferences) toast.error(error.message)
       }}
       onSubmit={handleSubmit}
     >
@@ -289,21 +295,14 @@ export function GenerateComposer(props: GenerateComposerProps) {
         onChange={setText}
         placeholder={props.promptPlaceholder}
         label={t('Prompt')}
+        uploading={props.uploading}
         disabled={props.disabled}
       />
-      {props.capability.mediaNotice && (
-        <p className='text-warning px-3 pt-1 text-xs'>
-          {t(
-            'Quick generate does not support reference video or audio. The API does.'
-          )}
-        </p>
-      )}
-
       {/* Every parameter shares one row and wraps only when the width runs
           out; the send button stays pinned to the bottom-right corner. */}
       <PromptInputFooter className='border-border/60 bg-muted/20 dark:bg-muted/10 items-end gap-2 border-t px-3 py-2'>
         <PromptInputTools className='min-w-0 flex-1 flex-wrap items-center gap-1'>
-          {referenceImages && <AddReferenceImage disabled={props.disabled} />}
+          {acceptsReferences && <AddReferenceImage disabled={props.disabled} />}
           <ParamSelect
             label={t('Model')}
             items={props.modelItems}
@@ -337,8 +336,8 @@ export function GenerateComposer(props: GenerateComposerProps) {
 
         <PromptInputSubmit
           className='ml-auto shrink-0 self-end'
-          status={props.busy ? 'submitted' : undefined}
-          disabled={!ready}
+          status={props.busy || props.uploading ? 'submitted' : undefined}
+          disabled={!ready || Boolean(props.uploading)}
           aria-label={t('Generate')}
         />
       </PromptInputFooter>

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -41,6 +41,8 @@ type PromptMentionInputProps = {
   placeholder: string
   label: string
   disabled?: boolean
+  /** Reference media is uploading; chips show a spinner instead of a status. */
+  uploading?: boolean
 }
 
 const CHIP_CLASS =
@@ -173,6 +175,7 @@ const QUIET_BUTTON =
 
 type ReferenceFileChipProps = {
   file: MentionFile
+  uploading?: boolean
   onOpen: () => void
   onRemove: () => void
 }
@@ -205,6 +208,12 @@ function ReferenceFileChip(props: ReferenceFileChipProps) {
         ) : null}
         <span className='block max-w-32 truncate'>{name}</span>
       </Button>
+      {props.uploading ? (
+        <Loader2
+          aria-label={t('Uploading')}
+          className='text-muted-foreground size-3 shrink-0 animate-spin'
+        />
+      ) : null}
       <Button
         type='button'
         variant='ghost'
@@ -220,7 +229,7 @@ function ReferenceFileChip(props: ReferenceFileChipProps) {
 }
 
 /** Uploaded files sit at the top of the prompt. A click opens the shared preview. */
-function ReferenceFiles() {
+function ReferenceFiles(props: { uploading?: boolean }) {
   const { t } = useTranslation()
   const attachments = usePromptInputAttachments()
   const [preview, setPreview] = useState<MentionFile | null>(null)
@@ -235,6 +244,7 @@ function ReferenceFiles() {
             <ReferenceFileChip
               key={file.id}
               file={file}
+              uploading={props.uploading}
               onOpen={() => setPreview(file)}
               onRemove={() => attachments.remove(file.id)}
             />
@@ -425,7 +435,7 @@ export function PromptMentionInput(props: PromptMentionInputProps) {
         value={serialized}
         readOnly
       />
-      <ReferenceFiles />
+      <ReferenceFiles uploading={props.uploading} />
       <div className='relative w-full min-w-0'>
         {props.value === '' && (
           <span className='text-muted-foreground pointer-events-none absolute top-2 right-3 left-3 line-clamp-2 text-sm leading-5'>
@@ -481,46 +491,46 @@ export function PromptMentionInput(props: PromptMentionInputProps) {
             placeCaret(node, text.length)
             refresh()
           }}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || composing.current) return
-          if (open) {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              setIndex((current) =>
-                matches.length === 0 ? 0 : (current + 1) % matches.length
-              )
-              return
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || composing.current) return
+            if (open) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                setIndex((current) =>
+                  matches.length === 0 ? 0 : (current + 1) % matches.length
+                )
+                return
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                setIndex((current) =>
+                  matches.length === 0
+                    ? 0
+                    : (current - 1 + matches.length) % matches.length
+                )
+                return
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setQuery(null)
+                return
+              }
+              if (
+                (event.key === 'Enter' || event.key === 'Tab') &&
+                !event.shiftKey &&
+                matches[index]
+              ) {
+                event.preventDefault()
+                choose(matches[index])
+                return
+              }
             }
-            if (event.key === 'ArrowUp') {
+            if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
-              setIndex((current) =>
-                matches.length === 0
-                  ? 0
-                  : (current - 1 + matches.length) % matches.length
-              )
-              return
+              event.currentTarget.closest('form')?.requestSubmit()
             }
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              setQuery(null)
-              return
-            }
-            if (
-              (event.key === 'Enter' || event.key === 'Tab') &&
-              !event.shiftKey &&
-              matches[index]
-            ) {
-              event.preventDefault()
-              choose(matches[index])
-              return
-            }
-          }
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            event.currentTarget.closest('form')?.requestSubmit()
-          }
-        }}
-      />
+          }}
+        />
       </div>
       {open && (
         <MentionMenu

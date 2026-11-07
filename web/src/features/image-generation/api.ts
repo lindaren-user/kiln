@@ -53,7 +53,15 @@ export async function resolveApiKey(id: number): Promise<string> {
 }
 
 /** A data-URL reference as the file the image-edit form expects. */
-function referenceFile(url: string, index: number): File {
+async function referenceFile(url: string, index: number): Promise<File> {
+  if (!url.startsWith('data:')) {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(t('Image generation failed'))
+    const blob = await response.blob()
+    const mime = blob.type || 'image/png'
+    const subtype = mime.split('/')[1] || 'png'
+    return new File([blob], `reference-${index + 1}.${subtype}`, { type: mime })
+  }
   const marker = ';base64,'
   const start = url.indexOf(marker)
   if (!url.startsWith('data:') || start < 0) {
@@ -67,18 +75,21 @@ function referenceFile(url: string, index: number): File {
 }
 
 /** gpt-image edits form. Each reference is a file in the `image` field. */
-function imageEditForm(
+async function imageEditForm(
   params: GenerateImageParams,
   references: string[]
-): FormData {
+): Promise<FormData> {
   const form = new FormData()
   form.append('model', params.model)
   form.append('prompt', params.prompt)
   form.append('n', String(params.count))
   if (params.size) form.append('size', params.size)
   if (params.quality) form.append('quality', params.quality)
-  for (const [index, url] of references.entries()) {
-    form.append('image', referenceFile(url, index))
+  const files = await Promise.all(
+    references.map((url, index) => referenceFile(url, index))
+  )
+  for (const file of files) {
+    form.append('image', file)
   }
   return form
 }
@@ -103,7 +114,7 @@ export async function generateImages(
   let body: BodyInit
   if (edits) {
     path = '/v1/images/edits'
-    body = imageEditForm(params, references)
+    body = await imageEditForm(params, references)
   } else {
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify({

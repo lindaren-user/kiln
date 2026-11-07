@@ -30,7 +30,7 @@ import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
-import { submitVideo } from './api'
+import { submitVideo, uploadQuickGenerateReferences } from './api'
 import { GenerateComposer } from './components/generate-composer'
 import { ImageLightbox } from './components/image-lightbox'
 import { ResultPanel } from './components/result-panel'
@@ -43,7 +43,12 @@ import {
 } from './lib/capabilities'
 import { downloadMedia, mediaFilename } from './lib/download-media'
 import { pollVideoTask } from './lib/poll-video'
-import type { Generation, GenerationParams, GenerationValues } from './types'
+import type {
+  Generation,
+  GenerationParams,
+  GenerationValues,
+  ReferenceAttachment,
+} from './types'
 
 /**
  * Single-result checks for image and video models. Each generation replaces
@@ -66,9 +71,6 @@ export function QuickGenerate() {
     isLoading: keysLoading,
   } = useImageApiKeys()
 
-  // TODO: list the recent generations under the result. The page already
-  // tracks every run by id, so the list should read that state instead of
-  // adding a second request path.
   const [generation, setGeneration] = useState<Generation | null>(null)
   const [preferredModel, setPreferredModel] = useState('')
   const [values, setValues] = useState<GenerationValues>({})
@@ -78,11 +80,14 @@ export function QuickGenerate() {
   const [zoomOpen, setZoomOpen] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState<{
     prompt: string
-    images: string[]
+    references: ReferenceAttachment[]
   } | null>(null)
   // Identifies the generation that may still write to state; a newer one, or
   // leaving the page, cancels the video poll of an older one.
   const activeRunRef = useRef('')
+  // Reference media is uploaded before the vendor call; the composer shows a
+  // spinner instead of a success message, and only blocks submitting again.
+  const [uploadingReferences, setUploadingReferences] = useState(false)
 
   // A remembered model that is gone falls back to the first available one.
   const model = models.some((item) => item.name === preferredModel)
@@ -92,9 +97,13 @@ export function QuickGenerate() {
   const promptPlaceholder = modelDescription
     ? modelDescription
     : t('This model has no description yet.')
-  const kind =
-    models.find((item) => item.name === model)?.kind ?? ('image' as const)
-  const capability = useMemo(() => capabilityFor(model, kind), [model, kind])
+  const selectedModel = models.find((item) => item.name === model)
+  const kind = selectedModel?.kind ?? ('image' as const)
+  const parameterModel = selectedModel?.parameterModel || model
+  const capability = useMemo(
+    () => capabilityFor(parameterModel, kind),
+    [parameterModel, kind]
+  )
   const effectiveValues = useMemo(
     () => compatibleValues(capability, values),
     [capability, values]
@@ -103,13 +112,13 @@ export function QuickGenerate() {
     if (!model) return ''
     if (kind === 'video') {
       return priceForRun(model, {
-        seconds: buildVideoRequest(effectiveValues, model).duration,
+        seconds: buildVideoRequest(effectiveValues, parameterModel).duration,
       })
     }
     return priceForRun(model, {
-      count: buildImageRequest(effectiveValues, model).count,
+      count: buildImageRequest(effectiveValues, parameterModel).count,
     })
-  }, [effectiveValues, kind, model, priceForRun])
+  }, [effectiveValues, kind, model, parameterModel, priceForRun])
 
   // A different model accepts a different set of parameters, so switching the
   // model drops the previous model's values instead of sending them again.
@@ -149,13 +158,28 @@ export function QuickGenerate() {
 
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
+        const parameterModel = params.parameterModel || params.model
+        setUploadingReferences(params.references.length > 0)
+        const uploadedReferences = await uploadQuickGenerateReferences(
+          params.references
+        )
+        setUploadingReferences(false)
+        if (isCancelled()) return
+        const imageReferences = uploadedReferences
+          .filter((reference) => reference.mediaType.startsWith('image/'))
+          .map((reference) => reference.url)
 
         if (params.kind === 'video') {
           const taskId = await submitVideo({
             apiKey,
             model: params.model,
             prompt,
-            request: buildVideoRequest(params.values, params.model, params.images),
+            request: buildVideoRequest(
+              params.values,
+              parameterModel,
+              imageReferences,
+              uploadedReferences
+            ),
           })
           const url = await pollVideoTask({
             apiKey,
@@ -183,8 +207,8 @@ export function QuickGenerate() {
 
         const request = buildImageRequest(
           params.values,
-          params.model,
-          params.images
+          parameterModel,
+          imageReferences
         )
         const images = await generateImages({
           apiKey,
@@ -207,6 +231,7 @@ export function QuickGenerate() {
             : current
         )
       } catch (error) {
+        setUploadingReferences(false)
         if (isCancelled()) return
         setGeneration((current) =>
           current?.id === id
@@ -226,17 +251,18 @@ export function QuickGenerate() {
   )
 
   const generate = useCallback(
-    (prompt: string, images: string[]) =>
+    (prompt: string, references: ReferenceAttachment[]) =>
       runGeneration(
         {
           model,
+          parameterModel,
           kind,
           values: effectiveValues,
-          images,
+          references,
         },
         prompt
       ),
-    [effectiveValues, kind, model, runGeneration]
+    [effectiveValues, kind, model, parameterModel, runGeneration]
   )
 
   /** Replays the failed request with the parameters it was sent with. */
@@ -247,7 +273,7 @@ export function QuickGenerate() {
         model: generation.model,
         kind: generation.kind,
         values: generation.values,
-        images: generation.images,
+        references: generation.references,
       },
       generation.prompt
     )
@@ -255,17 +281,17 @@ export function QuickGenerate() {
 
   /** Returns false when the prompt waits for the replace confirmation. */
   const submit = useCallback(
-    (prompt: string, images: string[]) => {
+    (prompt: string, references: ReferenceAttachment[]) => {
       const replacesResult =
         generation?.status === 'running' ||
         (generation?.status === 'done' &&
           generation.media.length > 0 &&
           !generation.saved)
       if (replacesResult) {
-        setPendingPrompt({ prompt, images })
+        setPendingPrompt({ prompt, references })
         return false
       }
-      void generate(prompt, images)
+      void generate(prompt, references)
       return true
     },
     [generate, generation]
@@ -340,7 +366,9 @@ export function QuickGenerate() {
         />
         <p>
           <span className='font-medium'>
-            {t('For testing only. Using this as a workbench is not recommended.')}
+            {t(
+              'For testing only. Using this as a workbench is not recommended.'
+            )}
           </span>{' '}
           {t(
             'Images are not saved. Videos can be opened from "Task logs → Artifacts". Download any image you want to keep before leaving or generating again.'
@@ -414,6 +442,7 @@ export function QuickGenerate() {
           onKeyChange={selectKey}
           onSubmit={submit}
           busy={busy}
+          uploading={uploadingReferences}
           disabled={noModels || keys.length === 0}
         />
       </div>
@@ -441,7 +470,7 @@ export function QuickGenerate() {
         handleConfirm={() => {
           const pending = pendingPrompt
           setPendingPrompt(null)
-          if (pending) void generate(pending.prompt, pending.images)
+          if (pending) void generate(pending.prompt, pending.references)
         }}
       />
     </div>

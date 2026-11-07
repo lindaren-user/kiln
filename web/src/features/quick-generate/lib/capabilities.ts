@@ -26,7 +26,11 @@ import {
   type ImageResolution,
 } from '@/features/image-generation/constants'
 
-import type { GenerationKind, GenerationValues } from '../types'
+import type {
+  GenerationKind,
+  GenerationValues,
+  ReferenceAttachment,
+} from '../types'
 
 export type ParamOption = { value: string; label: string }
 
@@ -68,12 +72,9 @@ export type ReferenceImages = {
 export type ModelCapability = {
   kind: GenerationKind
   fields: ParamField[]
-  /** Absent when the model is text-only or its image input is not a data URL. */
+  /** Absent when this model does not accept reference images. */
   referenceImages: ReferenceImages | null
-  /**
-   * The model can also take reference audio or video. This page does not
-   * send those, and says so next to the prompt.
-   */
+  /** The model can accept reference audio or video in addition to images. */
   mediaNotice: boolean
 }
 
@@ -228,7 +229,7 @@ function videoRatioField(model: string): ParamField {
 }
 
 function isAlibabaWan(model: string): boolean {
-  return /^wan/.test(model) && !/^wan3-/.test(model)
+  return model.startsWith('wan') && !model.startsWith('wan3-')
 }
 
 function videoFrame(
@@ -360,7 +361,7 @@ function sizeOption(value: string): ParamOption {
   }
 }
 
-/** Reference-image cap plus the audio/video warning, with the usual data-URL `images` field. */
+/** Reference-image cap plus support for additional audio/video references. */
 function referenceMedia(
   max: number | null,
   mediaNotice = false,
@@ -379,7 +380,7 @@ function referenceMedia(
 
 /**
  * How many reference images the model reads, and whether it also accepts
- * audio or video that this page leaves out. Counts follow the task plugins:
+ * audio or video. Counts follow the task plugins:
  * one frame, a first and last frame, or the plugin's reference-image cap.
  * The first matching rule wins.
  */
@@ -389,7 +390,7 @@ function mediaFor(
 ): Pick<ModelCapability, 'referenceImages' | 'mediaNotice'> {
   if (kind === 'video') {
     // Speech-to-video needs an audio file this page does not send.
-    if (/wan2\.2-s2v/i.test(model)) return referenceMedia(null, true)
+    if (/wan2\.2-s2v/i.test(model)) return referenceMedia(1, true)
     if (/wan2\.7-t2v/i.test(model)) return referenceMedia(null)
     if (/wan2\.7-i2v|wan3/i.test(model)) return referenceMedia(2, true)
     if (/seedance-1-0-lite-t2v/i.test(model)) return referenceMedia(null)
@@ -413,18 +414,25 @@ function mediaFor(
   if (/qwen-image-edit|qwen-image-(?:2\.0|3\.0)/i.test(model)) {
     return referenceMedia(3)
   }
-  if (/(?:^|\/)qwen-image(?:-plus|-max)?$/i.test(model)) return referenceMedia(null)
+  if (/(?:^|\/)qwen-image(?:-plus|-max)?$/i.test(model)) {
+    return referenceMedia(null)
+  }
   if (/z-image-turbo|wan2\.6-t2i/i.test(model)) return referenceMedia(null)
   if (/wan2\.7-image/i.test(model)) return referenceMedia(9)
   if (/wan2\.6-image/i.test(model)) return referenceMedia(4)
   if (/seedream-5-0-(?:pro|flash)/i.test(model)) {
     return referenceMedia(10, false, { field: 'image' })
   }
-  if (/seedream/i.test(model)) return referenceMedia(14, false, { field: 'image' })
+  if (/seedream/i.test(model)) {
+    return referenceMedia(14, false, { field: 'image' })
+  }
   return referenceMedia(4)
 }
 
-function encodeReference(url: string, encoding: ReferenceImages['encoding']): string {
+function encodeReference(
+  url: string,
+  encoding: ReferenceImages['encoding']
+): string {
   if (encoding === 'dataUrl') return url
   const comma = url.indexOf(',')
   if (url.startsWith('data:') && comma >= 0) return url.slice(comma + 1)
@@ -460,18 +468,30 @@ export function capabilityFor(
       return {
         kind,
         ...media,
-        fields: [videoRatioField(model), SORA_PRO_RESOLUTION_FIELD, videoSecondsField(model)],
+        fields: [
+          videoRatioField(model),
+          SORA_PRO_RESOLUTION_FIELD,
+          videoSecondsField(model),
+        ],
       }
     }
     // Sora 2 only accepts the 720p pair, so a resolution list would offer
     // sizes the model rejects.
     if (/sora/i.test(model)) {
-      return { kind, ...media, fields: [videoRatioField(model), videoSecondsField(model)] }
+      return {
+        kind,
+        ...media,
+        fields: [videoRatioField(model), videoSecondsField(model)],
+      }
     }
     return {
       kind,
       ...media,
-        fields: [videoRatioField(model), VIDEO_RESOLUTION_FIELD, videoSecondsField(model)],
+      fields: [
+        videoRatioField(model),
+        VIDEO_RESOLUTION_FIELD,
+        videoSecondsField(model),
+      ],
     }
   }
 
@@ -505,7 +525,11 @@ export function capabilityFor(
     return {
       kind,
       ...media,
-      fields: [NANO_BANANA_RATIO_FIELD, IMAGE_RESOLUTION_FIELD, IMAGE_COUNT_FIELD],
+      fields: [
+        NANO_BANANA_RATIO_FIELD,
+        IMAGE_RESOLUTION_FIELD,
+        IMAGE_COUNT_FIELD,
+      ],
     }
   }
 
@@ -590,6 +614,10 @@ export type VideoRequest = {
   size?: string
   duration?: number
   images?: string[]
+  reference_videos?: string[]
+  reference_audios?: string[]
+  image_url?: string
+  audio_url?: string
   /**
    * Task submission keeps vendor fields on `metadata`. `ratio` and
    * `aspect_ratio` are what the video plugins read; Wan also reads
@@ -599,20 +627,28 @@ export type VideoRequest = {
     ratio: string
     aspect_ratio: string
     parameters?: { ratio: string }
+    reference_video?: string[]
+    reference_audio?: string[]
+    input?: { media: { type: string; url: string }[] }
   }
 }
 
 export function buildVideoRequest(
   values: GenerationValues,
   model = '',
-  references: string[] = []
+  references: string[] = [],
+  mediaReferences: ReferenceAttachment[] = []
 ): VideoRequest {
-  const request: VideoRequest = {}
   const ratio = values.ratio ?? '16:9'
+  const metadata: NonNullable<VideoRequest['metadata']> = {
+    ratio,
+    aspect_ratio: ratio,
+  }
+  if (isAlibabaWan(model)) metadata.parameters = { ratio }
+
+  let request: VideoRequest = { metadata }
   const size = videoFrame(model, values.resolution ?? '720p', ratio)
   if (size) request.size = size
-  request.metadata = { ratio, aspect_ratio: ratio }
-  if (isAlibabaWan(model)) request.metadata.parameters = { ratio }
 
   const seconds = Number(values.seconds)
   if (Number.isFinite(seconds) && seconds > 0) {
@@ -620,7 +656,35 @@ export function buildVideoRequest(
     const rounded = Math.round(seconds)
     request.duration = Math.min(bounds.max, Math.max(bounds.min, rounded))
   }
-  return withReferences(request, model, 'video', references)
+  request = withReferences(request, model, 'video', references)
+
+  const urlsOfType = (prefix: string) =>
+    mediaReferences
+      .filter((reference) => reference.mediaType.startsWith(prefix))
+      .map((reference) => reference.url)
+  const videos = urlsOfType('video/')
+  const audios = urlsOfType('audio/')
+  if (videos.length > 0) {
+    request.reference_videos = videos
+    metadata.reference_video = videos
+  }
+  if (audios.length > 0) {
+    request.reference_audios = audios
+    metadata.reference_audio = audios
+  }
+  if (/wan2\.2-s2v/i.test(model)) {
+    if (references[0]) request.image_url = references[0]
+    if (audios[0]) request.audio_url = audios[0]
+  }
+  if (/wan3/i.test(model) && (videos.length > 0 || audios.length > 0)) {
+    metadata.input = {
+      media: [
+        ...videos.map((url) => ({ type: 'reference_video', url })),
+        ...audios.map((url) => ({ type: 'reference_audio', url })),
+      ],
+    }
+  }
+  return request
 }
 
 /** One-line parameter summary for the result header. */

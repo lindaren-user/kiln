@@ -177,20 +177,19 @@ export function PromptInputProvider({
   const openRef = useRef<() => void>(() => {})
 
   const add = useCallback((files: File[] | FileList) => {
-    const incoming = Array.from(files)
+    const incoming = [...files]
     if (incoming.length === 0) return
 
-    setAttachements((prev) =>
-      prev.concat(
-        incoming.map((file) => ({
-          id: nanoid(),
-          type: 'file' as const,
-          url: URL.createObjectURL(file),
-          mediaType: file.type,
-          filename: file.name,
-        }))
-      )
-    )
+    setAttachements((prev) => [
+      ...prev,
+      ...incoming.map((file) => ({
+        id: nanoid(),
+        type: 'file' as const,
+        url: URL.createObjectURL(file),
+        mediaType: file.type,
+        filename: file.name,
+      })),
+    ])
   }, [])
 
   const remove = useCallback((id: string) => {
@@ -433,8 +432,6 @@ export type PromptInputProps = Omit<
   multiple?: boolean
   // When true, accepts drops anywhere on document. Default false (opt-in).
   globalDrop?: boolean
-  // Render a hidden input with given name and keep it in sync for native form posts. Default false.
-  syncHiddenInput?: boolean
   // Minimal constraints
   maxFiles?: number
   maxFileSize?: number // bytes
@@ -459,7 +456,6 @@ export const PromptInput = ({
   accept,
   multiple,
   globalDrop,
-  syncHiddenInput,
   maxFiles,
   maxFileSize,
   onError,
@@ -474,16 +470,9 @@ export const PromptInput = ({
 
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const anchorRef = useRef<HTMLSpanElement>(null)
+  // The drop target is the form this component renders itself; looking one up
+  // from a marker inside it missed the form, because the marker was a sibling.
   const formRef = useRef<HTMLFormElement | null>(null)
-
-  // Find nearest form to scope drag & drop
-  useEffect(() => {
-    const root = anchorRef.current?.closest('form')
-    if (root instanceof HTMLFormElement) {
-      formRef.current = root
-    }
-  }, [])
 
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([])
@@ -493,23 +482,31 @@ export const PromptInput = ({
     inputRef.current?.click()
   }, [])
 
+  const acceptRules = useMemo(
+    () =>
+      (accept ?? '')
+        .split(',')
+        .map((rule) => rule.trim().toLowerCase())
+        .filter(Boolean),
+    [accept]
+  )
+
   const matchesAccept = useCallback(
     (f: File) => {
-      if (!accept || accept.trim() === '') {
-        return true
-      }
-      if (accept.includes('image/*')) {
-        return f.type.startsWith('image/')
-      }
-      // NOTE: keep simple; expand as needed
-      return true
+      if (acceptRules.length === 0) return true
+      const mediaType = f.type.toLowerCase()
+      return acceptRules.some((rule) =>
+        rule.endsWith('/*')
+          ? mediaType.startsWith(rule.slice(0, -1))
+          : mediaType === rule
+      )
     },
-    [accept]
+    [acceptRules]
   )
 
   const addLocal = useCallback(
     (fileList: File[] | FileList) => {
-      const incoming = Array.from(fileList)
+      const incoming = [...fileList]
       const accepted = incoming.filter((f) => matchesAccept(f))
       if (incoming.length && accepted.length === 0) {
         onError?.({
@@ -552,7 +549,7 @@ export const PromptInput = ({
             filename: file.name,
           })
         }
-        return prev.concat(next)
+        return [...prev, ...next]
       })
     },
     [matchesAccept, maxFiles, maxFileSize, onError, t]
@@ -611,15 +608,7 @@ export const PromptInput = ({
     controller.__registerFileInput(inputRef, () => inputRef.current?.click())
   }, [usingProvider, controller])
 
-  // Note: File input cannot be programmatically set for security reasons
-  // The syncHiddenInput prop is no longer functional
-  useEffect(() => {
-    if (syncHiddenInput && inputRef.current && files.length === 0) {
-      inputRef.current.value = ''
-    }
-  }, [files, syncHiddenInput])
-
-  // Attach drop handlers on nearest form and document (opt-in)
+  // Attach drop handlers on the composer form and document (opt-in)
   useEffect(() => {
     const form = formRef.current
     if (!form) return
@@ -669,15 +658,22 @@ export const PromptInput = ({
     }
   }, [add, globalDrop])
 
+  // Object URLs have to outlive the list they belong to, so revoking is tied to
+  // unmounting rather than to a change of `files`; depending on the list revoked
+  // every earlier file the moment another one was added. A removal revokes its
+  // own URL, so the ref only needs the list as it stands when the input goes.
+  const filesRef = useRef(files)
+  useEffect(() => {
+    filesRef.current = files
+  }, [files])
   useEffect(
     () => () => {
-      if (!usingProvider) {
-        for (const f of files) {
-          if (f.url) URL.revokeObjectURL(f.url)
-        }
+      if (usingProvider) return
+      for (const f of filesRef.current) {
+        if (f.url) URL.revokeObjectURL(f.url)
       }
     },
-    [usingProvider, files]
+    [usingProvider]
   )
 
   const handleChange: ChangeEventHandler<HTMLInputElement> = (event) => {
@@ -737,8 +733,8 @@ export const PromptInput = ({
         }
         return item
       })
-    ).then((convertedFiles: FileUIPart[]) => {
-      try {
+    )
+      .then((convertedFiles: FileUIPart[]) => {
         const result = onSubmit({ text, files: convertedFiles }, event)
 
         // Handle both sync and async onSubmit
@@ -760,16 +756,15 @@ export const PromptInput = ({
             controller.textInput.clear()
           }
         }
-      } catch (_error) {
-        // Don't clear on error - user may want to retry
-      }
-    })
+      })
+      .catch(() => {
+        // Keep the attachments when conversion or submission fails.
+      })
   }
 
   // Render with or without local provider
   const inner = (
     <>
-      <span aria-hidden='true' className='hidden' ref={anchorRef} />
       <input
         accept={accept}
         aria-label={t('Upload files')}
@@ -781,6 +776,7 @@ export const PromptInput = ({
         type='file'
       />
       <form
+        ref={formRef}
         className={cn('w-full', className)}
         onSubmit={handleSubmit}
         {...props}
@@ -841,10 +837,7 @@ export const PromptInputTextarea = ({
       attachments.files.length > 0
     ) {
       e.preventDefault()
-      const lastAttachment =
-        attachments.files.length > 0
-          ? attachments.files[attachments.files.length - 1]
-          : undefined
+      const lastAttachment = attachments.files.at(-1)
       if (lastAttachment) {
         attachments.remove(lastAttachment.id)
       }
@@ -889,7 +882,10 @@ export const PromptInputTextarea = ({
 
   return (
     <InputGroupTextarea
-      className={cn('field-sizing-content max-h-48 min-h-16 break-all', className)}
+      className={cn(
+        'field-sizing-content max-h-48 min-h-16 break-all',
+        className
+      )}
       name='message'
       onCompositionEnd={() => setIsComposing(false)}
       onCompositionStart={() => setIsComposing(true)}
@@ -1068,6 +1064,7 @@ type SpeechRecognitionResultList = {
   readonly length: number
   item(index: number): SpeechRecognitionResult
   [index: number]: SpeechRecognitionResult
+  [Symbol.iterator](): Iterator<SpeechRecognitionResult>
 }
 
 type SpeechRecognitionResult = {
@@ -1138,7 +1135,7 @@ export const PromptInputSpeechButton = ({
       speechRecognition.onresult = (event) => {
         let finalTranscript = ''
 
-        const results = Array.from(event.results)
+        const results = [...event.results]
 
         for (const result of results) {
           if (result.isFinal) {
