@@ -42,7 +42,9 @@ describe('file mention query', () => {
       { id: '1', filename: 'cat.png' },
       { id: '2', filename: 'dog.png' },
     ]
-    expect(filterMentionFiles(files, 'do').map((file) => file.id)).toEqual(['2'])
+    expect(filterMentionFiles(files, 'do').map((file) => file.id)).toEqual([
+      '2',
+    ])
     expect(filterMentionFiles(files, '').map((file) => file.id)).toEqual([
       '1',
       '2',

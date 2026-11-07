@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ApiKey } from '@/features/keys/types'
@@ -44,8 +44,19 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-function renderComposer(model: string, kind: 'image' | 'video') {
-  const capability = capabilityFor(model, kind)
+function renderComposer(
+  model: string,
+  kind: 'image' | 'video',
+  options: {
+    referenceImages?: {
+      max: number
+      field: 'image' | 'images'
+      encoding: 'dataUrl' | 'base64'
+    }
+    mediaNotice?: boolean
+  } = {}
+) {
+  const capability = capabilityFor(kind, { fields: [], ...options })
   render(
     <GenerateComposer
       modelItems={[{ value: model, label: model }]}
@@ -65,55 +76,136 @@ function renderComposer(model: string, kind: 'image' | 'video') {
   )
 }
 
-describe('reference image upload', () => {
-  it('offers an image picker when the model accepts reference images', () => {
-    renderComposer('sora-2', 'video')
+/** Drop files on the composer the way a browser delivers them. */
+function dropFiles(files: File[]) {
+  const form = document.querySelector('form')
+  if (!(form instanceof HTMLFormElement)) throw new Error('composer form')
+  fireEvent.drop(form, { dataTransfer: { files, types: ['Files'] } })
+}
+
+describe('reference media upload', () => {
+  it('offers an image-only picker when the model accepts reference images', () => {
+    renderComposer('sora-2', 'video', {
+      referenceImages: { max: 1, field: 'images', encoding: 'dataUrl' },
+    })
 
     expect(
-      screen.getByRole('button', { name: 'Add a reference image' })
+      screen.getByRole('button', { name: 'Add reference media' })
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Upload files')).toHaveAttribute(
       'accept',
       'image/*'
     )
-    expect(
-      screen.queryByText(
-        'Quick generate does not support reference video or audio. The API does.'
-      )
-    ).toBeNull()
   })
 
   it('hides the picker on a text-only image model', () => {
     renderComposer('dall-e-3', 'image')
 
     expect(
-      screen.queryByRole('button', { name: 'Add a reference image' })
+      screen.queryByRole('button', { name: 'Add reference media' })
     ).toBeNull()
   })
 
-  it('warns that reference video and audio are not sent', () => {
-    renderComposer('wan3.0-video', 'video')
+  it('offers only video and audio for a model that reads reference video and audio', () => {
+    renderComposer('wan2.2-s2v', 'video', { mediaNotice: true })
 
     expect(
-      screen.getByText(
-        'Quick generate does not support reference video or audio. The API does.'
-      )
+      screen.getByRole('button', { name: 'Add reference media' })
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Add a reference image' })
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Upload files')).toHaveAttribute(
+      'accept',
+      'video/*,audio/*'
+    )
+
+    fireEvent.change(screen.getByLabelText('Upload files'), {
+      target: {
+        files: [new File(['img'], 'frame.png', { type: 'image/png' })],
+      },
+    })
+    expect(screen.queryByTitle('frame.png')).toBeNull()
   })
 
-  it('warns without a picker when the model needs audio and takes no image', () => {
-    renderComposer('wan2.2-s2v', 'video')
+  it('offers images, video and audio when the model declares both', () => {
+    renderComposer('wan3.0-video', 'video', {
+      mediaNotice: true,
+      referenceImages: { max: 1, field: 'images', encoding: 'dataUrl' },
+    })
 
-    expect(
-      screen.getByText(
-        'Quick generate does not support reference video or audio. The API does.'
-      )
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Add a reference image' })
-    ).toBeNull()
+    expect(screen.getByLabelText('Upload files')).toHaveAttribute(
+      'accept',
+      'image/*,video/*,audio/*'
+    )
+  })
+
+  it('accepts a dropped reference on the composer', () => {
+    renderComposer('sora-2', 'video', {
+      referenceImages: { max: 1, field: 'images', encoding: 'dataUrl' },
+    })
+
+    dropFiles([
+      new File(['img'], 'frame.png', { type: 'image/png' }),
+      new File(['vid'], 'clip.mp4', { type: 'video/mp4' }),
+    ])
+
+    expect(screen.getByTitle('frame.png')).toBeInTheDocument()
+    // The model accepts images only, so the dropped clip stays out.
+    expect(screen.queryByTitle('clip.mp4')).toBeNull()
+  })
+
+  it('caps a drop at the model reference allowance', () => {
+    renderComposer('sora-2', 'video', {
+      referenceImages: { max: 1, field: 'images', encoding: 'dataUrl' },
+    })
+
+    dropFiles([
+      new File(['a'], 'first.png', { type: 'image/png' }),
+      new File(['b'], 'second.png', { type: 'image/png' }),
+    ])
+
+    expect(screen.getByTitle('first.png')).toBeInTheDocument()
+    expect(screen.queryByTitle('second.png')).toBeNull()
+  })
+
+  it('keeps the earlier reference previewable after another one is added', () => {
+    // The preview reads the object URL of every attachment, so adding a file
+    // must not revoke the URLs of the files already in the list.
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    renderComposer('wan2.2-s2v', 'video', { mediaNotice: true })
+    const picker = screen.getByLabelText('Upload files')
+
+    fireEvent.change(picker, {
+      target: { files: [new File(['a'], 'first.mp4', { type: 'video/mp4' })] },
+    })
+    fireEvent.change(picker, {
+      target: { files: [new File(['b'], 'second.mp4', { type: 'video/mp4' })] },
+    })
+
+    expect(screen.getByTitle('first.mp4')).toBeInTheDocument()
+    expect(screen.getByTitle('second.mp4')).toBeInTheDocument()
+    expect(revoke).not.toHaveBeenCalled()
+    revoke.mockRestore()
+  })
+
+  it('drops documents and keeps only declared media files', () => {
+    renderComposer('wan3.0-video', 'video', {
+      mediaNotice: true,
+      referenceImages: { max: 3, field: 'images', encoding: 'dataUrl' },
+    })
+
+    fireEvent.change(screen.getByLabelText('Upload files'), {
+      target: {
+        files: [
+          new File(['doc'], 'notes.pdf', { type: 'application/pdf' }),
+          new File(['img'], 'frame.png', { type: 'image/png' }),
+          new File(['vid'], 'clip.mp4', { type: 'video/mp4' }),
+          new File(['voice'], 'voice.mp3', { type: 'audio/mpeg' }),
+        ],
+      },
+    })
+
+    expect(screen.queryByTitle('notes.pdf')).toBeNull()
+    expect(screen.getByTitle('frame.png')).toBeInTheDocument()
+    expect(screen.getByTitle('clip.mp4')).toBeInTheDocument()
+    expect(screen.getByTitle('voice.mp3')).toBeInTheDocument()
   })
 })

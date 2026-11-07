@@ -29,6 +29,11 @@ export type GeneratedMedia = {
   type: GenerationKind
 }
 
+export type ReferenceAttachment = {
+  url: string
+  mediaType: string
+}
+
 /**
  * What one request needs; also the recipe a retry replays. `values` holds the
  * fields the model's capability declared, so a different model can send a
@@ -38,8 +43,8 @@ export type GenerationParams = {
   model: string
   kind: GenerationKind
   values: GenerationValues
-  /** Data URLs, or raw base64 when the model stores image bytes that way. */
-  images: string[]
+  /** Local attachments before upload, and temporary object URLs afterward. */
+  references: ReferenceAttachment[]
 }
 
 /**
