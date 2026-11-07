@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
+import { Gift, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 
@@ -52,6 +52,29 @@ import type {
   WaffoPayMethod,
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
+
+function RedemptionShopHint(props: { href: string }) {
+  const { t } = useTranslation()
+  return (
+    <span className='text-muted-foreground text-xs'>
+      <Trans
+        t={t}
+        i18nKey='You can get a code from the <shop>shop</shop>.'
+        components={{
+          shop: (
+            <a
+              href={props.href}
+              target='_blank'
+              rel='noopener noreferrer'
+              title={t('Click to get a redemption code from the shop')}
+              className='text-primary font-medium underline-offset-4 hover:underline'
+            />
+          ),
+        }}
+      />
+    </span>
+  )
+}
 
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
@@ -516,7 +539,7 @@ export function RechargeFormCard({
       {/* Redemption Code Section */}
       {redemptionEnabled ? (
         <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
-          <div className='flex items-center gap-2'>
+          <div className='flex flex-wrap items-center gap-x-2 gap-y-1'>
             <IconBadge tone='warning' size='xs'>
               <Gift />
             </IconBadge>
@@ -526,6 +549,7 @@ export function RechargeFormCard({
             >
               {t('Have a Code?')}
             </Label>
+            {topupLink ? <RedemptionShopHint href={topupLink} /> : null}
           </div>
           <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
             <Input
@@ -545,20 +569,6 @@ export function RechargeFormCard({
               {t('Redeem')}
             </Button>
           </div>
-          {topupLink && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Need a redemption code?')}{' '}
-              <a
-                href={topupLink}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='inline-flex items-center gap-1 underline-offset-4 hover:underline'
-              >
-                {t('Get one here')}
-                <ExternalLink className='h-3 w-3' />
-              </a>
-            </p>
-          )}
         </div>
       ) : (
         <Alert className='border-t'>
