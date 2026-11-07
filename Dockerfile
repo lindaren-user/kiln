@@ -1,14 +1,20 @@
-FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS builder
+FROM node:24-alpine AS builder
+
+RUN npm install -g pnpm@12.16.1
 
 WORKDIR /build/web
-COPY web/package.json web/bun.lock ./
-RUN bun install --frozen-lockfile
+COPY web/package.json web/pnpm-lock.yaml web/.npmrc ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 COPY ./web ./
 COPY ./VERSION /build/VERSION
-RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
+RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) pnpm run build
 
 FROM golang:1.26.10-alpine@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS builder2
-ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off
+# proxy.golang.org is unreachable from this deployment's network; the mirror
+# serves the same module graph. Override with --build-arg GOPROXY=... to use
+# another proxy.
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off GOPROXY=${GOPROXY}
 
 ARG TARGETOS
 ARG TARGETARCH

@@ -1,0 +1,93 @@
+# Kiln on one machine: the app, PostgreSQL, and nginx.
+# The React console is already inside the kiln image. Do not add a frontend container.
+# Postgres data lives in the named volume pg_data, not in a host directory.
+# Public traffic enters only through ports 80 and 443.
+# Explanation and restart commands: deploy/kiln/README.md
+
+name: kiln
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  kiln:
+    image: ${KILN_IMAGE:?set KILN_IMAGE in .env}
+    container_name: kiln
+    restart: unless-stopped
+    command: ["--log-dir", "/app/logs"]
+    environment:
+      SQL_DSN: postgresql://${POSTGRES_USER:-kiln}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kiln}?sslmode=disable
+      MEMORY_CACHE_ENABLED: "true"
+      SYNC_FREQUENCY: "60"
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_TRUSTED_URL: https://${KILN_DOMAIN:?set KILN_DOMAIN in .env}
+      TRUSTED_PROXIES: 172.30.15.0/24
+      TZ: ${TZ:-Asia/Shanghai}
+      ERROR_LOG_ENABLED: "true"
+      NODE_NAME: kiln-1
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - kiln
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/api/status | grep -o '\"success\":\\s*true' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  postgres:
+    image: postgres:15
+    container_name: kiln-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-kiln}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-kiln}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - kiln
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kiln} -d ${POSTGRES_DB:-kiln}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  nginx:
+    image: nginx:1.28-alpine
+    container_name: kiln-nginx
+    restart: unless-stopped
+    environment:
+      KILN_DOMAIN: ${KILN_DOMAIN:?set KILN_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./acme:/var/www/acme:ro
+    networks:
+      - kiln
+    depends_on:
+      - kiln
+    logging: *logging
+
+volumes:
+  pg_data:
+
+networks:
+  kiln:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.15.0/24

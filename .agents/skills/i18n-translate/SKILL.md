@@ -25,7 +25,7 @@ description: >-
 ### Hard Constraint: Locale Writes Go Through the Script
 
 - You MUST NOT edit `web/src/i18n/locales/*.json` directly with text-editing tools (StrReplace, Write, search-and-replace, manual JSON edits, etc.). This applies even to a single key.
-- ALL locale writes MUST go through the `add-missing-keys.mjs` script, followed by `bun run i18n:sync`. The script is the only sanctioned way to add or change locale values.
+- ALL locale writes MUST go through the `add-missing-keys.mjs` script, followed by `pnpm run i18n:sync`. The script is the only sanctioned way to add or change locale values.
 - Why this is mandatory, not optional:
   - Hand-editing reliably drops one or more of the seven locales (`en`, `zh`, `zh-TW`, `fr`, `ja`, `ru`, `vi`), leaving keys missing in some languages.
   - Hand-editing breaks the required alphabetical key order and introduces JSON syntax errors (trailing commas, mismatched quotes).
@@ -48,7 +48,7 @@ Do not skip this workflow because the fix is "just one key".
 - Locale files: `web/src/i18n/locales/{en,zh,zh-TW,fr,ja,ru,vi}.json`
 - Format: flat JSON under `"translation"` key, keys are English source strings
 - Base locale: `en.json` (most keys), fallback: `zh` (Chinese)
-- Sync script: `bun run i18n:sync` (from `web/`)
+- Sync script: `pnpm run i18n:sync` (from `web/`)
 - All `t()` calls must have corresponding keys in every locale file
 
 ## Small Fix Path
@@ -59,14 +59,14 @@ For a single known missing key (still script-only, no direct JSON edits):
 2. Add the key via `add-missing-keys.mjs`, populating its `newKeys` object for every supported locale: `en`, `zh`, `zh-TW`, `fr`, `ja`, `ru`, `vi`. Even one key goes through the script; do not hand-edit the JSON.
 3. The script preserves the flat `"translation"` object and keeps keys alphabetically sorted automatically.
 4. Run a targeted search for the key in code and locale files.
-5. Run `bun run i18n:sync` to normalize file order. This step is mandatory, not optional.
+5. Run `pnpm run i18n:sync` to normalize file order. This step is mandatory, not optional.
 
 ## Workflow
 
 ### Step 1: Run sync and read report
 
 ```bash
-cd web && bun run i18n:sync
+cd web && pnpm run i18n:sync
 ```
 
 Read `web/src/i18n/locales/_reports/_sync-report.json` to see per-locale status (missingCount, extrasCount, untranslatedCount).
@@ -261,7 +261,7 @@ Populate the `newKeys` object with actual translations for each locale.
 cd web
 node scripts/add-missing-keys.mjs   # apply translations
 node scripts/find-missing-keys.mjs  # verify: should say "All t() keys found"
-bun run i18n:sync                   # normalize file order
+pnpm run i18n:sync                   # normalize file order
 ```
 
 Delete temporary scripts after completion.
@@ -308,7 +308,7 @@ Delete temporary scripts after completion.
 1. All scripts run from `web/` directory
 2. Use `node scripts/xxx.mjs` (ESM format with top-level await)
 3. Sort keys alphabetically when writing locale files
-4. Always run `bun run i18n:sync` as the final step
+4. Always run `pnpm run i18n:sync` as the final step
 5. Delete temporary scripts after completion
 6. The `{{variable}}` placeholders in keys must be preserved in all translations
 7. NEVER edit `locales/*.json` directly. Any non-script write to a locale file (StrReplace, Write, manual JSON edit) is non-compliant, including single-key fixes.

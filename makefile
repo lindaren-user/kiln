@@ -14,8 +14,8 @@ all: build-all-web start-api
 
 build-web:
 	@echo "Building web frontend..."
-	@cd $(WEB_DIR) && bun install --frozen-lockfile
-	@cd $(WEB_DIR) && DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$$(cat ../VERSION) bun run build
+	@cd $(WEB_DIR) && pnpm install --frozen-lockfile
+	@cd $(WEB_DIR) && DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$$(cat ../VERSION) pnpm run build
 
 build-all-web: build-web
 
@@ -34,8 +34,8 @@ dev-api-rebuild:
 dev-web:
 	@echo "Starting web frontend dev server..."
 	@echo "Web frontend: http://localhost:$(DEV_WEB_PORT)"
-	@cd $(WEB_DIR) && bun install
-	@cd $(WEB_DIR) && bun run dev -- --host 0.0.0.0 --port $(DEV_WEB_PORT)
+	@cd $(WEB_DIR) && pnpm install
+	@cd $(WEB_DIR) && PORT=$(DEV_WEB_PORT) pnpm run dev
 
 dev: dev-api dev-web
 
