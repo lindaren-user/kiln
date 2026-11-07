@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
@@ -635,7 +637,15 @@ func copyTaskMediaResponseHeaders(destination, source http.Header) {
 
 func setTaskMediaResponseSecurityHeaders(header http.Header) {
 	header.Set("Cache-Control", "private, no-store")
-	header.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	// Playable media opened as a document loads itself, and the sandbox gives
+	// that document an opaque origin: Chrome then shows a black player stuck
+	// at 0:00. Everything else, SVG included, keeps the sandbox.
+	mediaType, _, _ := mime.ParseMediaType(header.Get("Content-Type"))
+	csp := "sandbox; default-src 'none'"
+	if mediaType != "image/svg+xml" && service.DetectFileType(mediaType) != types.FileTypeFile {
+		csp = "default-src 'none'; media-src 'self'; img-src 'self'"
+	}
+	header.Set("Content-Security-Policy", csp)
 	header.Set("Referrer-Policy", "no-referrer")
 	header.Set("X-Content-Type-Options", "nosniff")
 }

@@ -549,12 +549,30 @@ func TestProxyTaskMediaForwardsRangeAndFiltersResponseHeaders(t *testing.T) {
 	assert.Equal(t, "bytes 0-3/10", recorder.Header().Get("Content-Range"))
 	assert.Equal(t, "bytes", recorder.Header().Get("Accept-Ranges"))
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
-	assert.Equal(t, "sandbox; default-src 'none'", recorder.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "default-src 'none'; media-src 'self'; img-src 'self'", recorder.Header().Get("Content-Security-Policy"))
 	assert.Equal(t, "no-referrer", recorder.Header().Get("Referrer-Policy"))
 	assert.Equal(t, "nosniff", recorder.Header().Get("X-Content-Type-Options"))
 	assert.Empty(t, recorder.Header().Get("Set-Cookie"))
 	assert.Empty(t, recorder.Header().Get("WWW-Authenticate"))
 	assert.Empty(t, recorder.Header().Get("X-Provider-Secret"))
+}
+
+func TestTaskMediaContentSecurityPolicySeparatesMediaFromMarkup(t *testing.T) {
+	for _, testCase := range []struct {
+		contentType string
+		want        string
+	}{
+		{contentType: "audio/mpeg; charset=binary", want: "default-src 'none'; media-src 'self'; img-src 'self'"},
+		{contentType: "image/png", want: "default-src 'none'; media-src 'self'; img-src 'self'"},
+		{contentType: "image/svg+xml", want: "sandbox; default-src 'none'"},
+		{contentType: "text/html; charset=utf-8", want: "sandbox; default-src 'none'"},
+		{contentType: "", want: "sandbox; default-src 'none'"},
+	} {
+		header := http.Header{}
+		header.Set("Content-Type", testCase.contentType)
+		setTaskMediaResponseSecurityHeaders(header)
+		assert.Equal(t, testCase.want, header.Get("Content-Security-Policy"), testCase.contentType)
+	}
 }
 
 func TestProxyTaskMediaPassesThroughUnsatisfiedRange(t *testing.T) {
