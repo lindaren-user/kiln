@@ -395,7 +395,7 @@ export const STATIC_I18N_KEYS = [
   'Match models containing this name',
   'Match models ending with this name',
 
-  // Playground parameter controls
+  // Model parameter controls
   'Temperature',
   'Top P',
   'Frequency Penalty',
@@ -614,10 +614,6 @@ export const STATIC_I18N_KEYS = [
   'Actions',
 
   // Sidebar modules
-  'Chat Area',
-  'Playground and chat functions',
-  'Playground',
-  'AI model testing environment',
   'Chat session management',
   'No content to copy',
   'Please wait for the current generation to complete',
