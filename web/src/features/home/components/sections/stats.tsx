@@ -43,7 +43,9 @@ function Counter(props: CounterProps) {
     if (!el) return
     const start = performance.now()
     const step = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1)
+      // The first animation frame can carry a timestamp earlier than `start`,
+      // which would briefly render a negative count.
+      const progress = Math.min(Math.max((now - start) / duration, 0), 1)
       const eased = 1 - Math.pow(1 - progress, 3)
       el.textContent = `${prefix}${formatValue(eased * end)}${suffix}`
       if (progress < 1) requestAnimationFrame(step)
@@ -98,10 +100,10 @@ export function Stats(_props: StatsProps) {
   const { t } = useTranslation()
 
   const stats: StatItem[] = [
-    { end: 50, suffix: '+', label: t('upstream services integrated') },
-    { end: 100, suffix: '+', label: t('model billing support') },
-    { end: 50, suffix: '+', label: t('compatible API routes') },
-    { end: 10, suffix: '+', label: t('scheduling controls') },
+    { end: 50, suffix: '+', label: t('image models') },
+    { end: 30, suffix: '+', label: t('video models') },
+    { end: 10, suffix: '+', label: t('creation workflows') },
+    { end: 24, suffix: '/7', label: t('generation service') },
   ]
 
   return (

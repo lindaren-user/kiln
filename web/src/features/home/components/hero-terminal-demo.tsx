@@ -203,7 +203,12 @@ export function HeroTerminalDemo(props: HeroTerminalDemoProps) {
     }, TRANSITION_MS)
   }
 
-  const demo = API_DEMOS[activeIndex]
+  const demoSource = API_DEMOS[activeIndex]
+  const origin = typeof window === 'undefined' ? '' : window.location.origin
+  const demo = {
+    ...demoSource,
+    endpoint: `${origin}${demoSource.endpoint}`,
+  }
   const accent = ACCENT_CLASSES[demo.accent]
 
   return (
@@ -251,7 +256,7 @@ export function HeroTerminalDemo(props: HeroTerminalDemoProps) {
         {/* Endpoint row */}
         <div
           className={cn(
-            'flex items-center gap-2.5 border-b px-5 py-3',
+            'flex items-start gap-2.5 border-b px-5 py-3',
             'border-border/40 dark:border-white/[0.04]'
           )}
         >
@@ -265,7 +270,7 @@ export function HeroTerminalDemo(props: HeroTerminalDemoProps) {
           </span>
           <code
             className={cn(
-              'text-foreground/75 truncate font-mono text-[12.5px] transition-opacity duration-200',
+              'text-foreground/75 min-w-0 font-mono text-[12.5px] break-all transition-opacity duration-200',
               transitioning ? 'opacity-0' : 'opacity-100'
             )}
           >
