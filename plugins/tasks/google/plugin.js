@@ -474,3 +474,35 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => ({
+  models: [name],
+  kind: "video",
+  fields: [
+    {
+      key: "seconds",
+      labelKey: "Duration",
+      type: "select",
+      valueType: "number",
+      defaultValue: "8",
+      requestPath: ["duration"],
+      options: ["4", "6", "8"].map((value) => ({ value, label: value })),
+    },
+    {
+      key: "ratio",
+      labelKey: "Aspect Ratio",
+      type: "select",
+      defaultValue: "16:9",
+      requestPath: ["metadata", "aspectRatio"],
+      options: ["16:9", "9:16"].map((value) => ({ value, label: value })),
+    },
+    {
+      key: "resolution",
+      labelKey: "Resolution",
+      type: "select",
+      defaultValue: "720p",
+      requestPath: ["metadata", "resolution"],
+      options: ["720p", "1080p", "4k"].map((value) => ({ value, label: value })),
+    },
+  ],
+}));

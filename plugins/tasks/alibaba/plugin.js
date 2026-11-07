@@ -863,6 +863,21 @@ function convert(ctx) {
   const image = firstImage(req);
   if (image && input.img_url === undefined) input.img_url = image;
   Object.assign(input, objectValue(metadata.input, "metadata.input"));
+  // The task API and the console send reference_videos and reference_audios;
+  // DashScope names the same media inside input.media, so the flat lists are
+  // folded in unless the caller already described its media that way.
+  if ((profile.kind === "media" || profile.kind === "all") && !(Array.isArray(input.media) && input.media.length)) {
+    const media = [];
+    for (const key of ["reference_videos", "reference_audios"]) {
+      const value = req[key];
+      const urls = Array.isArray(value) ? value : value == null ? [] : [value];
+      for (const url of urls) {
+        if (!trimmed(url)) continue;
+        media.push({ type: key === "reference_videos" ? "reference_video" : "reference_audio", url: trimmed(url) });
+      }
+    }
+    if (media.length) input.media = media;
+  }
   const nativeParameters = objectValue(metadata.parameters, "metadata.parameters");
   const parameters = profile.kind === "speech" ? {} : { prompt_extend: true };
   for (const key of ["resolution", "ratio", "prompt_extend", "watermark", "audio", "seed", "shot_type"]) {
@@ -1672,3 +1687,63 @@ export const protocols = {
     },
   },
 };
+
+meta.generationProfiles = Object.keys(WAN_MODELS)
+  .concat(WAN_VIDEO_SNAPSHOTS)
+  .map((name) => {
+    const spec = modelProfile(name);
+    const fields = [];
+    if (spec.kind !== "speech") {
+      if (spec.durations)
+        fields.push({
+          key: "seconds",
+          labelKey: "Duration",
+          type: "select",
+          valueType: "number",
+          defaultValue: String(spec.durations[0]),
+          requestPath: ["duration"],
+          options: spec.durations.map((value) => ({ value: String(value), label: String(value) })),
+        });
+      else fields.push({ key: "seconds", labelKey: "Duration", type: "number", defaultValue: 5, min: 2, max: spec.maxDuration, requestPath: ["duration"] });
+    }
+    fields.push({
+      key: "resolution",
+      labelKey: "Resolution",
+      type: "select",
+      defaultValue: spec.defaultResolution,
+      requestPath: ["metadata", "parameters", "resolution"],
+      options: spec.resolutions.map((value) => ({ value, label: value })),
+    });
+    if (["all", "t2v", "size"].includes(spec.kind)) {
+      let ratios = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+      if (spec.kind === "all") ratios = ratios.concat(["21:9", "adaptive"]);
+      if (spec.kind === "size") ratios = ratios.filter((ratio) => spec.resolutions.every((resolution) => LEGACY_SIZES[resolution][ratio]));
+      fields.push({
+        key: "ratio",
+        labelKey: "Aspect Ratio",
+        type: "select",
+        defaultValue: "16:9",
+        requestPath: ["metadata", "parameters", "ratio"],
+        options: ratios.map((value) => ({ value, label: value })),
+      });
+    }
+    const profile = { models: [name], kind: "video", fields };
+    if (["all", "media", "image", "frames", "speech"].includes(spec.kind))
+      profile.referenceImages = { max: spec.kind === "frames" ? 2 : 1, field: "images", encoding: "dataUrl" };
+    if (["all", "media", "speech"].includes(spec.kind)) profile.mediaNotice = true;
+    return profile;
+  })
+  .concat(
+    Object.keys(QWEN_IMAGE_LIMITS)
+      .concat(IMAGE_MODEL_SNAPSHOTS)
+      .map((name) => {
+        const spec = QWEN_IMAGE_LIMITS[modelKey(name)];
+        const profile = {
+          models: [name],
+          kind: "image",
+          fields: [{ key: "count", labelKey: "Count", type: "number", defaultValue: 1, min: 1, max: spec.maxN, requestPath: ["n"] }],
+        };
+        if (spec.maxInput) profile.referenceImages = { max: spec.maxInput, field: "images", encoding: "dataUrl" };
+        return profile;
+      })
+  );

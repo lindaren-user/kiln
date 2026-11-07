@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { ModelCapability } from './lib/capabilities'
 /** Which endpoint the model answers on: an image or a video generation. */
 export type GenerationKind = 'image' | 'video'
 
@@ -32,6 +33,8 @@ export type GeneratedMedia = {
 export type ReferenceAttachment = {
   url: string
   mediaType: string
+  /** Original file name, kept so a misreported media type can be corrected. */
+  filename?: string
 }
 
 /**
@@ -42,6 +45,7 @@ export type ReferenceAttachment = {
 export type GenerationParams = {
   model: string
   kind: GenerationKind
+  capability: ModelCapability
   values: GenerationValues
   /** Local attachments before upload, and temporary object URLs afterward. */
   references: ReferenceAttachment[]
@@ -58,6 +62,8 @@ export type Generation = GenerationParams & {
   status: GenerationStatus
   media: GeneratedMedia[]
   saved: boolean
+  /** When the run started, so the elapsed clock survives a reload. */
+  startedAt: number
   /** Upstream progress text while a video task is running, e.g. `45%`. */
   progress?: string
   error?: string

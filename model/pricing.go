@@ -26,6 +26,7 @@ type PricingPluginVariant struct {
 }
 
 type Pricing struct {
+	GenerationSchemas      map[string]jsplugin.GenerationSchema `json:"generation_schemas,omitempty"`
 	BillingPluginVariants  []PricingPluginVariant               `json:"billing_plugin_variants,omitempty"`
 	ModelName              string                               `json:"model_name"`
 	Description            string                               `json:"description,omitempty"`
@@ -205,19 +206,17 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 
 type pricingTaskPluginConfig struct {
 	key          string
+	bindings     []string
 	modelMapping map[string]string
 }
 
-// loadPricingTaskPluginConfigs reads the plugin and mapping of each type-61 channel.
+// loadPricingTaskPluginConfigs reads channel plugin bindings and model mappings.
 // The pricing refresh holds updatePricingLock and may take channelSyncLock
 // here, the same order as loadPricingAdvancedCustomConfigs.
 func loadPricingTaskPluginConfigs(enableAbilities []AbilityWithChannel) map[int]pricingTaskPluginConfig {
 	channelIDs := make([]int, 0)
 	seen := make(map[int]struct{})
 	for _, ability := range enableAbilities {
-		if ability.ChannelType != constant.ChannelTypeTaskPlugin {
-			continue
-		}
 		if _, exists := seen[ability.ChannelId]; exists {
 			continue
 		}
@@ -242,7 +241,8 @@ func loadPricingTaskPluginConfigs(enableAbilities []AbilityWithChannel) map[int]
 	}
 	configs := make(map[int]pricingTaskPluginConfig, len(channels))
 	for _, channel := range channels {
-		config := pricingTaskPluginConfig{key: strings.TrimSpace(channel.GetSetting().TaskPluginKey)}
+		settings := channel.GetSetting()
+		config := pricingTaskPluginConfig{key: strings.TrimSpace(settings.TaskPluginKey), bindings: settings.TaskPluginBindings()}
 		if raw := strings.TrimSpace(channel.GetModelMapping()); raw != "" && raw != "{}" {
 			if err := common.UnmarshalJsonStr(raw, &config.modelMapping); err != nil {
 				config.modelMapping = nil
@@ -358,6 +358,7 @@ func updatePricing() {
 	modelSupportEndpointsStr := make(map[string][]string)
 	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
 	taskPluginConfigs := loadPricingTaskPluginConfigs(enableAbilities)
+	generationSchemas := pricingGenerationSchemas(enableAbilities, advancedCustomConfigs, taskPluginConfigs)
 
 	// 先根据已有能力填充原生端点
 	for _, ability := range enableAbilities {
@@ -444,6 +445,7 @@ func updatePricing() {
 	pluginGeneration := jsplugin.DefaultRegistry.Generation()
 	for model, groups := range modelGroupsMap {
 		pricing := Pricing{
+			GenerationSchemas:      generationSchemas[model],
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],

@@ -132,6 +132,36 @@ func TestAlibabaWan3(t *testing.T) {
 		assert.NotContains(t, input, "img_url")
 	})
 
+	t.Run("flat reference lists become input media for wan3.0", func(t *testing.T) {
+		value, callErr := plugin.Engine.Call(t.Context(), "buildSubmitRequest", submitCtx("wan3.0-video", "wan3.0-video", map[string]any{
+			"model":            "wan3.0-video",
+			"prompt":           "a cat",
+			"reference_videos": []any{"https://cdn.example/ref.mp4"},
+			"reference_audios": []any{"https://cdn.example/a.mp3"},
+		}))
+		require.NoError(t, callErr)
+		input := roundTrip(t, value)["body"].(map[string]any)["input"].(map[string]any)
+		assert.Equal(t, []any{
+			map[string]any{"type": "reference_video", "url": "https://cdn.example/ref.mp4"},
+			map[string]any{"type": "reference_audio", "url": "https://cdn.example/a.mp3"},
+		}, input["media"])
+
+		// A request that already describes its media natively is left as it is.
+		value, callErr = plugin.Engine.Call(t.Context(), "buildSubmitRequest", submitCtx("wan3.0-video", "wan3.0-video", map[string]any{
+			"model":            "wan3.0-video",
+			"prompt":           "a cat",
+			"reference_videos": []any{"https://cdn.example/ref.mp4"},
+			"metadata": map[string]any{"input": map[string]any{"media": []any{
+				map[string]any{"type": "reference_video", "url": "https://cdn.example/ref.mp4"},
+			}}},
+		}))
+		require.NoError(t, callErr)
+		input = roundTrip(t, value)["body"].(map[string]any)["input"].(map[string]any)
+		assert.Equal(t, []any{
+			map[string]any{"type": "reference_video", "url": "https://cdn.example/ref.mp4"},
+		}, input["media"])
+	})
+
 	t.Run("completion facts read the wan3.0 usage block", func(t *testing.T) {
 		value, callErr := plugin.Engine.Call(t.Context(), "extractUsageOnComplete", map[string]any{}, map[string]any{}, map[string]any{
 			"output": map[string]any{"task_status": "SUCCEEDED", "video_url": "https://upstream.example/v.mp4"},

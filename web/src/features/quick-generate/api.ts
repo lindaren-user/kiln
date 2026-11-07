@@ -21,7 +21,6 @@ import { t } from 'i18next'
 import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
-import type { VideoRequest } from './lib/capabilities'
 import type { ReferenceAttachment } from './types'
 
 type SubmitPayload = {
@@ -40,6 +39,10 @@ type FetchPayload = {
     result_url?: string
     fail_reason?: string
   }
+}
+
+type ArtifactsPayload = {
+  artifacts?: { type?: string; content_url?: string }[]
 }
 
 export type VideoTaskStatus = 'queued' | 'running' | 'done' | 'failed'
@@ -297,15 +300,16 @@ const STATUS_MAP: Record<string, VideoTaskStatus> = {
 
 /**
  * Submit a video job on the generic task endpoint. Unlike the OpenAI-compatible
- * `/v1/videos`, its task DTO carries `result_url`, which is usually the
- * vendor's own signed address — the browser then plays it without the video
- * bytes crossing this gateway.
+ * `/v1/videos`, its task DTO carries `result_url`. For a vendor task that is
+ * the vendor's own signed address, which the browser plays directly; for a task
+ * plugin it is this gateway's own content route, which needs the API key, so
+ * the poller resolves the artifact address before handing it over.
  */
 export async function submitVideo(params: {
   apiKey: string
   model: string
   prompt: string
-  request: VideoRequest
+  request: Record<string, unknown>
 }): Promise<string> {
   const response = await fetch('/v1/video/generations', {
     method: 'POST',
@@ -350,7 +354,11 @@ export async function fetchVideoTask(params: {
     .catch(() => null)) as FetchPayload | null
 
   if (!response.ok) {
-    throw createServerError(payload, t('Failed to read the video task'))
+    // The poller retries transient failures; the status tells it which.
+    throw Object.assign(
+      createServerError(payload, t('Failed to read the video task')),
+      { status: response.status }
+    )
   }
 
   const data = payload?.data ?? {}
@@ -359,5 +367,51 @@ export async function fetchVideoTask(params: {
     progress: String(data.progress ?? ''),
     resultUrl: String(data.result_url ?? ''),
     error: String(data.fail_reason ?? ''),
+  }
+}
+
+/** A video address this gateway serves only to a request carrying the key. */
+function isGatewayVideoURL(resultUrl: string): boolean {
+  if (!resultUrl) return true
+  try {
+    const path = new URL(resultUrl, window.location.origin).pathname
+    return path.startsWith('/v1/videos/') || path.startsWith('/v1/tasks/')
+  } catch {
+    return true
+  }
+}
+
+/**
+ * The address the browser should open for a finished video. A task-plugin
+ * artifact is served through the gateway's capability URL (`?access=…`),
+ * because the task's own `result_url` is a `/v1/videos/{id}/content` address
+ * that only answers a request carrying the API key, which a <video> element
+ * and a plain download cannot send. A vendor URL is already playable, and a
+ * task with no video artifact keeps whatever it reported.
+ */
+export async function resolveVideoURL(params: {
+  apiKey: string
+  taskId: string
+  resultUrl: string
+}): Promise<string> {
+  if (!isGatewayVideoURL(params.resultUrl)) return params.resultUrl
+  try {
+    const response = await fetch(
+      `/v1/tasks/${encodeURIComponent(params.taskId)}/artifacts`,
+      {
+        headers: { Authorization: `Bearer ${params.apiKey}` },
+        // The video is already finished; a slow artifacts call must not hold
+        // it back any longer than a timeout.
+        signal: AbortSignal.timeout(5000),
+      }
+    )
+    if (!response.ok) return params.resultUrl
+    const payload = (await response.json()) as ArtifactsPayload | null
+    const video = (payload?.artifacts ?? []).find(
+      (artifact) => artifact.type === 'video' && artifact.content_url
+    )
+    return video?.content_url ?? params.resultUrl
+  } catch {
+    return params.resultUrl
   }
 }

@@ -27,16 +27,44 @@ import {
 } from '@/features/pricing/lib/filters'
 import type { PricingModel } from '@/features/pricing/types'
 
+import type { ModelCapability } from '../lib/capabilities'
 import {
   generationModelPrice,
   generationRunPrice,
   type GenerationRunQuantity,
 } from '../lib/model-price'
-import type { GenerationKind } from '../types'
+import { restrictToPricedOptions } from '../lib/priced-options'
+import type { GenerationKind, GenerationValues } from '../types'
+
+/**
+ * The usage facts the selected controls produce, so the run price reflects the
+ * chosen resolution instead of the cheapest to the dearest tier.
+ */
+function usageFrom(
+  model: PricingModel,
+  capability: ModelCapability,
+  values: GenerationValues | undefined
+): Record<string, string | number> | undefined {
+  const schema = model.billing_usage_schema
+  if (!schema || !values) return undefined
+  const usage: Record<string, string | number> = {}
+  for (const field of capability.fields) {
+    const value = values[field.key]
+    if (value === undefined || value === '' || !schema[field.key]) continue
+    usage[field.key] = field.type === 'number' ? Number(value) : value
+  }
+  // Images are billed by the top-level `n`, which the page names `count`.
+  const count = values.count
+  if (schema.image_count && count !== undefined && count !== '') {
+    usage.image_count = Number(count)
+  }
+  return Object.keys(usage).length > 0 ? usage : undefined
+}
 
 export type GenerationModel = {
   name: string
   kind: GenerationKind
+  capability: ModelCapability
 }
 
 type ListedModel = GenerationModel & { source: PricingModel }
@@ -49,7 +77,18 @@ function modelsFor(
   return sortModels(
     filterByEndpointType(models, endpointType),
     SORT_OPTIONS.NAME
-  ).map((model) => ({ name: model.model_name, kind, source: model }))
+  ).map((model) => ({
+    name: model.model_name,
+    kind,
+    capability: restrictToPricedOptions(model, {
+      kind,
+      fields: model.generation_schemas?.[kind]?.fields ?? [],
+      referenceImages:
+        model.generation_schemas?.[kind]?.referenceImages ?? null,
+      mediaNotice: model.generation_schemas?.[kind]?.mediaNotice ?? false,
+    }),
+    source: model,
+  }))
 }
 
 /**
@@ -74,14 +113,16 @@ export function useGenerationModels() {
     )
     const taken = new Set(images.map((model) => model.name))
 
-    return [
-      ...images,
-      ...videos.filter((model) => !taken.has(model.name)),
-    ]
+    return [...images, ...videos.filter((model) => !taken.has(model.name))]
   }, [pricing.models])
 
   const models = useMemo<GenerationModel[]>(
-    () => listed.map(({ name, kind }) => ({ name, kind })),
+    () =>
+      listed.map(({ name, kind, capability }) => ({
+        name,
+        kind,
+        capability,
+      })),
     [listed]
   )
 
@@ -97,23 +138,41 @@ export function useGenerationModels() {
           pricing.priceRate,
           pricing.usdExchangeRate
         ),
+        title: model.source.description?.trim() || undefined,
       })),
-    [i18n.language, i18n.resolvedLanguage, listed, pricing.priceRate, pricing.usdExchangeRate, t]
+    [
+      i18n.language,
+      i18n.resolvedLanguage,
+      listed,
+      pricing.priceRate,
+      pricing.usdExchangeRate,
+      t,
+    ]
   )
 
-  const descriptionFor = useCallback((name: string) => {
-    const description = listed.find((item) => item.name === name)?.source
-      .description
-    return description?.trim() ?? ''
-  }, [listed])
+  const descriptionFor = useCallback(
+    (name: string) => {
+      const description = listed.find((item) => item.name === name)?.source
+        .description
+      return description?.trim() ?? ''
+    },
+    [listed]
+  )
 
   const priceForRun = useCallback(
-    (name: string, quantities: GenerationRunQuantity) => {
-      const source = listed.find((item) => item.name === name)?.source
-      if (!source) return ''
+    (
+      name: string,
+      quantities: GenerationRunQuantity,
+      values?: GenerationValues
+    ) => {
+      const model = listed.find((item) => item.name === name)
+      if (!model) return ''
       return generationRunPrice(
-        source,
-        quantities,
+        model.source,
+        {
+          ...quantities,
+          usage: usageFrom(model.source, model.capability, values),
+        },
         pricing.priceRate,
         pricing.usdExchangeRate
       )

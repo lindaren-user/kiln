@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { evaluateBillingExpression } from '@/features/pricing/lib/billing-expression/runtime'
 import {
   formatTaskUsageUnitPrice,
   getDynamicPriceUnitLabelKey,
@@ -94,6 +95,35 @@ export function generationModelPrice(
 export type GenerationRunQuantity = {
   seconds?: number
   count?: number
+  /** Usage facts for the parameters the page currently has selected. */
+  usage?: Record<string, string | number>
+}
+
+/**
+ * The exact price of the selected parameters for a task model, or null when
+ * the expression cannot be evaluated here (no usage facts, a fixed price, or a
+ * dependency on request headers). Callers then fall back to the tier range.
+ */
+function exactTaskPrice(
+  model: PricingModel,
+  usage: Record<string, string | number> | undefined,
+  priceRate: number,
+  usdExchangeRate: number
+): string | null {
+  const expression = model.billing_expr?.trim()
+  if (!usage || !expression || !model.billing_usage_schema) return null
+  // A task expression returns USD, but fixed() is scaled for token expressions
+  // and is rejected upstream for task usage, so it never evaluates here.
+  if (expression.includes('fixed(')) return null
+  const result = evaluateBillingExpression(expression, { usage })
+  if (result.status !== 'success' || !(result.cost > 0)) return null
+  const formatted = formatTaskUsageUnitPrice(result.cost, {
+    tokenUnit: 'M',
+    priceRate,
+    usdExchangeRate,
+    showCurrencySymbol: true,
+  })
+  return formatted === '-' ? null : formatted
 }
 
 function runFactor(
@@ -129,6 +159,8 @@ export function generationRunPrice(
   priceRate = 1,
   usdExchangeRate = 1
 ): string {
+  const exact = exactTaskPrice(model, quantities.usage, priceRate, usdExchangeRate)
+  if (exact !== null) return exact
   const dynamic = getDynamicPricingSummary(model, {
     tokenUnit: 'M',
     priceRate,

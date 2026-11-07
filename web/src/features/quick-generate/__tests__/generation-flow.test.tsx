@@ -17,25 +17,37 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { StrictMode, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
 import type { ApiKey } from '@/features/keys/types'
+import type { GenerationSchema } from '@/features/pricing/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { QuickGenerate } from '..'
 import { submitVideo, uploadQuickGenerateReferences } from '../api'
 import { useGenerationModels } from '../hooks/use-generation-models'
+import { capabilityFor } from '../lib/capabilities'
+import { saveComposerDraft } from '../lib/draft-storage'
 import { downloadMedia } from '../lib/download-media'
 import { pollVideoTask } from '../lib/poll-video'
+import {
+  loadRunningVideoTask,
+  saveRunningVideoTask,
+  type RunningVideoTask,
+} from '../lib/video-task-storage'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {
     ...actual,
-    Link: (props: { children?: ReactNode }) => <a>{props.children}</a>,
+    // A plain anchor keeps the destination visible to the assertions without
+    // needing a mounted router.
+    Link: (props: { to?: string; children?: ReactNode }) => (
+      <a href={props.to}>{props.children}</a>
+    ),
   }
 })
 
@@ -59,9 +71,14 @@ vi.mock('../api', () => ({
   fetchVideoTask: vi.fn(),
 }))
 
-vi.mock('../lib/poll-video', () => ({
-  pollVideoTask: vi.fn(),
-}))
+// Keep the module's other exports: the result panel reads its progress parser.
+vi.mock('../lib/poll-video', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/poll-video')>()
+  return {
+    ...actual,
+    pollVideoTask: vi.fn(),
+  }
+})
 
 vi.mock('../lib/download-media', () => ({
   downloadMedia: vi.fn(),
@@ -103,13 +120,28 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
+function mockModels(
+  models: {
+    name: string
+    kind: 'image' | 'video'
+    schema?: GenerationSchema
+  }[]
+) {
   useGenerationModelsMock.mockReturnValue({
-    models,
+    models: models.map((model) => ({
+      ...model,
+      capability: {
+        kind: model.kind,
+        fields: model.schema?.fields ?? [],
+        referenceImages: model.schema?.referenceImages ?? null,
+        mediaNotice: model.schema?.mediaNotice ?? false,
+      },
+    })),
     items: models.map((model) => ({
       value: model.name,
       label: model.name,
       hint: '',
+      title: undefined,
     })),
     descriptionFor: () => '',
     priceForRun: () => '',
@@ -119,7 +151,20 @@ function mockModels(models: { name: string; kind: 'image' | 'video' }[]) {
 }
 
 beforeEach(() => {
-  mockModels([{ name: 'z-image', kind: 'image' }])
+  // The composer keeps its draft here; one test must not seed the next.
+  window.localStorage.clear()
+  mockModels([
+    {
+      name: 'z-image',
+      kind: 'image',
+      schema: {
+        fields: [
+          { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select', defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
+          { key: 'count', labelKey: 'Count', type: 'select', defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'], valueType: 'number' },
+        ],
+      },
+    },
+  ])
   useImageApiKeysMock.mockReturnValue({
     keys: [API_KEY],
     selectedKeyId: API_KEY.id,
@@ -130,6 +175,26 @@ beforeEach(() => {
   uploadReferencesMock.mockImplementation(async (references) => references)
   downloadMediaMock.mockResolvedValue(true)
 })
+
+/** A video task the previous visit left running, with every field it needs. */
+function runningTask(overrides: Partial<RunningVideoTask> = {}): RunningVideoTask {
+  return {
+    id: 'run-1',
+    taskId: 'task-1',
+    keyId: API_KEY.id,
+    model: 'sora-2',
+    kind: 'video',
+    prompt: 'a kiln at dusk',
+    values: {},
+    capability: capabilityFor('video', { fields: [] }),
+    references: [],
+    status: 'running',
+    media: [],
+    saved: false,
+    startedAt: 1_700_000_000_000,
+    ...overrides,
+  }
+}
 
 async function submitPrompt(prompt: string) {
   const editor = screen.getByRole('textbox', { name: 'Prompt' })
@@ -154,13 +219,24 @@ describe('quick generate', () => {
       apiKey: 'sk-abc123',
       model: 'z-image',
       prompt: 'a kiln at dusk',
-      size: '1024x1024',
-      count: 1,
+      parameters: { size: '1:1', n: 1 },
+      operation: 'generate',
     })
   })
 
   it('shows the video result in the preview frame', async () => {
-    mockModels([{ name: 'sora-2', kind: 'video' }])
+    mockModels([
+      {
+        name: 'sora-2',
+        kind: 'video',
+        schema: {
+          fields: [
+            { key: 'size', labelKey: 'Size', type: 'select', defaultValue: '1280x720', options: [{ value: '1280x720', label: '1280x720' }], requestPath: ['size'] },
+            { key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 5, min: 1, max: 60, requestPath: ['duration'], valueType: 'number' },
+          ],
+        },
+      },
+    ])
     submitVideoMock.mockResolvedValue('task-1')
     pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
 
@@ -177,14 +253,22 @@ describe('quick generate', () => {
       request: {
         size: '1280x720',
         duration: 5,
-        metadata: { ratio: '16:9', aspect_ratio: '16:9' },
       },
     })
     expect(generateImagesMock).not.toHaveBeenCalled()
   })
 
   it('uploads reference video and audio as URLs for supported video models', async () => {
-    mockModels([{ name: 'wan3.0-video', kind: 'video' }])
+    mockModels([
+      {
+        name: 'wan3.0-video',
+        kind: 'video',
+        schema: {
+          fields: [],
+          mediaNotice: true,
+        },
+      },
+    ])
     submitVideoMock.mockResolvedValue('task-1')
     pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
     uploadReferencesMock.mockImplementation(async (references) =>
@@ -208,11 +292,16 @@ describe('quick generate', () => {
 
     await waitFor(() => expect(submitVideoMock).toHaveBeenCalled())
     const request = submitVideoMock.mock.calls[0][0].request
-    expect(request.reference_videos).toHaveLength(1)
-    expect(request.reference_audios).toHaveLength(1)
-    expect(request.reference_videos?.[0]).toBe('https://r2.example/reference-0')
-    expect(request.reference_audios?.[0]).toBe('https://r2.example/reference-1')
-    expect(request.metadata?.input?.media).toHaveLength(2)
+    expect(request).toMatchObject({
+      reference_videos: ['https://r2.example/reference-0'],
+      reference_audios: ['https://r2.example/reference-1'],
+      metadata: {
+        input: { media: [
+          { type: 'reference_video', url: 'https://r2.example/reference-0' },
+          { type: 'reference_audio', url: 'https://r2.example/reference-1' },
+        ] },
+      },
+    })
   })
 
   it('replaces the frame contents when generation fails', async () => {
@@ -355,49 +444,53 @@ describe('quick generate', () => {
     expect(screen.getByLabelText('API key')).toHaveTextContent('Quick key')
   })
 
-  it('shows the fixed size list for an OpenAI image model', () => {
-    mockModels([{ name: 'gpt-image-1', kind: 'image' }])
+  it('shows the size list declared by a channel for its public image model', () => {
+    mockModels([{ name: 'renamed-image', kind: 'image', schema: {
+      fields: [{ key: 'size', labelKey: 'Size', type: 'select', defaultValue: 'auto', options: [{ value: 'auto', label: 'Auto' }], requestPath: ['size'] }],
+    } }])
 
     render(<QuickGenerate />)
 
     expect(screen.getByLabelText('Size')).toHaveTextContent('Auto')
-    expect(screen.getByLabelText('Count')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Count')).toBeNull()
     expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
     expect(screen.queryByLabelText('Resolution')).toBeNull()
   })
 
-  it('shows a duration and no image-only controls for a video model', () => {
-    mockModels([{ name: 'sora-2', kind: 'video' }])
+  it('shows the duration bounds declared by the channel', () => {
+    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
+      fields: [{ key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 4, min: 4, max: 15, requestPath: ['duration'] }],
+    } }])
 
     render(<QuickGenerate />)
 
-    expect(screen.getByLabelText('Duration 1-60s')).toHaveValue(5)
-    expect(screen.getByLabelText('Duration 1-60s')).toHaveAttribute('min', '1')
-    expect(screen.getByLabelText('Duration 1-60s')).toHaveAttribute('max', '60')
-    expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
+    expect(screen.getByLabelText('Video duration')).toHaveValue(4)
+    expect(screen.getByLabelText('Video duration')).toHaveAttribute('min', '4')
+    expect(screen.getByLabelText('Video duration')).toHaveAttribute('max', '15')
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
     expect(screen.queryByLabelText('Count')).toBeNull()
     expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.queryByLabelText('Size')).toBeNull()
   })
 
-  it('labels the duration with the range that model accepts', () => {
-    mockModels([{ name: '官转SD2.5-30图版-480P', kind: 'video' }])
+  it('offers no guessed controls when the channel has no input declaration', () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
 
     render(<QuickGenerate />)
 
-    const duration = screen.getByLabelText('Duration 4-30s')
-    expect(duration).toHaveValue(5)
-    expect(duration).toHaveAttribute('min', '4')
-    expect(duration).toHaveAttribute('max', '30')
+    expect(screen.queryByLabelText('Video duration')).toBeNull()
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
   })
 
-  it('keeps resolution hidden for a video model that accepts more than one', () => {
-    mockModels([{ name: 'veo-3.0-generate-001', kind: 'video' }])
+  it('shows resolution when the channel explicitly declares it', () => {
+    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
+      fields: [{ key: 'resolution', labelKey: 'Resolution', type: 'select', defaultValue: '768p', options: [{ value: '768p', label: '768p' }], requestPath: ['metadata', 'resolution'] }],
+    } }])
 
     render(<QuickGenerate />)
 
-    expect(screen.queryByLabelText('Resolution')).toBeNull()
-    expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('16:9')
+    expect(screen.getByLabelText('Resolution')).toHaveTextContent('768p')
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
     expect(screen.queryByLabelText('Count')).toBeNull()
   })
 
@@ -410,5 +503,213 @@ describe('quick generate', () => {
       screen.getByText('No generation models are available')
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+  })
+  // The bar is determinate from the click on: a percentage fills it, and a
+  // status word shows beside the 0% the bar starts from.
+  it.each([
+    { reported: '45%', value: '45', percent: '45%', status: undefined },
+    { reported: 'queued', value: '0', percent: '0%', status: 'queued' },
+  ])(
+    'shows the reported video progress $reported as a bar',
+    async ({ reported, value, percent, status }) => {
+      mockModels([{ name: 'sora-2', kind: 'video' }])
+      submitVideoMock.mockResolvedValue('task-1')
+      pollVideoTaskMock.mockImplementation((options) => {
+        options.onProgress(reported)
+        return new Promise<string>(() => undefined)
+      })
+
+      render(<QuickGenerate />)
+      await submitPrompt('a kiln at dusk')
+
+      const bar = await screen.findByRole('progressbar')
+      expect(bar).toHaveAttribute('aria-valuenow', value)
+      expect(screen.getByText(percent)).toBeInTheDocument()
+      if (status) expect(screen.getByText(status)).toBeInTheDocument()
+    }
+  )
+
+  it('shows no progress bar while an image is generating', async () => {
+    generateImagesMock.mockImplementation(
+      () => new Promise<string[]>(() => undefined)
+    )
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    expect(
+      await screen.findByText(/^Generating\.\.\. \d+:\d{2}$/)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+
+  it('keeps the prompt after the page is mounted again', () => {
+    const view = render(<QuickGenerate />)
+    const editor = screen.getByRole('textbox', { name: 'Prompt' })
+    editor.textContent = 'a kiln at dusk'
+    fireEvent.input(editor)
+    view.unmount()
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveTextContent(
+      'a kiln at dusk'
+    )
+  })
+
+  it('uses the model of the last visit for the next generation', async () => {
+    mockModels([
+      { name: 'z-image', kind: 'image' },
+      { name: 'sora-2', kind: 'video' },
+    ])
+    saveComposerDraft({ prompt: '', model: 'sora-2', values: {} })
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockImplementation(
+      () => new Promise<string>(() => undefined)
+    )
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    await waitFor(() =>
+      expect(submitVideoMock).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'sora-2' })
+      )
+    )
+  })
+
+  it('restores the parameters of the last visit', async () => {
+    mockModels([
+      {
+        name: 'z-image',
+        kind: 'image',
+        schema: {
+          fields: [
+            {
+              key: 'ratio',
+              labelKey: 'Aspect Ratio',
+              type: 'select',
+              defaultValue: '1:1',
+              options: [
+                { value: '1:1', label: '1:1' },
+                { value: '16:9', label: '16:9' },
+              ],
+              requestPath: ['size'],
+            },
+          ],
+        },
+      },
+    ])
+    saveComposerDraft({
+      prompt: '',
+      model: 'z-image',
+      values: { ratio: '16:9' },
+    })
+    generateImagesMock.mockResolvedValue(['https://cdn.example.com/one.png'])
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    await waitFor(() =>
+      expect(generateImagesMock).toHaveBeenCalledWith(
+        expect.objectContaining({ parameters: { size: '16:9' } })
+      )
+    )
+  })
+
+  it('rejoins the video task of the last visit', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    saveRunningVideoTask(runningTask({ progress: '40%' }))
+    pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
+
+    render(<QuickGenerate />)
+
+    // The bar keeps the percentage the previous visit ended on, and the task
+    // is forgotten once the page has its result.
+    await waitFor(() =>
+      expect(pollVideoTaskMock).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: 'task-1', startProgress: '40%' })
+      )
+    )
+    await waitFor(() => expect(loadRunningVideoTask()).toBeNull())
+  })
+
+  it('resumes the clock of the video task from its stored start time', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    saveRunningVideoTask(runningTask({ startedAt: Date.now() - 65_000 }))
+    pollVideoTaskMock.mockImplementation(
+      () => new Promise<string>(() => undefined)
+    )
+
+    render(<QuickGenerate />)
+
+    expect(
+      await screen.findByText(/Generating\.\.\. 1:0[56]/)
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the reattached task alive under StrictMode', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    saveRunningVideoTask(runningTask())
+    pollVideoTaskMock.mockImplementation(
+      () => new Promise<string>(() => undefined)
+    )
+
+    // StrictMode mounts, unmounts and mounts again; the rehearsal must not
+    // cancel the poll that reattaches to the stored task.
+    render(
+      <StrictMode>
+        <QuickGenerate />
+      </StrictMode>
+    )
+
+    await waitFor(() => expect(pollVideoTaskMock).toHaveBeenCalled())
+    expect(pollVideoTaskMock.mock.calls[0][0].isCancelled()).toBe(false)
+  })
+
+  it('shows the video task this page started after a reload', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockImplementation(
+      () => new Promise<string>(() => undefined)
+    )
+
+    const first = render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+    await waitFor(() => expect(loadRunningVideoTask()).not.toBeNull())
+    first.unmount()
+
+    render(<QuickGenerate />)
+
+    expect(await screen.findByRole('progressbar')).toBeInTheDocument()
+    expect(screen.getByText('Generating... 0:00')).toBeInTheDocument()
+  })
+
+  it('keeps the stored video task when the page is left while polling', () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    saveRunningVideoTask(runningTask())
+    pollVideoTaskMock.mockImplementation(
+      () => new Promise<string>(() => undefined)
+    )
+
+    const view = render(<QuickGenerate />)
+    view.unmount()
+
+    expect(loadRunningVideoTask()).not.toBeNull()
+  })
+
+  it('starts the video progress bar at 0% before the first poll reports', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockImplementation(
+      () => new Promise<string>(() => undefined)
+    )
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    const bar = await screen.findByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '0')
+    expect(screen.getByText('0%')).toBeInTheDocument()
   })
 })

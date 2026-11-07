@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Loader2, X } from 'lucide-react'
+import { FileIcon, Loader2, Mic, Video, X, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -30,9 +30,11 @@ import {
   filterMentionFiles,
   mentionLabel,
   mentionMark,
+  referenceKind,
   type MentionFile,
+  type ReferenceKind,
 } from '../lib/file-mention'
-import { ImageLightbox } from './image-lightbox'
+import { MediaLightbox, type MediaKind } from './media-lightbox'
 
 type PromptMentionInputProps = {
   /** Cleared by the parent after a prompt is accepted. */
@@ -94,9 +96,32 @@ function textBeforeCaret(root: HTMLElement): string {
   return readPrompt(holder)
 }
 
-function mentionImageSrc(file: MentionFile): string | undefined {
-  if (!file.url || !file.mediaType?.startsWith('image/')) return undefined
-  return file.url
+const KIND_ICONS: Record<ReferenceKind, LucideIcon> = {
+  image: FileIcon,
+  audio: Mic,
+  video: Video,
+  file: FileIcon,
+}
+
+/** A reference's thumbnail: the image itself, an icon for other media. */
+function ReferenceThumbnail(props: { file: MentionFile }) {
+  const kind = referenceKind(props.file)
+  if (kind === 'image' && props.file.url) {
+    return (
+      <img
+        src={props.file.url}
+        alt=''
+        className='size-5 shrink-0 rounded-sm object-cover'
+      />
+    )
+  }
+  const Icon = KIND_ICONS[kind]
+  return (
+    <Icon
+      aria-hidden='true'
+      className='text-muted-foreground size-4 shrink-0'
+    />
+  )
 }
 
 function createChip(file: MentionFile, fallback: string): HTMLSpanElement {
@@ -109,10 +134,9 @@ function createChip(file: MentionFile, fallback: string): HTMLSpanElement {
   chip.title = name
   chip.setAttribute('role', 'img')
   chip.setAttribute('aria-label', name)
-  const src = mentionImageSrc(file)
-  if (src) {
+  if (file.url && referenceKind(file) === 'image') {
     const image = document.createElement('img')
-    image.src = src
+    image.src = file.url
     image.alt = ''
     image.className = 'size-3.5 shrink-0 rounded-sm object-cover'
     chip.append(image)
@@ -170,6 +194,48 @@ function insertChip(root: HTMLElement, file: MentionFile, fallback: string) {
   placeCaret(tail, 1)
 }
 
+/** A mention is a whole token: it starts and ends at a space or another @. */
+const MENTION_EDGE = /[\s@]/
+
+/**
+ * Puts a chip back around a mention still present as text. A reload restores
+ * the prompt text and the files separately, so "@cat.png" would otherwise
+ * stay plain text next to a restored file. Returns whether a chip was made.
+ */
+function restoreMentionChip(
+  root: HTMLElement,
+  file: MentionFile,
+  fallback: string
+): boolean {
+  // Without a name there is no mention token to look for.
+  if (!file.filename) return false
+  const label = mentionLabel(file, fallback)
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    const text = node.textContent ?? ''
+    let from = 0
+    for (;;) {
+      const at = text.indexOf(label, from)
+      if (at < 0) break
+      const before = text[at - 1]
+      const after = text[at + label.length]
+      const whole =
+        (before === undefined || MENTION_EDGE.test(before)) &&
+        (after === undefined || MENTION_EDGE.test(after))
+      if (whole) {
+        const chip = createChip(file, fallback)
+        node.textContent = text.slice(0, at)
+        node.after(chip)
+        chip.after(document.createTextNode(text.slice(at + label.length)))
+        return true
+      }
+      from = at + 1
+    }
+  }
+  return false
+}
+
 const QUIET_BUTTON =
   'hover:bg-transparent hover:text-inherit dark:hover:bg-transparent'
 
@@ -184,7 +250,6 @@ type ReferenceFileChipProps = {
 function ReferenceFileChip(props: ReferenceFileChipProps) {
   const { t } = useTranslation()
   const name = props.file.filename || t('Image')
-  const src = mentionImageSrc(props.file)
   return (
     <div
       className='border-border flex h-8 max-w-48 min-w-0 items-center gap-1 overflow-hidden rounded-md border pr-1 pl-1.5 text-sm'
@@ -199,18 +264,12 @@ function ReferenceFileChip(props: ReferenceFileChipProps) {
         )}
         onClick={props.onOpen}
       >
-        {src ? (
-          <img
-            src={src}
-            alt=''
-            className='size-5 shrink-0 rounded-sm object-cover'
-          />
-        ) : null}
+        <ReferenceThumbnail file={props.file} />
         <span className='block max-w-32 truncate'>{name}</span>
       </Button>
       {props.uploading ? (
         <Loader2
-          aria-label={t('Uploading')}
+          aria-label={t('Uploading...')}
           className='text-muted-foreground size-3 shrink-0 animate-spin'
         />
       ) : null}
@@ -232,9 +291,18 @@ function ReferenceFileChip(props: ReferenceFileChipProps) {
 function ReferenceFiles(props: { uploading?: boolean }) {
   const { t } = useTranslation()
   const attachments = usePromptInputAttachments()
-  const [preview, setPreview] = useState<MentionFile | null>(null)
-  const previewSrc = preview ? mentionImageSrc(preview) : undefined
+  const [preview, setPreview] = useState<{
+    file: MentionFile
+    kind: MediaKind
+  } | null>(null)
   if (attachments.files.length === 0 && !preview) return null
+
+  // A plain file has nothing to show, so only previewable references open.
+  const openPreview = (file: MentionFile) => {
+    const kind = referenceKind(file)
+    if (!file.url || kind === 'file') return
+    setPreview({ file, kind })
+  }
 
   return (
     <>
@@ -245,24 +313,32 @@ function ReferenceFiles(props: { uploading?: boolean }) {
               key={file.id}
               file={file}
               uploading={props.uploading}
-              onOpen={() => setPreview(file)}
+              onOpen={() => openPreview(file)}
               onRemove={() => attachments.remove(file.id)}
             />
           ))}
         </div>
       )}
-      <ImageLightbox
-        open={previewSrc !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setPreview(null)
-        }}
-        src={previewSrc ?? ''}
-        alt={preview?.filename || t('Image')}
-        onDownload={() => {
-          if (!previewSrc) return
-          void downloadMedia(previewSrc, preview?.filename || 'image.png')
-        }}
-      />
+      {preview && (
+        <MediaLightbox
+          open
+          onOpenChange={(open) => {
+            if (!open) setPreview(null)
+          }}
+          src={preview.file.url ?? ''}
+          alt={preview.file.filename || t('Preview')}
+          kind={preview.kind}
+          title={t('Preview')}
+          onDownload={() => {
+            if (preview.file.url) {
+              void downloadMedia(
+                preview.file.url,
+                preview.file.filename || 'reference'
+              )
+            }
+          }}
+        />
+      )}
     </>
   )
 }
@@ -296,7 +372,6 @@ function MentionMenu(props: MentionMenuProps) {
         </li>
       ) : (
         props.matches.map((file, optionIndex) => {
-          const src = mentionImageSrc(file)
           return (
             <li key={file.id}>
               <button
@@ -312,13 +387,7 @@ function MentionMenu(props: MentionMenuProps) {
                 onMouseEnter={() => props.onHover(optionIndex)}
                 onClick={() => props.onChoose(file)}
               >
-                {src ? (
-                  <img
-                    src={src}
-                    alt=''
-                    className='size-5 shrink-0 rounded-sm object-cover'
-                  />
-                ) : null}
+                <ReferenceThumbnail file={file} />
                 <span className='truncate'>{file.filename || t('Image')}</span>
               </button>
             </li>
@@ -345,6 +414,9 @@ export function PromptMentionInput(props: PromptMentionInputProps) {
   const [menuPos, setMenuPos] = useState({ top: 0, left: 8 })
   const [serialized, setSerialized] = useState('')
   const composing = useRef(false)
+  // Set while the text came from storage rather than from typing: only then is
+  // a mention turned back into a chip, so typing "@cat.png" stays plain text.
+  const fromStorage = useRef(false)
 
   const files: MentionFile[] = attachments.files
   const matches = query === null ? [] : filterMentionFiles(files, query)
@@ -394,29 +466,55 @@ export function PromptMentionInput(props: PromptMentionInputProps) {
     publish(editorPrompt(editor))
   }
 
+  // The parent owns the text: a restored draft arrives on mount, and the page
+  // may clear the box after a send. The editor DOM is written only when it
+  // disagrees with the value, so typing — where the two already match — never
+  // moves the caret.
   useEffect(() => {
-    if (props.value !== '') return
     const editor = editorRef.current
-    if (!editor || editorPrompt(editor) === '') return
-    editor.replaceChildren()
-    setSerialized('')
+    if (!editor || editorPrompt(editor) === props.value) return
+    editor.textContent = props.value
+    // A restored draft carries its mentions as text; the chips come back with
+    // the files (see the reconciliation effect below).
+    fromStorage.current = true
     setQuery(null)
-  }, [props.value])
+    publish(props.value)
+  }, [props.value, publish])
 
+  // Chips live in the editor DOM, so they are reconciled with the file list by
+  // hand: a chip whose file is gone is dropped, and a mention whose restored
+  // file is back gets its chip again.
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
     const ids = new Set(attachments.files.map((file) => file.id))
+    const chipped = new Set<string>()
     let removed = false
     for (const chip of editor.querySelectorAll<HTMLElement>(
       '[data-mention-id]'
     )) {
-      if (ids.has(chip.dataset.mentionId ?? '')) continue
-      chip.remove()
-      removed = true
+      const id = chip.dataset.mentionId ?? ''
+      if (!ids.has(id)) {
+        chip.remove()
+        removed = true
+        continue
+      }
+      chipped.add(id)
     }
+    // Only a restored draft can hold a mention that lost its chip; typed text
+    // never turns into one on its own.
+    if (fromStorage.current) {
+      for (const file of attachments.files) {
+        if (chipped.has(file.id)) continue
+        // The same file can be mentioned more than once.
+        while (restoreMentionChip(editor, file, t('Image'))) {
+          chipped.add(file.id)
+        }
+      }
+    }
+    // A restored chip keeps the text unchanged, so only a removal changes it.
     if (removed) publish(editorPrompt(editor))
-  }, [attachments.files, publish])
+  }, [attachments.files, publish, t])
 
   useEffect(() => {
     const form = rootRef.current?.closest('form')
@@ -455,7 +553,11 @@ export function PromptMentionInput(props: PromptMentionInputProps) {
           data-slot='input-group-control'
           suppressContentEditableWarning
           className='max-h-48 min-h-16 w-full overflow-y-auto px-3 py-2 text-sm break-all whitespace-pre-wrap outline-none'
-          onInput={refresh}
+          onInput={() => {
+            // Typing owns the text from here on.
+            fromStorage.current = false
+            refresh()
+          }}
           onKeyUp={refresh}
           onClick={refresh}
           onCompositionStart={() => {

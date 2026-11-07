@@ -2877,6 +2877,84 @@ export function ChannelMutateDrawer({
             </FormItem>
           )}
         />
+
+        <FormField
+          control={form.control}
+          name='generation_profiles'
+          render={({ field }) => (
+            <FormItem className='space-y-3 border-t pt-4'>
+              <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
+                <div className='space-y-1'>
+                  <FormLabel>{t('Generation Profiles')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Declare the inputs this channel accepts when the provider deviates from its official API. The console builds its generation controls from these profiles.'
+                    )}
+                  </FormDescription>
+                </div>
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() =>
+                      field.onChange(
+                        JSON.stringify(
+                          [
+                            {
+                              kind: 'image',
+                              models: ['gpt-image-1'],
+                              fields: [
+                                {
+                                  key: 'size',
+                                  labelKey: 'Size',
+                                  type: 'select',
+                                  defaultValue: '1024x1024',
+                                  options: [
+                                    {
+                                      value: '1024x1024',
+                                      label: '1024x1024',
+                                    },
+                                  ],
+                                  requestPath: ['size'],
+                                },
+                              ],
+                            },
+                          ],
+                          null,
+                          2
+                        )
+                      )
+                    }
+                  >
+                    {t('Fill Template')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    onClick={() => field.onChange('')}
+                  >
+                    {t('Clear')}
+                  </Button>
+                </div>
+              </div>
+              <FormControl>
+                <JsonCodeEditor
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  name={field.name}
+                  onBlur={field.onBlur}
+                  textareaRef={field.ref}
+                  disabled={sensitiveLocked || isSubmitting}
+                  placeholder={t('Enter JSON generation profiles')}
+                  heightClassName='h-40 min-h-40 max-h-40'
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       </fieldset>
     </div>
   )

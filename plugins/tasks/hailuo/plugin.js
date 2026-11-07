@@ -78,7 +78,13 @@ const H3_METADATA_FIELDS = ["aigc_watermark"];
 // with the code in base_resp.
 const V1_ERROR_CODES = { 400: 2013, 401: 1004, 403: 1004, 404: 2013, 413: 2013, 429: 1002 };
 // The /v2 error types by HTTP status.
-const V2_ERROR_TYPES = { 401: "authorized_error", 402: "insufficient_balance_error", 403: "authorized_error", 422: "unprocessable_entity_error", 429: "rate_limit_error" };
+const V2_ERROR_TYPES = {
+  401: "authorized_error",
+  402: "insufficient_balance_error",
+  403: "authorized_error",
+  422: "unprocessable_entity_error",
+  429: "rate_limit_error",
+};
 
 export const meta = {
   apiVersion: 1,
@@ -316,6 +322,14 @@ function h3MediaList(source, key) {
   });
 }
 
+// One reference list from either naming: the flat one the task API sends, or
+// the singular one this model documents. A request that carries both (the
+// console writes both) must not be counted twice.
+function h3DeclaredMedia(req, metadata, flatKey, metaKey) {
+  const flat = h3MediaList(req, flatKey);
+  return flat.length ? flat : h3MediaList(metadata, metaKey);
+}
+
 function h3FrameImages(req) {
   const metadata = req.metadata || {};
   const images = h3MediaList(req, "images");
@@ -400,10 +414,13 @@ function h3Content(req) {
   }
   const content = prompt ? [{ type: "text", text: prompt }] : [];
   for (const frame of h3FrameImages(req)) content.push(frame);
-  const videos = h3MediaList(metadata, "reference_video");
+  // The task API sends reference_videos and reference_audios; this model's own
+  // metadata shape names the same lists in the singular. The flat list wins
+  // when both are present, because a console request carries both.
+  const videos = h3DeclaredMedia(req, metadata, "reference_videos", "reference_video");
   if (videos.length > H3_MAX_REFERENCE_VIDEOS) throw new Error(H3_MODEL + " accepts at most " + H3_MAX_REFERENCE_VIDEOS + " reference videos");
   for (const video of videos) content.push(h3MediaItem("video_url", video, "reference_video"));
-  const audios = h3MediaList(metadata, "reference_audio");
+  const audios = h3DeclaredMedia(req, metadata, "reference_audios", "reference_audio");
   if (audios.length > H3_MAX_REFERENCE_AUDIOS) throw new Error(H3_MODEL + " accepts at most " + H3_MAX_REFERENCE_AUDIOS + " reference audios");
   for (const audio of audios) content.push(h3MediaItem("audio_url", audio, "reference_audio"));
   if (!content.length) throw new Error(H3_MODEL + " requires a prompt or a media input");
@@ -566,7 +583,12 @@ export const native = {
     if (!Array.isArray(body.content)) throw new Error("content must be an array");
     const content = validateH3Content(body.content);
     h3Duration(body.duration);
-    return { kind: "submit", model: body.model, action: h3HasVisualContent(content) ? "image_to_video" : "text_to_video", requestBody: { model: body.model, vendorBody: body } };
+    return {
+      kind: "submit",
+      model: body.model,
+      action: h3HasVisualContent(content) ? "image_to_video" : "text_to_video",
+      requestBody: { model: body.model, vendorBody: body },
+    };
   },
   // MiniMax answers /v1 with a base_resp envelope and /v2 with a bare task_id.
   taskCreated: function (ctx, task) {
@@ -707,7 +729,8 @@ export function extractUsage(ctx) {
         : 0,
     };
   }
-  if (req.vendorBody) return { seconds: outboundDuration(req.vendorBody), resolution: v1NativeResolution(model, req.vendorBody), input_images: 0, input_video_seconds: 0 };
+  if (req.vendorBody)
+    return { seconds: outboundDuration(req.vendorBody), resolution: v1NativeResolution(model, req.vendorBody), input_images: 0, input_video_seconds: 0 };
   return { seconds: outboundDuration(req), resolution: outboundResolution(req, model), input_images: 0, input_video_seconds: 0 };
 }
 
@@ -996,3 +1019,57 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => {
+  if (name === H3_MODEL)
+    return {
+      models: [name],
+      kind: "video",
+      fields: [
+        {
+          key: "seconds",
+          labelKey: "Duration",
+          type: "number",
+          defaultValue: H3_DEFAULT_DURATION,
+          min: H3_MIN_DURATION,
+          max: H3_MAX_DURATION,
+          requestPath: ["duration"],
+        },
+        {
+          key: "resolution",
+          labelKey: "Resolution",
+          type: "select",
+          defaultValue: "768P",
+          requestPath: ["metadata", "resolution"],
+          options: ["768P", "2K"].map((value) => ({ value, label: value })),
+        },
+      ],
+      referenceImages: { max: H3_MAX_FRAME_IMAGES, field: "images", encoding: "dataUrl" },
+      mediaNotice: true,
+    };
+  const resolutions = v1Resolutions(name, false, false);
+  return {
+    models: [name],
+    kind: "video",
+    fields: [
+      {
+        key: "seconds",
+        labelKey: "Duration",
+        type: "select",
+        valueType: "number",
+        defaultValue: "6",
+        requestPath: ["duration"],
+        options: [{ value: "6", label: "6" }],
+      },
+      {
+        key: "resolution",
+        labelKey: "Resolution",
+        type: "select",
+        defaultValue: defaultResolution(name),
+        requestPath: ["metadata", "resolution"],
+        options: resolutions.map((value) => ({ value, label: value })),
+      },
+    ],
+    referenceImages: { max: 1, field: "images", encoding: "dataUrl" },
+  };
+});

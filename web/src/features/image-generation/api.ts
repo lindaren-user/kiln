@@ -82,9 +82,17 @@ async function imageEditForm(
   const form = new FormData()
   form.append('model', params.model)
   form.append('prompt', params.prompt)
-  form.append('n', String(params.count))
-  if (params.size) form.append('size', params.size)
-  if (params.quality) form.append('quality', params.quality)
+  const parameters = params.parameters ?? {
+    ...(params.size === undefined ? {} : { size: params.size }),
+    ...(params.count === undefined ? {} : { n: params.count }),
+    ...(params.quality === undefined ? {} : { quality: params.quality }),
+  }
+  for (const [key, value] of Object.entries(parameters)) {
+    if (key === 'image' || key === 'images') continue
+    if (typeof value === 'string' || typeof value === 'number') {
+      form.append(key, String(value))
+    }
+  }
   const files = await Promise.all(
     references.map((url, index) => referenceFile(url, index))
   )
@@ -104,9 +112,27 @@ async function imageEditForm(
 export async function generateImages(
   params: GenerateImageParams
 ): Promise<string[]> {
-  const references = [...(params.image ?? []), ...(params.images ?? [])]
+  const parameterImages = Array.isArray(params.parameters?.image)
+    ? params.parameters.image.filter(
+        (value): value is string => typeof value === 'string'
+      )
+    : []
+  const parameterImagesList = Array.isArray(params.parameters?.images)
+    ? params.parameters.images.filter(
+        (value): value is string => typeof value === 'string'
+      )
+    : []
+  const references = [
+    ...(params.image ?? []),
+    ...(params.images ?? []),
+    ...parameterImages,
+    ...parameterImagesList,
+  ]
   const edits =
-    references.length > 0 && /(gpt-image|chatgpt-image)/i.test(params.model)
+    references.length > 0 &&
+    (params.operation === 'edit' ||
+      (params.operation === undefined &&
+        /(gpt-image|chatgpt-image)/i.test(params.model)))
   const headers: Record<string, string> = {
     Authorization: `Bearer ${params.apiKey}`,
   }
@@ -117,12 +143,15 @@ export async function generateImages(
     body = await imageEditForm(params, references)
   } else {
     headers['Content-Type'] = 'application/json'
+    const parameters = params.parameters ?? {
+      ...(params.size === undefined ? {} : { size: params.size }),
+      ...(params.count === undefined ? {} : { n: params.count }),
+      ...(params.quality === undefined ? {} : { quality: params.quality }),
+    }
     body = JSON.stringify({
       model: params.model,
       prompt: params.prompt,
-      n: params.count,
-      size: params.size,
-      ...(params.quality ? { quality: params.quality } : {}),
+      ...parameters,
       ...(params.image?.length ? { image: params.image } : {}),
       ...(params.images?.length ? { images: params.images } : {}),
     })

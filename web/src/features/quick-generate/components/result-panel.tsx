@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 
+import { progressPercent } from '../lib/poll-video'
 import type { Generation } from '../types'
 
 type ResultPanelProps = {
@@ -39,12 +40,6 @@ type ResultPanelProps = {
   onRetry: () => void
 }
 
-/** The provider reports its task progress as text such as `45%`. */
-function progressPercent(text?: string): number | null {
-  const value = Number.parseFloat(text ?? '')
-  return Number.isFinite(value) ? value : null
-}
-
 /** The wording a provider sends while it has no percentage to report. */
 function ProgressStatus(props: { text?: string }) {
   if (!props.text) return null
@@ -54,22 +49,34 @@ function ProgressStatus(props: { text?: string }) {
 }
 
 /**
- * The request currently on screen: a progress bar with the elapsed time. The
- * bar is determinate from the start, sitting at 0% until the first poll reports
- * a percentage, so the readout is never blank and never guessed.
+ * `Generating...` followed by the time the request has been running. Every
+ * request shows the clock; only a polled video task wraps it in a bar. The
+ * run's start time is stored with it, so rejoining a task after a reload
+ * resumes the clock instead of starting again at 0:00.
  */
-function RunningStatus(props: { progress?: string }) {
+function GeneratingText(props: { startedAt: number }) {
   const { t } = useTranslation()
-  const [seconds, setSeconds] = useState(0)
+  const [now, setNow] = useState(Date.now)
   useEffect(() => {
-    const started = Date.now()
-    const timer = window.setInterval(() => {
-      setSeconds(Math.floor((Date.now() - started) / 1000))
-    }, 1000)
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+  const seconds = Math.max(0, Math.floor((now - props.startedAt) / 1000))
   const minutes = Math.floor(seconds / 60)
   const remainder = String(seconds % 60).padStart(2, '0')
+  return `${t('Generating...')} ${minutes}:${remainder}`
+}
+
+/**
+ * A polled video task: a progress bar with the elapsed time. The bar is
+ * determinate from the start, sitting at 0% until the first poll reports a
+ * percentage, so the readout is never blank and never guessed.
+ */
+function RunningStatus(props: { progress?: string; startedAt: number }) {
+  const { t } = useTranslation()
+  // The poller only reports percentages that go up, so the bar never shrinks
+  // between polls. Before the first percentage it holds at 0 rather than an
+  // indeterminate bar, which readers cannot tell apart from a stalled task.
   const percent = progressPercent(props.progress)
 
   return (
@@ -79,7 +86,7 @@ function RunningStatus(props: { progress?: string }) {
       className='w-full max-w-xs px-6'
     >
       <ProgressLabel className='text-muted-foreground font-normal'>
-        {`${t('Generating...')} ${minutes}:${remainder}`}
+        <GeneratingText startedAt={props.startedAt} />
       </ProgressLabel>
       {/* A provider that reports a status word instead of a percentage keeps
           showing what it said, beside the 0% the bar starts from. */}
@@ -124,9 +131,19 @@ export function ResultPanel(props: ResultPanelProps) {
         </div>
       )}
 
-      {generation?.status === 'running' && (
-        <RunningStatus key={generation.id} progress={generation.progress} />
-      )}
+      {/* An image comes back in one response with nothing to measure, so only
+          a video task, which the console polls, gets a progress bar. */}
+      {generation?.status === 'running' &&
+        (generation.kind === 'video' ? (
+          <RunningStatus
+            progress={generation.progress}
+            startedAt={generation.startedAt}
+          />
+        ) : (
+          <p className='text-muted-foreground text-sm'>
+            <GeneratingText startedAt={generation.startedAt} />
+          </p>
+        ))}
 
       {generation?.error && (
         <div className='flex flex-col items-center gap-3 px-6 text-center'>

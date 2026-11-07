@@ -24,9 +24,11 @@ import { PromptInput } from '@/components/ai-elements/prompt-input'
 
 import { PromptMentionInput } from '../components/prompt-mention-input'
 import {
+  acceptedReferenceKinds,
   activeMentionQuery,
   filterMentionFiles,
   mentionMark,
+  referenceKind,
 } from '../lib/file-mention'
 
 describe('file mention query', () => {
@@ -49,6 +51,32 @@ describe('file mention query', () => {
       '1',
       '2',
     ])
+  })
+})
+
+describe('reference kind', () => {
+  it('trusts the extension when the browser reports the wrong type', () => {
+    // Windows browsers report audio files as images on some machines; the
+    // extension keeps an audio reference out of the image preview and request.
+    expect(referenceKind({ filename: 'clip.mp3', mediaType: 'image/png' })).toBe(
+      'audio'
+    )
+    expect(referenceKind({ filename: 'clip.MOV', mediaType: '' })).toBe(
+      'video'
+    )
+    expect(referenceKind({ filename: 'still.png', mediaType: '' })).toBe(
+      'image'
+    )
+    expect(referenceKind({ filename: 'notes.txt', mediaType: '' })).toBe('file')
+  })
+
+  it('maps accept rules to the kinds a model takes', () => {
+    expect([...acceptedReferenceKinds('image/*')]).toEqual(['image'])
+    expect([...acceptedReferenceKinds('video/*,audio/*')]).toEqual([
+      'video',
+      'audio',
+    ])
+    expect([...acceptedReferenceKinds('')]).toEqual([])
   })
 })
 
@@ -163,6 +191,37 @@ describe('mentioning an uploaded file', () => {
 
     fireEvent.click(screen.getByRole('button', { name }))
     expect(screen.getByRole('img', { name })).toBeInTheDocument()
+  })
+
+  it('turns a stored mention back into a chip when its file returns', () => {
+    // A reload restores the draft text first and the files afterwards, so the
+    // mention is plain text for a moment.
+    render(
+      <PromptInput onSubmit={() => undefined}>
+        <PromptMentionInput
+          value='@cat.png draw a kiln'
+          onChange={vi.fn()}
+          placeholder='Describe what you want to create'
+          label='Prompt'
+        />
+      </PromptInput>
+    )
+    const editor = screen.getByRole('textbox', { name: 'Prompt' })
+    expect(editor.textContent).toContain('@cat.png')
+
+    fireEvent.change(screen.getByLabelText('Upload files'), {
+      target: { files: [new File(['x'], 'cat.png', { type: 'image/png' })] },
+    })
+
+    const chip = editor.querySelector('[data-mention-id]')
+    expect(chip).toHaveAttribute('aria-label', 'cat.png')
+    expect(editor).toHaveTextContent('draw a kiln')
+    expect(editor.textContent).not.toContain('@cat.png')
+    expect(
+      editor
+        .closest('form')
+        ?.querySelector<HTMLInputElement>('input[name="message"]')?.value
+    ).toBe('@cat.png draw a kiln')
   })
 
   it('says to upload a file when @ has nothing to list', () => {

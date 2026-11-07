@@ -27,16 +27,68 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-type ImageLightboxProps = {
+import type { ReferenceKind } from '../lib/file-mention'
+
+export type MediaKind = Exclude<ReferenceKind, 'file'>
+
+type MediaLightboxProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   src: string
   alt: string
+  /** A plain file has no preview, so only these kinds reach the dialog. */
+  kind: MediaKind
+  title?: string
   onDownload: () => void
 }
 
-/** Full-size view of one result. The image scales to the viewport, never past it. */
-export function ImageLightbox(props: ImageLightboxProps) {
+const MEDIA_CLASS =
+  'mx-auto max-h-[78vh] w-auto max-w-full rounded-lg object-contain'
+
+/**
+ * The media itself; recordings and clips get transport controls. Keyed by
+ * source so the result lightbox, which stays mounted while the shown media
+ * changes, remounts the element instead of reusing a player on the old file.
+ */
+function MediaPreview(props: { kind: MediaKind; src: string; alt: string }) {
+  switch (props.kind) {
+    case 'video':
+      return (
+        <video
+          key={props.src}
+          src={props.src}
+          controls
+          preload='metadata'
+          playsInline
+          aria-label={props.alt}
+          className={MEDIA_CLASS}
+        />
+      )
+    case 'audio':
+      return (
+        <audio
+          key={props.src}
+          src={props.src}
+          controls
+          preload='metadata'
+          aria-label={props.alt}
+          className='w-[min(88vw,28rem)]'
+        />
+      )
+    case 'image':
+      return (
+        <img
+          key={props.src}
+          src={props.src}
+          alt={props.alt}
+          className={MEDIA_CLASS}
+        />
+      )
+  }
+}
+
+/** Full-size view of one result or attached reference. */
+export function MediaLightbox(props: MediaLightboxProps) {
   const { t } = useTranslation()
 
   return (
@@ -47,13 +99,11 @@ export function ImageLightbox(props: ImageLightboxProps) {
         initialFocus={false}
         className='bg-background w-auto max-w-[92vw] gap-3 p-3 sm:max-w-[92vw]'
       >
-        <DialogTitle className='sr-only'>{t('Generated image')}</DialogTitle>
+        <DialogTitle className='sr-only'>
+          {props.title ?? t('Generated image')}
+        </DialogTitle>
         <DialogDescription className='sr-only'>{props.alt}</DialogDescription>
-        <img
-          src={props.src}
-          alt={props.alt}
-          className='mx-auto max-h-[78vh] w-auto max-w-full rounded-lg object-contain'
-        />
+        <MediaPreview kind={props.kind} src={props.src} alt={props.alt} />
         <div className='flex justify-center'>
           <Button variant='outline' size='sm' onClick={props.onDownload}>
             <Download className='mr-2 size-4' aria-hidden='true' />
