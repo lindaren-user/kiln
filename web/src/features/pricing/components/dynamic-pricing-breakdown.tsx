@@ -209,16 +209,16 @@ function formatBreakdownPrice(
     field.unit === 'image'
       ? formatTaskUsageUnitPrice(value, { tokenUnit: 'M', ...taskPriceOptions })
       : `${symbol}${(value * rate).toFixed(4)}`
-  if (field.unit === 'second') return `${amount}/${t('s')}`
+  if (field.unit === 'second') return `${amount} / ${t('s')}`
   if (field.unit === 'count') {
-    return `${amount}/${taskUsageUnitLabel(field, language, t('unit'))}`
+    return `${amount} / ${taskUsageUnitLabel(field, language, t('unit'))}`
   }
-  if (field.unit === 'credit') return `${amount}/${t('credit')}`
+  if (field.unit === 'credit') return `${amount} / ${t('credit')}`
   if (field.unit === 'token' && field.labelKind === 'schema') {
-    return `${amount}/${t('1M token')}`
+    return `${amount} / ${t('1M token')}`
   }
-  if (field.unit === 'request') return `${amount}/${t('request')}`
-  if (field.unit === 'image') return `${amount}/${t('image')}`
+  if (field.unit === 'request') return `${amount} / ${t('request')}`
+  if (field.unit === 'image') return `${amount} / ${t('image')}`
   return amount
 }
 

@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   ListTodo,
   PlugZap,
+  Store,
   Radio,
   ServerCog,
   Settings,
@@ -76,6 +77,11 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             title: t('Dashboard'),
             url: '/dashboard/models',
             icon: LayoutDashboard,
+          },
+          {
+            title: t('Model Square'),
+            url: '/pricing',
+            icon: Store,
           },
           {
             title: t('API Keys'),
