@@ -306,6 +306,48 @@ it('refreshes memoized provider prices when the group or display currency change
   }
 })
 
+it('shows one fixed request or image price as a single amount', () => {
+  const previous = useSystemConfigStore.getState().config.currency
+  useSystemConfigStore.getState().setConfig({
+    currency: { ...DEFAULT_CURRENCY_CONFIG, quotaDisplayType: 'USD' },
+  })
+  try {
+    const fixed: PricingModel = {
+      ...model,
+      model_name: 'gpt-image-2',
+      billing_usage_schema: undefined,
+      billing_expr: 'tier("request", fixed(0.018))',
+    }
+    const view = render(<ModelPriceCell model={fixed} />)
+    expect(view.container).toHaveTextContent('$0.018 / call')
+    expect(view.container).not.toHaveTextContent('Per-call')
+    expect(view.container).not.toHaveTextContent('USD')
+    view.rerender(
+      <ModelPriceCell
+        model={{
+          ...fixed,
+          billing_expr: 'tier("image", fixed(0.018)) * image_count',
+        }}
+      />
+    )
+    expect(view.container).toHaveTextContent('$0.018 / image')
+    expect(view.container).not.toHaveTextContent('Per image')
+    view.rerender(
+      <ModelPriceCell
+        model={{
+          ...fixed,
+          billing_expr:
+            'len < 1000 ? tier("short", fixed(0.01)) : tier("long", fixed(0.02))',
+        }}
+      />
+    )
+    expect(view.container).toHaveTextContent('Per-call')
+    expect(view.container).toHaveTextContent('2 tiers')
+  } finally {
+    act(() => useSystemConfigStore.getState().setConfig({ currency: previous }))
+  }
+})
+
 it('shows one standard task price and a localized group price without duplicate tiers', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({ data: { data: { groups: [] } } })
   const client = new QueryClient({

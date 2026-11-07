@@ -74,20 +74,20 @@ const SETUP_GUIDE_VISIBILITY_STORAGE_KEY =
   'dashboard_overview_setup_guide_expanded'
 
 const SETUP_GUIDE_CODE_PATTERN = [
-  'const request = await client.responses.create({',
-  "  model: 'gpt-4.1-mini',",
-  "  input: 'Start routing traffic',",
+  `await fetch("${typeof window === 'undefined' ? '' : window.location.origin}/v1/images/generations", {`,
+  '  method: "POST",',
+  '  body: JSON.stringify({',
+  '    model: "your-image-model",',
+  '    prompt: "A red fox in the snow",',
+  '    size: "1024x1024",',
+  '  }),',
   '})',
-  '',
-  'if (request.output_text) {',
-  '  console.log(request.output_text)',
-  '}',
 ].join('\n')
 
 type DashboardActionPath =
   | '/keys'
   | '/wallet'
-  | '/canvas'
+  | '/quick-generate'
   | '/channels'
   | '/usage-logs'
   | '/pricing'
@@ -140,24 +140,22 @@ function saveSetupGuideExpanded(expanded: boolean): void {
   )
 }
 
-function getCurrentOrigin(): string {
-  if (typeof window === 'undefined') return ''
-  return window.location.origin
-}
+const IMAGE_GENERATIONS_PATH = '/v1/images/generations'
+const CHAT_COMPLETIONS_PATH = '/v1/chat/completions'
 
 function normalizeEndpoint(sourceUrl?: string): string {
-  const fallback = `${getCurrentOrigin()}/v1/chat/completions`
-  const trimmed = sourceUrl?.trim()
-  if (!trimmed) return fallback
+  const base = sourceUrl?.trim().replace(/\/+$/, '') ?? ''
+  if (!base) {
+    const origin = typeof window === 'undefined' ? '' : window.location.origin
+    return `${origin}${IMAGE_GENERATIONS_PATH}`
+  }
+  if (base.endsWith(IMAGE_GENERATIONS_PATH)) return base
 
-  const withoutTrailingSlash = trimmed.replace(/\/+$/, '')
-  if (withoutTrailingSlash.endsWith('/v1/chat/completions')) {
-    return withoutTrailingSlash
-  }
-  if (withoutTrailingSlash.endsWith('/v1')) {
-    return `${withoutTrailingSlash}/chat/completions`
-  }
-  return `${withoutTrailingSlash}/v1/chat/completions`
+  const withoutChat = base.endsWith(CHAT_COMPLETIONS_PATH)
+    ? base.slice(0, -CHAT_COMPLETIONS_PATH.length)
+    : base
+  if (withoutChat.endsWith('/v1')) return `${withoutChat}/images/generations`
+  return `${withoutChat}${IMAGE_GENERATIONS_PATH}`
 }
 
 function getPreferredKey(keys: ApiKey[]): ApiKey | null {
@@ -179,7 +177,7 @@ function buildCurlCommand(args: {
     `curl ${args.endpoint} \\`,
     '  -H "Content-Type: application/json" \\',
     `  -H "Authorization: Bearer ${args.apiKey}" \\`,
-    `  -d '{"model":"${args.model}","messages":[{"role":"user","content":"Say hello in one sentence."}]}'`,
+    `  -d '{"model":"${args.model}","prompt":"A red fox in the snow","n":1,"size":"1024x1024"}'`,
   ].join('\n')
 }
 
@@ -522,8 +520,8 @@ export function OverviewDashboard() {
       },
       {
         title: t('Send a request'),
-        description: t('Verify routing with Canvas or your client'),
-        to: '/canvas',
+        description: t('Verify routing with Quick generate or your client'),
+        to: '/quick-generate',
         icon: TerminalSquare,
         completed: requestCount > 0,
       },
@@ -593,7 +591,7 @@ export function OverviewDashboard() {
 
   const requestExample = useMemo<RequestExample>(() => {
     const endpoint = normalizeEndpoint(apiInfoItems[0]?.url)
-    const model = modelsQuery.data?.[0] ?? 'gpt-4o-mini'
+    const model = modelsQuery.data?.[0] ?? 'your-image-model'
     const keyName = preferredKey?.name ?? t('No API key yet')
     const ready = Boolean(preferredKey?.id && model)
 

@@ -115,7 +115,7 @@ export function Hero(props: HeroProps) {
             style={{ animationDelay: '120ms' }}
           >
             {t(
-              'Describe an idea and get video or images. One workspace routes multiple models, keeps an infinite canvas, and brings generation and editing together.'
+              'Describe an idea and get an image or a video. Quick generate tries one model in the browser, and the same models answer on the image and video APIs.'
             )}
           </p>
 

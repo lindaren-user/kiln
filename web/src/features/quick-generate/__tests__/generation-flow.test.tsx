@@ -22,12 +22,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
-import { useImageModels } from '@/features/image-generation/hooks/use-image-models'
 import type { ApiKey } from '@/features/keys/types'
+import type { GenerationSchema } from '@/features/pricing/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { QuickGenerate } from '..'
-import { downloadImage } from '../lib/download-image'
+import { submitVideo, uploadQuickGenerateReferences } from '../api'
+import { useGenerationModels } from '../hooks/use-generation-models'
+import { downloadMedia } from '../lib/download-media'
+import { pollVideoTask } from '../lib/poll-video'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -43,17 +46,27 @@ vi.mock('@/features/image-generation/api', () => ({
   resolveApiKey: vi.fn(),
 }))
 
-vi.mock('@/features/image-generation/hooks/use-image-models', () => ({
-  useImageModels: vi.fn(),
-}))
-
 vi.mock('@/features/image-generation/hooks/use-image-api-keys', () => ({
   useImageApiKeys: vi.fn(),
 }))
 
-vi.mock('../lib/download-image', () => ({
-  downloadImage: vi.fn(),
-  imageFilename: vi.fn(() => 'kiln-1.png'),
+vi.mock('../hooks/use-generation-models', () => ({
+  useGenerationModels: vi.fn(),
+}))
+
+vi.mock('../api', () => ({
+  submitVideo: vi.fn(),
+  uploadQuickGenerateReferences: vi.fn(),
+  fetchVideoTask: vi.fn(),
+}))
+
+vi.mock('../lib/poll-video', () => ({
+  pollVideoTask: vi.fn(),
+}))
+
+vi.mock('../lib/download-media', () => ({
+  downloadMedia: vi.fn(),
+  mediaFilename: vi.fn(() => 'kiln-1.png'),
 }))
 
 // The real guard needs a router; the tests only care about its `when` flag.
@@ -62,11 +75,14 @@ vi.mock('@/features/system-settings/components/form-navigation-guard', () => ({
 }))
 
 const generateImagesMock = vi.mocked(generateImages)
+const submitVideoMock = vi.mocked(submitVideo)
+const uploadReferencesMock = vi.mocked(uploadQuickGenerateReferences)
+const pollVideoTaskMock = vi.mocked(pollVideoTask)
 const guardMock = vi.mocked(FormNavigationGuard)
 const resolveApiKeyMock = vi.mocked(resolveApiKey)
-const useImageModelsMock = vi.mocked(useImageModels)
+const useGenerationModelsMock = vi.mocked(useGenerationModels)
 const useImageApiKeysMock = vi.mocked(useImageApiKeys)
-const downloadImageMock = vi.mocked(downloadImage)
+const downloadMediaMock = vi.mocked(downloadMedia)
 
 const API_KEY: ApiKey = {
   id: 7,
@@ -88,13 +104,49 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-beforeEach(() => {
-  useImageModelsMock.mockReturnValue({
-    models: ['z-image'],
-    items: [{ value: 'z-image', label: 'z-image' }],
+function mockModels(
+  models: {
+    name: string
+    kind: 'image' | 'video'
+    schema?: GenerationSchema
+  }[]
+) {
+  useGenerationModelsMock.mockReturnValue({
+    models: models.map((model) => ({
+      ...model,
+      capability: {
+        kind: model.kind,
+        fields: model.schema?.fields ?? [],
+        referenceImages: model.schema?.referenceImages ?? null,
+        mediaNotice: model.schema?.mediaNotice ?? false,
+      },
+    })),
+    items: models.map((model) => ({
+      value: model.name,
+      label: model.name,
+      hint: '',
+      title: undefined,
+    })),
+    descriptionFor: () => '',
+    priceForRun: () => '',
     isLoading: false,
     error: null,
-  } as ReturnType<typeof useImageModels>)
+  } as ReturnType<typeof useGenerationModels>)
+}
+
+beforeEach(() => {
+  mockModels([
+    {
+      name: 'z-image',
+      kind: 'image',
+      schema: {
+        fields: [
+          { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select', defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
+          { key: 'count', labelKey: 'Count', type: 'select', defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'], valueType: 'number' },
+        ],
+      },
+    },
+  ])
   useImageApiKeysMock.mockReturnValue({
     keys: [API_KEY],
     selectedKeyId: API_KEY.id,
@@ -102,18 +154,19 @@ beforeEach(() => {
     isLoading: false,
   })
   resolveApiKeyMock.mockResolvedValue('sk-abc123')
-  downloadImageMock.mockResolvedValue(true)
+  uploadReferencesMock.mockImplementation(async (references) => references)
+  downloadMediaMock.mockResolvedValue(true)
 })
 
 async function submitPrompt(prompt: string) {
-  fireEvent.change(screen.getByLabelText('Prompt'), {
-    target: { value: prompt },
-  })
+  const editor = screen.getByRole('textbox', { name: 'Prompt' })
+  editor.textContent = prompt
+  fireEvent.input(editor)
   fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
 }
 
 describe('quick generate', () => {
-  it('shows the result in the preview frame', async () => {
+  it('shows the image result in the preview frame', async () => {
     generateImagesMock.mockResolvedValue(['https://cdn.example.com/one.png'])
 
     render(<QuickGenerate />)
@@ -128,8 +181,110 @@ describe('quick generate', () => {
       apiKey: 'sk-abc123',
       model: 'z-image',
       prompt: 'a kiln at dusk',
-      size: '1024x1024',
-      count: 1,
+      parameters: { size: '1:1', n: 1 },
+      operation: 'generate',
+    })
+  })
+
+  // A percentage fills the bar; any other wording leaves it indeterminate and
+  // stays visible, so a provider that reports status is not swallowed.
+  it.each([
+    ['45%', '45', '45%'],
+    ['queued', undefined, 'queued'],
+  ])('shows the reported video progress %s as a bar', async (reported, value, text) => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockImplementation((options) => {
+      options.onProgress(reported)
+      return new Promise<string>(() => undefined)
+    })
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    const bar = await screen.findByRole('progressbar')
+    if (value === undefined) expect(bar).not.toHaveAttribute('aria-valuenow')
+    else expect(bar).toHaveAttribute('aria-valuenow', value)
+    expect(screen.getByText(text)).toBeInTheDocument()
+  })
+
+  it('shows the video result in the preview frame', async () => {
+    mockModels([
+      {
+        name: 'sora-2',
+        kind: 'video',
+        schema: {
+          fields: [
+            { key: 'size', labelKey: 'Size', type: 'select', defaultValue: '1280x720', options: [{ value: '1280x720', label: '1280x720' }], requestPath: ['size'] },
+            { key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 5, min: 1, max: 60, requestPath: ['duration'], valueType: 'number' },
+          ],
+        },
+      },
+    ])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    const video = await screen.findByLabelText('a kiln at dusk')
+    expect(video.tagName).toBe('VIDEO')
+    expect(video).toHaveAttribute('src', 'https://cdn.example.com/one.mp4')
+    expect(submitVideoMock).toHaveBeenCalledWith({
+      apiKey: 'sk-abc123',
+      model: 'sora-2',
+      prompt: 'a kiln at dusk',
+      request: {
+        size: '1280x720',
+        duration: 5,
+      },
+    })
+    expect(generateImagesMock).not.toHaveBeenCalled()
+  })
+
+  it('uploads reference video and audio as URLs for supported video models', async () => {
+    mockModels([
+      {
+        name: 'wan3.0-video',
+        kind: 'video',
+        schema: {
+          fields: [],
+          mediaNotice: true,
+        },
+      },
+    ])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockResolvedValue('https://cdn.example.com/one.mp4')
+    uploadReferencesMock.mockImplementation(async (references) =>
+      references.map((reference, index) => ({
+        ...reference,
+        url: `https://r2.example/reference-${index}`,
+      }))
+    )
+
+    render(<QuickGenerate />)
+    const videoFile = new File(['video'], 'reference.mp4', {
+      type: 'video/mp4',
+    })
+    const audioFile = new File(['audio'], 'reference.mp3', {
+      type: 'audio/mpeg',
+    })
+    fireEvent.change(screen.getByLabelText('Upload files'), {
+      target: { files: [videoFile, audioFile] },
+    })
+    await submitPrompt('match the reference media')
+
+    await waitFor(() => expect(submitVideoMock).toHaveBeenCalled())
+    const request = submitVideoMock.mock.calls[0][0].request
+    expect(request).toMatchObject({
+      reference_videos: ['https://r2.example/reference-0'],
+      reference_audios: ['https://r2.example/reference-1'],
+      metadata: {
+        input: { media: [
+          { type: 'reference_video', url: 'https://r2.example/reference-0' },
+          { type: 'reference_audio', url: 'https://r2.example/reference-1' },
+        ] },
+      },
     })
   })
 
@@ -143,6 +298,22 @@ describe('quick generate', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Upstream is busy')
     )
     expect(screen.queryByAltText('a kiln at dusk')).toBeNull()
+    expect(guardMock.mock.lastCall?.[0].when).toBe(false)
+  })
+
+  it('reports a video task that fails upstream', async () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+    submitVideoMock.mockResolvedValue('task-1')
+    pollVideoTaskMock.mockRejectedValue(new Error('The prompt was rejected'))
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The prompt was rejected'
+      )
+    )
   })
 
   it('retries the failed request with the parameters it used', async () => {
@@ -164,6 +335,37 @@ describe('quick generate', () => {
     expect(generateImagesMock.mock.calls[1]?.[0]).toEqual(
       generateImagesMock.mock.calls[0]?.[0]
     )
+  })
+
+  it('asks before a second send replaces a request that is still running', async () => {
+    let finish: (urls: string[]) => void = () => undefined
+    generateImagesMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+    await screen.findByText('Generating... 0:00')
+
+    expect(
+      screen
+        .getByRole('textbox', { name: 'Prompt' })
+        .closest('[data-slot=input-group]')
+    ).toHaveClass('bg-muted/50')
+
+    await submitPrompt('a second kiln')
+
+    expect(
+      await screen.findByText('Replace the current result?')
+    ).toBeInTheDocument()
+    expect(generateImagesMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate anyway' }))
+    await waitFor(() => expect(generateImagesMock).toHaveBeenCalledTimes(2))
+    finish(['https://cdn.example.com/one.png'])
   })
 
   it('asks before a second generation replaces the first', async () => {
@@ -195,7 +397,7 @@ describe('quick generate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download' }))
 
     await waitFor(() =>
-      expect(downloadImageMock).toHaveBeenCalledWith(
+      expect(downloadMediaMock).toHaveBeenCalledWith(
         'https://cdn.example.com/one.png',
         'kiln-1.png'
       )
@@ -215,28 +417,74 @@ describe('quick generate', () => {
     await waitFor(() => expect(guardMock.mock.lastCall?.[0].when).toBe(false))
   })
 
-  it('keeps the model, size, count and key in the composer', () => {
+  it('keeps the model, ratio, count and key in the composer', () => {
     render(<QuickGenerate />)
 
+    expect(screen.queryByText('No result yet')).toBeNull()
     expect(screen.getByLabelText('Model')).toHaveTextContent('z-image')
     expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('1:1')
-    expect(screen.getByLabelText('Resolution')).toHaveTextContent('1K')
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.getByLabelText('Count')).toBeInTheDocument()
     expect(screen.getByLabelText('API key')).toHaveTextContent('Quick key')
   })
 
-  it('explains how to enable image models when none exist', () => {
-    useImageModelsMock.mockReturnValue({
-      models: [],
-      items: [],
-      isLoading: false,
-      error: null,
-    } as ReturnType<typeof useImageModels>)
+  it('shows the size list declared by a channel for its public image model', () => {
+    mockModels([{ name: 'renamed-image', kind: 'image', schema: {
+      fields: [{ key: 'size', labelKey: 'Size', type: 'select', defaultValue: 'auto', options: [{ value: 'auto', label: 'Auto' }], requestPath: ['size'] }],
+    } }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByLabelText('Size')).toHaveTextContent('Auto')
+    expect(screen.queryByLabelText('Count')).toBeNull()
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
+  })
+
+  it('shows the duration bounds declared by the channel', () => {
+    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
+      fields: [{ key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 4, min: 4, max: 15, requestPath: ['duration'] }],
+    } }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByLabelText('Video duration')).toHaveValue(4)
+    expect(screen.getByLabelText('Video duration')).toHaveAttribute('min', '4')
+    expect(screen.getByLabelText('Video duration')).toHaveAttribute('max', '15')
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
+    expect(screen.queryByLabelText('Count')).toBeNull()
+    expect(screen.queryByLabelText('Resolution')).toBeNull()
+    expect(screen.queryByLabelText('Size')).toBeNull()
+  })
+
+  it('offers no guessed controls when the channel has no input declaration', () => {
+    mockModels([{ name: 'sora-2', kind: 'video' }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.queryByLabelText('Video duration')).toBeNull()
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
+  })
+
+  it('shows resolution when the channel explicitly declares it', () => {
+    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
+      fields: [{ key: 'resolution', labelKey: 'Resolution', type: 'select', defaultValue: '768p', options: [{ value: '768p', label: '768p' }], requestPath: ['metadata', 'resolution'] }],
+    } }])
+
+    render(<QuickGenerate />)
+
+    expect(screen.getByLabelText('Resolution')).toHaveTextContent('768p')
+    expect(screen.queryByLabelText('Aspect Ratio')).toBeNull()
+    expect(screen.queryByLabelText('Count')).toBeNull()
+  })
+
+  it('explains how to enable models when none exist', () => {
+    mockModels([])
 
     render(<QuickGenerate />)
 
     expect(
-      screen.getByText('No image models are available')
+      screen.getByText('No generation models are available')
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
   })

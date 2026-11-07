@@ -262,6 +262,27 @@ describe('task dynamic pricing', () => {
     assert.equal(summary.tiers.length, 0)
   })
 
+  test('shows a fixed price on a task model instead of the special fallback', () => {
+    const model = pricingModel({
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("base", fixed(5))',
+      billing_usage_schema: {
+        seconds: { type: 'number', unit: 'second' },
+      },
+    })
+
+    const summary = getDynamicPricingSummary(model, summaryOptions)
+
+    assert.ok(summary)
+    assert.equal(summary.isSpecialExpression, false)
+    assert.equal(summary.isTaskUsage, false)
+    assert.deepEqual(
+      summary.primaryEntries.map((entry) => [entry.unit, entry.value]),
+      [['request', 5]]
+    )
+    assert.equal(summary.primaryEntries[0]?.label, 'Price per request')
+  })
+
   test('summarizes different task tier prices as a range while preserving the fallback price', () => {
     const model = pricingModel({
       billing_mode: 'tiered_expr',

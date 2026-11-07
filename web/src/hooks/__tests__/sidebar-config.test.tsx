@@ -142,12 +142,13 @@ describe('security sidebar visibility', () => {
 })
 
 describe('create sidebar section', () => {
-  it('shows Canvas by default and never offers the removed Playground entry', () => {
+  it('shows Quick generate by default and never offers the removed Playground entry', () => {
     const { result } = sidebarFor()
     const titles = result.current
       .flatMap((group) => group.items)
       .map((item) => item.title)
-    expect(titles).toContain('Canvas')
+    expect(titles).toContain('Quick generate')
+    expect(titles).not.toContain('Canvas')
     expect(titles).not.toContain('Playground')
   })
 

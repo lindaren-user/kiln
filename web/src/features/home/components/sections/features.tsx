@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import {
   Zap,
   Shield,
-  Layers,
+  Sparkles,
   Code,
   Gauge,
   DollarSign,
@@ -105,17 +105,17 @@ export function Features(_props: FeaturesProps) {
       ),
     },
     {
-      id: 'canvas',
+      id: 'quick-generate',
       num: '03',
-      title: t('Infinite Canvas'),
+      title: t('Quick generate'),
       desc: t(
-        'Arrange assets, keep generating, and compare versions on one canvas.'
+        'Send one prompt, preview the image or video, and save it before the next try.'
       ),
       span: 'md:col-span-1',
-      icon: <Layers className='size-4 text-violet-400' />,
+      icon: <Sparkles className='size-4 text-violet-400' />,
       visual: (
         <div className='mt-4 space-y-2'>
-          {[t('Place'), t('Generate'), t('Compare')].map((step, i) => (
+          {[t('Prompt'), t('Generate'), t('Save')].map((step, i) => (
             <div key={step} className='flex items-center gap-2'>
               <div
                 className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold ${
@@ -138,26 +138,20 @@ export function Features(_props: FeaturesProps) {
       num: '04',
       title: t('Built for Creators and Developers'),
       desc: t(
-        'Use the canvas in the browser or call the same models through the API.'
+        'Try Quick generate in the browser, or call the image and video endpoints with an API key.'
       ),
       span: 'md:col-span-2',
       icon: <Code className='size-4 text-amber-400' />,
       visual: (
-        <div className='mt-4 flex items-center gap-3'>
-          <div className='flex -space-x-2'>
-            {['API', 'SDK', 'CLI', 'Docs'].map((n) => (
-              <div
-                key={n}
-                className='border-background from-muted to-muted/60 text-muted-foreground flex size-8 items-center justify-center rounded-full border-2 bg-gradient-to-br text-[9px] font-bold'
-              >
-                {n}
-              </div>
-            ))}
-          </div>
-          <div className='text-muted-foreground flex items-center gap-1.5 text-xs'>
-            <Code className='size-3.5 text-blue-500' />
-            {t('Multi-model Compatible')}
-          </div>
+        <div className='mt-4 flex flex-wrap items-center gap-2'>
+          {[t('Image'), t('Video'), t('API'), t('Task')].map((name) => (
+            <div
+              key={name}
+              className='border-border/30 bg-muted/20 text-muted-foreground rounded-lg border px-3 py-2 text-xs'
+            >
+              {name}
+            </div>
+          ))}
         </div>
       ),
     },

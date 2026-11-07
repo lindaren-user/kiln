@@ -26,4 +26,10 @@ export type GenerateImageParams = {
   prompt: string
   size: string
   count: number
+  /** Nano Banana Pro image size, sent as `quality` (`1K`, `2K`, `4K`). */
+  quality?: string
+  /** Seedream reference images. */
+  image?: string[]
+  /** Reference images for adaptors that read `images`. */
+  images?: string[]
 }

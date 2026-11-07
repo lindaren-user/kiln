@@ -25,11 +25,12 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 import { cn } from '@/lib/utils'
 
 interface FooterProps {
-  logo?: string
   name?: string
   copyright?: string
   className?: string
 }
+
+const FOOTER_YEAR = new Date().getFullYear()
 
 const NEW_API_FOOTER_ATTRIBUTION_KEY = [
   'footer',
@@ -112,11 +113,9 @@ function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
 
 export function Footer(props: FooterProps) {
   const { t } = useTranslation()
-  const { systemName, logo: systemLogo, footerHtml } = useSystemConfig()
+  const { systemName, footerHtml } = useSystemConfig()
 
-  const displayLogo = systemLogo || props.logo || '/logo.png'
   const displayName = systemName || props.name || 'New API'
-  const currentYear = new Date().getFullYear()
 
   if (footerHtml) {
     return (
@@ -134,7 +133,7 @@ export function Footer(props: FooterProps) {
             />
             <div className='border-border/60 text-muted-foreground/45 flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t pt-4 text-xs sm:w-auto sm:justify-end sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5'>
               <LegalLinks />
-              <ProjectAttribution currentYear={currentYear} inline />
+              <ProjectAttribution currentYear={FOOTER_YEAR} inline />
             </div>
           </div>
         </div>
@@ -146,29 +145,18 @@ export function Footer(props: FooterProps) {
     <footer
       className={cn('border-border/40 relative z-10 border-t', props.className)}
     >
-      <div className='mx-auto max-w-6xl px-6 py-12 md:py-16'>
-        <Link to='/' className='group flex w-fit items-center gap-2.5'>
-          <img
-            src={displayLogo}
-            alt={displayName}
-            className='size-7 rounded-lg object-contain'
-          />
-          <span className='text-sm font-semibold tracking-tight'>
-            {displayName}
-          </span>
-        </Link>
-
+      <div className='mx-auto max-w-6xl px-6 py-6'>
         {/* Copyright + optional legal links inline on the left, project
             attribution on the right; wraps on narrow screens. */}
-        <div className='border-border/30 mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
+        <div className='flex flex-col items-center justify-between gap-x-3 gap-y-2 sm:flex-row'>
           <div className='text-muted-foreground/40 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs sm:justify-start'>
             <span>
-              &copy; {currentYear} {displayName}.{' '}
+              &copy; {FOOTER_YEAR} {displayName}.{' '}
               {props.copyright ?? t('footer.defaultCopyright')}
             </span>
             <LegalLinks leadingSeparator />
           </div>
-          <ProjectAttribution currentYear={currentYear} />
+          <ProjectAttribution currentYear={FOOTER_YEAR} />
         </div>
       </div>
     </footer>

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { PenLine, Zap, Layers } from 'lucide-react'
+import { PenLine, Zap, Download } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
@@ -28,20 +28,20 @@ export function HowItWorks() {
     {
       num: '1',
       title: t('Describe your idea'),
-      desc: t('Write a prompt or drop a reference image into the canvas.'),
+      desc: t('Write a prompt for the image or video you want.'),
       icon: <PenLine className='size-6' strokeWidth={1.5} />,
     },
     {
       num: '2',
       title: t('Generate'),
-      desc: t('Pick a model and generate video or images in the background.'),
+      desc: t('Pick an image or video model and wait for one result.'),
       icon: <Zap className='size-6' strokeWidth={1.5} />,
     },
     {
       num: '3',
-      title: t('Refine'),
-      desc: t('Edit, extend and compare versions without leaving the canvas.'),
-      icon: <Layers className='size-6' strokeWidth={1.5} />,
+      title: t('Save'),
+      desc: t('Download the result, then generate again when you want another.'),
+      icon: <Download className='size-6' strokeWidth={1.5} />,
     },
   ]
 

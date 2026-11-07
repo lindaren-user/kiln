@@ -25,14 +25,16 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { useBillingTime } from '../hooks/use-billing-time'
 import {
+  formatTaskUsageUnitPrice,
   getDynamicDisplayGroupRatio,
   getDynamicPriceUnitLabelKey,
   getDynamicPricingSummary,
+  hasTaskUsageSchema,
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
-import { taskUsageUnitLabel } from '../lib/task-price-display'
+import { taskPriceLabel, taskUsageUnitLabel } from '../lib/task-price-display'
 import type { PricingModel, TokenUnit } from '../types'
 
 export type ModelPriceCellOptions = {
@@ -56,6 +58,15 @@ export function ModelPriceCell(props: {
   const tokenUnit = options.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const billingTime = useBillingTime(props.model.billing_expr)
+  // Task unit prices stand alone (e.g. $1 / 次). Token rows keep the currency in
+  // the caption instead, so their amounts stay bare numbers.
+  const showCurrencySymbol =
+    hasTaskUsageSchema(props.model) ||
+    Boolean(
+      props.model.billing_plugin_variants?.some(
+        (variant) => Object.keys(variant.billing_usage_schema ?? {}).length > 0
+      )
+    )
   const dynamic = useMemo(
     () =>
       getDynamicPricingSummary(props.model, {
@@ -64,7 +75,7 @@ export function ModelPriceCell(props: {
         showRechargePrice: options.showRechargePrice,
         now: billingTime === undefined ? undefined : new Date(billingTime),
         tokenUnit,
-        showCurrencySymbol: false,
+        showCurrencySymbol,
         groupRatioMultiplier: getDynamicDisplayGroupRatio(
           props.model,
           options.selectedGroup
@@ -75,6 +86,7 @@ export function ModelPriceCell(props: {
     [
       props.model,
       tokenUnit,
+      showCurrencySymbol,
       options.priceRate,
       options.usdExchangeRate,
       options.showRechargePrice,
@@ -120,27 +132,81 @@ export function ModelPriceCell(props: {
     const hasRequestPrice = dynamic.primaryEntries.some(
       (entry) => entry.unit === 'request' || entry.unit === 'image'
     )
-    metrics = dynamic.primaryEntries
-      .slice(0, hasRequestPrice ? 3 : 2)
-      .map((entry) => {
+    const visibleEntries = dynamic.primaryEntries.slice(
+      0,
+      hasRequestPrice ? 3 : 2
+    )
+    // One fixed price is a single amount. Several prices or tiers stay split.
+    let loneFixed: (typeof visibleEntries)[number] | undefined
+    if (
+      !dynamic.isTaskUsage &&
+      !dynamic.isMixedBilling &&
+      dynamic.tierCount <= 1 &&
+      visibleEntries.length === 1
+    ) {
+      const entry = visibleEntries[0]
+      if (entry.unit === 'request' || entry.unit === 'image') loneFixed = entry
+    }
+    if (loneFixed) {
+      const fixedPriceOptions = {
+        priceRate: options.priceRate,
+        usdExchangeRate: options.usdExchangeRate,
+        showRechargePrice: options.showRechargePrice,
+        tokenUnit,
+        showCurrencySymbol: true,
+        groupRatioMultiplier: getDynamicDisplayGroupRatio(
+          props.model,
+          options.selectedGroup
+        ),
+      }
+      let amount = formatTaskUsageUnitPrice(loneFixed.value, fixedPriceOptions)
+      if (
+        loneFixed.minValue != null &&
+        loneFixed.maxValue != null &&
+        loneFixed.minValue !== loneFixed.maxValue
+      ) {
+        const low = formatTaskUsageUnitPrice(
+          loneFixed.minValue,
+          fixedPriceOptions
+        )
+        const high = formatTaskUsageUnitPrice(
+          loneFixed.maxValue,
+          fixedPriceOptions
+        )
+        amount = `${low} – ${high}`
+      }
+      const unitKey = loneFixed.unit === 'image' ? 'image' : 'call'
+      metrics = [{ label: '', value: `${amount} / ${t(unitKey)}` }]
+    } else {
+      metrics = visibleEntries.map((entry) => {
         const unit = getDynamicPriceUnitLabelKey(entry)
         const unitLabel = taskUsageUnitLabel(
           entry,
           i18n.language,
           unit ? t(unit) : ''
         )
-        let suffix = unitLabel ? `/${unitLabel}` : ''
+        let suffix = unitLabel ? ` / ${unitLabel}` : ''
         if (hasRequestPrice && entry.unit === 'token') {
-          suffix = `/${t('{{unit}} tokens', { unit: tokenUnitLabel })}`
+          suffix = ` / ${t('{{unit}} tokens', { unit: tokenUnitLabel })}`
+        }
+        // Task schema fields already carry the unit in the value (e.g. $1 / 秒).
+        // Do not also print the raw field name like "seconds".
+        let label = ''
+        if (entry.labelKind !== 'schema') {
+          label = t(entry.shortLabel)
+        } else if (visibleEntries.length > 1) {
+          label = taskPriceLabel(
+            entry.description,
+            entry.shortLabel,
+            i18n.language
+          )
         }
         return {
-          label:
-            entry.labelKind === 'schema'
-              ? entry.shortLabel
-              : t(entry.shortLabel),
+          label,
           value: `${entry.formattedRange ?? entry.formatted}${suffix}`,
         }
       })
+    }
     if (metrics.length === 0) {
       return (
         <span className='text-muted-foreground text-sm'>
@@ -157,15 +223,29 @@ export function ModelPriceCell(props: {
         </span>
       )
     }
-    if (dynamic.isTaskUsage || hasRequestPrice) caption = currencyLabel
-    if (dynamic.isTimePricing) caption += ` · ${t('Current period price')}`
-    if (dynamic.isMixedBilling) {
-      caption += ` · ${t('Token or per-call pricing')}`
+    // The amount already includes the currency and unit.
+    if (dynamic.isTaskUsage || loneFixed) caption = ''
+    else if (hasRequestPrice) caption = currencyLabel
+    if (dynamic.isTimePricing) {
+      caption = caption
+        ? `${caption} · ${t('Current period price')}`
+        : t('Current period price')
     }
-    if (providerCaption) caption += ` · ${providerCaption}`
-    if (unconfiguredCaption) caption += ` · ${unconfiguredCaption}`
+    if (dynamic.isMixedBilling) {
+      const mixed = t('Token or per-call pricing')
+      caption = caption ? `${caption} · ${mixed}` : mixed
+    }
+    if (providerCaption) {
+      caption = caption ? `${caption} · ${providerCaption}` : providerCaption
+    }
+    if (unconfiguredCaption) {
+      caption = caption
+        ? `${caption} · ${unconfiguredCaption}`
+        : unconfiguredCaption
+    }
     if (dynamic.tierCount > 1) {
-      caption += ` · ${t('{{count}} tiers', { count: dynamic.tierCount })}`
+      const tiers = t('{{count}} tiers', { count: dynamic.tierCount })
+      caption = caption ? `${caption} · ${tiers}` : tiers
     }
   } else {
     if (isUnconfiguredTaskUsageModel(props.model)) {
@@ -219,18 +299,18 @@ export function ModelPriceCell(props: {
     } else {
       metrics = [
         {
-          label: t('Per-request'),
-          value: formatRequestPrice(
+          label: '',
+          value: `${formatRequestPrice(
             props.model,
             options.showRechargePrice,
             options.priceRate,
             options.usdExchangeRate,
             options.selectedGroup,
-            false
-          ),
+            true
+          )} / ${t('call')}`,
         },
       ]
-      caption = `${currencyLabel} / ${t('request')}`
+      caption = ''
     }
   }
   return (
@@ -240,15 +320,17 @@ export function ModelPriceCell(props: {
       >
         {metrics.map((metric) => (
           <span
-            key={metric.label}
+            key={`${metric.label}-${metric.value}`}
             className='flex min-w-0 flex-col items-start gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-1.5'
           >
-            <span
-              className='text-muted-foreground min-w-0 truncate text-xs font-normal'
-              title={metric.label}
-            >
-              {metric.label}
-            </span>
+            {metric.label ? (
+              <span
+                className='text-muted-foreground min-w-0 truncate text-xs font-normal'
+                title={metric.label}
+              >
+                {metric.label}
+              </span>
+            ) : null}
             <span
               className='min-w-0 font-mono text-sm break-words whitespace-normal tabular-nums'
               title={metric.value}
@@ -258,12 +340,14 @@ export function ModelPriceCell(props: {
           </span>
         ))}
       </span>
-      <span
-        className='text-muted-foreground block text-xs font-normal break-words whitespace-normal sm:truncate'
-        title={caption}
-      >
-        {caption}
-      </span>
+      {caption ? (
+        <span
+          className='text-muted-foreground block text-xs font-normal break-words whitespace-normal sm:truncate'
+          title={caption}
+        >
+          {caption}
+        </span>
+      ) : null}
     </span>
   )
 }

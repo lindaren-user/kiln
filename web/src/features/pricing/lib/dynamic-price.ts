@@ -259,7 +259,18 @@ export function getDynamicPricingTiers(
     model.billing_expr || ''
   )
   if (isTaskUsagePricingModel(model)) {
-    return getTaskPricingDisplayTiers(billingExpr, model.billing_usage_schema)
+    const taskTiers = getTaskPricingDisplayTiers(
+      billingExpr,
+      model.billing_usage_schema
+    )
+    if (taskTiers.length > 0) return taskTiers
+    // A fixed per-request price is a complete price even when the model also
+    // declares task usage fields. Without this fallback a video model priced
+    // `tier("base", fixed(5))` degrades to "special billing expression".
+    const fixedTiers = parseTiersFromExpr(billingExpr)
+    return fixedTiers.some((item) => item.billingUnit === 'request')
+      ? fixedTiers
+      : []
   }
   return parseTiersFromExpr(billingExpr)
 }
@@ -499,7 +510,10 @@ export function getDynamicPricingSummary(
   if (!isDynamicPricingModel(model)) return null
 
   const tiers = getDynamicPricingTiers(model)
-  const isTaskUsage = isTaskUsagePricingModel(model)
+  // A task plugin model can still be priced per request; only tiers carrying
+  // usage unit prices are task usage, so a fixed price keeps its per-call unit.
+  const isTaskUsage =
+    isTaskUsagePricingModel(model) && tiers.every(isTaskPricingTier)
   const baseExpression = splitBillingExprAndRequestRules(
     model.billing_expr || ''
   ).billingExpr

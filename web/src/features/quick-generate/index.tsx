@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { Download, TriangleAlert } from 'lucide-react'
 import { nanoid } from 'nanoid'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -27,33 +27,38 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
-import {
-  buildImageSize,
-  DEFAULT_IMAGE_RATIO,
-  DEFAULT_IMAGE_RESOLUTION,
-  type ImageResolution,
-} from '@/features/image-generation/constants'
 import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
-import { useImageModels } from '@/features/image-generation/hooks/use-image-models'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
+import { submitVideo } from './api'
 import { GenerateComposer } from './components/generate-composer'
 import { ImageLightbox } from './components/image-lightbox'
 import { ResultPanel } from './components/result-panel'
-import { downloadImage, imageFilename } from './lib/download-image'
-import type { Generation, GenerationParams } from './types'
+import { useGenerationModels } from './hooks/use-generation-models'
+import {
+  buildImageRequest,
+  buildVideoRequest,
+  capabilityFor,
+  compatibleValues,
+} from './lib/capabilities'
+import { downloadMedia, mediaFilename } from './lib/download-media'
+import { pollVideoTask } from './lib/poll-video'
+import type { Generation, GenerationParams, GenerationValues } from './types'
 
 /**
- * Single-result image checks. Each generation replaces the last one, nothing is
- * persisted, and an undownloaded result warns before the page unloads.
+ * Single-result checks for image and video models. Each generation replaces
+ * the last one, nothing is persisted, and an undownloaded result warns before
+ * the page unloads.
  */
 export function QuickGenerate() {
   const { t } = useTranslation()
   const {
     models,
     items: modelItems,
+    descriptionFor,
+    priceForRun,
     isLoading: modelsLoading,
-  } = useImageModels()
+  } = useGenerationModels()
   const {
     keys,
     selectedKeyId,
@@ -66,21 +71,60 @@ export function QuickGenerate() {
   // adding a second request path.
   const [generation, setGeneration] = useState<Generation | null>(null)
   const [preferredModel, setPreferredModel] = useState('')
-  const [ratio, setRatio] = useState(DEFAULT_IMAGE_RATIO)
-  const [resolution, setResolution] = useState<ImageResolution>(
-    DEFAULT_IMAGE_RESOLUTION
-  )
-  const [count, setCount] = useState(1)
+  const [values, setValues] = useState<GenerationValues>({})
   // `zoomIndex` outlives the open state so the closing animation never renders
   // an empty image, which used to look like a second dialog flashing open.
   const [zoomIndex, setZoomIndex] = useState<number | null>(null)
   const [zoomOpen, setZoomOpen] = useState(false)
-  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<{
+    prompt: string
+    images: string[]
+  } | null>(null)
+  // Identifies the generation that may still write to state; a newer one, or
+  // leaving the page, cancels the video poll of an older one.
+  const activeRunRef = useRef('')
 
   // A remembered model that is gone falls back to the first available one.
-  const model = models.includes(preferredModel)
+  const model = models.some((item) => item.name === preferredModel)
     ? preferredModel
-    : (models[0] ?? '')
+    : (models[0]?.name ?? '')
+  const modelDescription = model ? descriptionFor(model) : ''
+  const promptPlaceholder = modelDescription
+    ? modelDescription
+    : t('This model has no description yet.')
+  const kind =
+    models.find((item) => item.name === model)?.kind ?? ('image' as const)
+  const capability = useMemo(() => capabilityFor(model, kind), [model, kind])
+  const effectiveValues = useMemo(
+    () => compatibleValues(capability, values),
+    [capability, values]
+  )
+  const runPrice = useMemo(() => {
+    if (!model) return ''
+    if (kind === 'video') {
+      return priceForRun(model, {
+        seconds: buildVideoRequest(effectiveValues, model).duration,
+      })
+    }
+    return priceForRun(model, {
+      count: buildImageRequest(effectiveValues, model).count,
+    })
+  }, [effectiveValues, kind, model, priceForRun])
+
+  // A different model accepts a different set of parameters, so switching the
+  // model drops the previous model's values instead of sending them again.
+  const changeModel = useCallback((next: string) => {
+    setPreferredModel(next)
+    setValues({})
+  }, [])
+
+  useEffect(
+    () => () => {
+      activeRunRef.current = ''
+    },
+    []
+  )
+
   const busy = generation?.status === 'running'
   const noModels = !modelsLoading && models.length === 0
 
@@ -89,6 +133,7 @@ export function QuickGenerate() {
       if (!params.model || selectedKeyId === null) return
 
       const id = nanoid()
+      activeRunRef.current = id
       setZoomIndex(null)
       setZoomOpen(false)
       setGeneration({
@@ -96,23 +141,73 @@ export function QuickGenerate() {
         id,
         prompt,
         status: 'running',
-        images: [],
+        media: [],
         saved: false,
       })
 
+      const isCancelled = () => activeRunRef.current !== id
+
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
+
+        if (params.kind === 'video') {
+          const taskId = await submitVideo({
+            apiKey,
+            model: params.model,
+            prompt,
+            request: buildVideoRequest(params.values, params.model, params.images),
+          })
+          const url = await pollVideoTask({
+            apiKey,
+            taskId,
+            isCancelled,
+            onProgress: (progress) => {
+              setGeneration((current) =>
+                current?.id === id ? { ...current, progress } : current
+              )
+            },
+          })
+          if (url === null || isCancelled()) return
+          setGeneration((current) =>
+            current?.id === id
+              ? {
+                  ...current,
+                  status: 'done',
+                  progress: undefined,
+                  media: [{ url, type: 'video' }],
+                }
+              : current
+          )
+          return
+        }
+
+        const request = buildImageRequest(
+          params.values,
+          params.model,
+          params.images
+        )
         const images = await generateImages({
           apiKey,
           model: params.model,
           prompt,
-          size: buildImageSize(params.ratio, params.resolution),
-          count: params.count,
+          size: request.size,
+          count: request.count,
+          quality: request.quality,
+          image: request.image,
+          images: request.images,
         })
+        if (isCancelled()) return
         setGeneration((current) =>
-          current?.id === id ? { ...current, status: 'done', images } : current
+          current?.id === id
+            ? {
+                ...current,
+                status: 'done',
+                media: images.map((url) => ({ url, type: 'image' })),
+              }
+            : current
         )
       } catch (error) {
+        if (isCancelled()) return
         setGeneration((current) =>
           current?.id === id
             ? {
@@ -121,7 +216,7 @@ export function QuickGenerate() {
                 error:
                   error instanceof Error
                     ? error.message
-                    : t('Image generation failed'),
+                    : t('Generation failed'),
               }
             : current
         )
@@ -131,9 +226,17 @@ export function QuickGenerate() {
   )
 
   const generate = useCallback(
-    (prompt: string) =>
-      runGeneration({ model, ratio, resolution, count }, prompt),
-    [count, model, ratio, resolution, runGeneration]
+    (prompt: string, images: string[]) =>
+      runGeneration(
+        {
+          model,
+          kind,
+          values: effectiveValues,
+          images,
+        },
+        prompt
+      ),
+    [effectiveValues, kind, model, runGeneration]
   )
 
   /** Replays the failed request with the parameters it was sent with. */
@@ -142,9 +245,9 @@ export function QuickGenerate() {
     void runGeneration(
       {
         model: generation.model,
-        ratio: generation.ratio,
-        resolution: generation.resolution,
-        count: generation.count,
+        kind: generation.kind,
+        values: generation.values,
+        images: generation.images,
       },
       generation.prompt
     )
@@ -152,16 +255,20 @@ export function QuickGenerate() {
 
   /** Returns false when the prompt waits for the replace confirmation. */
   const submit = useCallback(
-    (prompt: string) => {
-      if (busy) return false
-      if (generation) {
-        setPendingPrompt(prompt)
+    (prompt: string, images: string[]) => {
+      const replacesResult =
+        generation?.status === 'running' ||
+        (generation?.status === 'done' &&
+          generation.media.length > 0 &&
+          !generation.saved)
+      if (replacesResult) {
+        setPendingPrompt({ prompt, images })
         return false
       }
-      void generate(prompt)
+      void generate(prompt, images)
       return true
     },
-    [busy, generate, generation]
+    [generate, generation]
   )
 
   const markSaved = useCallback(() => {
@@ -170,17 +277,24 @@ export function QuickGenerate() {
     )
   }, [])
 
-  /** Saves the given images and reports the outcome once for the batch. */
-  const saveImages = useCallback(
+  /** Saves the given media and reports the outcome once for the batch. */
+  const saveMedia = useCallback(
     async (indices: number[]) => {
       if (indices.length === 0) return
-      const images = generation?.images ?? []
+      const media = generation?.media ?? []
       const results = await Promise.all(
         indices.map(async (index) => {
-          const image = images[index]
-          if (!image) return true
-          const saved = await downloadImage(image, imageFilename(image, index))
-          if (!saved) window.open(image, '_blank', 'noopener,noreferrer')
+          const item = media[index]
+          if (!item) return true
+          const saved = await downloadMedia(
+            item.url,
+            mediaFilename(
+              item.url,
+              index,
+              item.type === 'video' ? 'mp4' : 'png'
+            )
+          )
+          if (!saved) window.open(item.url, '_blank', 'noopener,noreferrer')
           return saved
         })
       )
@@ -195,21 +309,25 @@ export function QuickGenerate() {
   )
 
   const download = useCallback(
-    (index: number) => void saveImages([index]),
-    [saveImages]
+    (index: number) => void saveMedia([index]),
+    [saveMedia]
   )
   const downloadAll = useCallback(
-    () => void saveImages((generation?.images ?? []).map((_, index) => index)),
-    [generation, saveImages]
+    () => void saveMedia((generation?.media ?? []).map((_, index) => index)),
+    [generation, saveMedia]
   )
 
-  const unsaved = generation !== null && !generation.saved
+  const unsaved =
+    generation?.status === 'running' ||
+    (generation?.status === 'done' &&
+      generation.media.length > 0 &&
+      !generation.saved)
   const zoomedImage =
-    zoomIndex === null ? undefined : generation?.images[zoomIndex]
+    zoomIndex === null ? undefined : generation?.media[zoomIndex]?.url
 
   return (
     <div className='mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col gap-3 p-4'>
-      {/* Results live in memory only, so leaving before a download loses them. */}
+      {/* Images stay in memory. Completed videos remain in the task log. */}
       <FormNavigationGuard
         when={unsaved}
         title={t('Result not downloaded')}
@@ -222,48 +340,28 @@ export function QuickGenerate() {
         />
         <p>
           <span className='font-medium'>
-            {t('Test preview only, not a workbench')}
+            {t('For testing only. Using this as a workbench is not recommended.')}
           </span>{' '}
           {t(
-            'Nothing here is saved. Download anything you want to keep before leaving or generating again.'
+            'Images are not saved. Videos can be opened from "Task logs → Artifacts". Download any image you want to keep before leaving or generating again.'
           )}
         </p>
       </div>
 
       <div className='flex min-h-0 flex-1 flex-col gap-2'>
-        <div className='flex shrink-0 items-start justify-between gap-3'>
-          <div className='min-w-0 flex-1'>
-            {generation ? (
-              <>
-                <p
-                  className='line-clamp-2 text-sm leading-5'
-                  title={generation.prompt}
-                >
-                  {generation.prompt}
-                </p>
-                <p className='text-muted-foreground mt-1 truncate text-xs'>
-                  {generation.model} ·{' '}
-                  {buildImageSize(generation.ratio, generation.resolution)} · ×
-                  {generation.count}
-                </p>
-              </>
-            ) : (
-              <p className='text-muted-foreground text-xs'>
-                {t('No result yet')}
-              </p>
-            )}
-          </div>
-          {generation && generation.images.length > 0 && (
+        {generation && generation.media.length > 0 && (
+          <div className='flex shrink-0 justify-end'>
             <Button variant='outline' size='sm' onClick={downloadAll}>
               <Download className='mr-2 size-4' aria-hidden='true' />
-              {t('Download all')}
+              {generation.kind === 'video' ? t('Download') : t('Download all')}
             </Button>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className='min-h-0 flex-1'>
           <ResultPanel
             generation={generation}
+            runPrice={runPrice}
             onZoom={(index) => {
               setZoomIndex(index)
               setZoomOpen(true)
@@ -277,10 +375,10 @@ export function QuickGenerate() {
       <div className='shrink-0 space-y-2'>
         {noModels && (
           <Alert>
-            <AlertTitle>{t('No image models are available')}</AlertTitle>
+            <AlertTitle>{t('No generation models are available')}</AlertTitle>
             <AlertDescription>
               {t(
-                'Add a channel that supports image generation, then reload this page.'
+                'Add a channel that supports image or video generation, then reload this page.'
               )}
             </AlertDescription>
           </Alert>
@@ -301,13 +399,13 @@ export function QuickGenerate() {
         <GenerateComposer
           modelItems={modelItems}
           model={model}
-          onModelChange={setPreferredModel}
-          ratio={ratio}
-          onRatioChange={setRatio}
-          resolution={resolution}
-          onResolutionChange={setResolution}
-          count={count}
-          onCountChange={setCount}
+          promptPlaceholder={promptPlaceholder}
+          onModelChange={changeModel}
+          capability={capability}
+          values={effectiveValues}
+          onValueChange={(key, value) =>
+            setValues((current) => ({ ...current, [key]: value }))
+          }
           keys={keys}
           selectedKeyId={selectedKeyId}
           onKeyChange={selectKey}
@@ -338,9 +436,9 @@ export function QuickGenerate() {
         )}
         confirmText={t('Generate anyway')}
         handleConfirm={() => {
-          const prompt = pendingPrompt
+          const pending = pendingPrompt
           setPendingPrompt(null)
-          if (prompt) void generate(prompt)
+          if (pending) void generate(pending.prompt, pending.images)
         }}
       />
     </div>

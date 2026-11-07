@@ -107,6 +107,24 @@ async function renderOverview() {
 }
 
 describe('overview setup guide', () => {
+  it('shows an image generation curl instead of a chat completion', async () => {
+    const user = userEvent.setup()
+    await renderOverview()
+
+    await user.click(await screen.findByRole('button', { name: 'Setup guide' }))
+
+    expect(
+      await screen.findByText(
+        `curl ${window.location.origin}/v1/images/generations \\`
+      )
+    ).toBeVisible()
+    expect(
+      screen.getByText(/"prompt":"A red fox in the snow","n":1/)
+    ).toBeVisible()
+    expect(screen.queryByText(/chat\/completions/)).toBeNull()
+    expect(screen.queryByText(/"messages"/)).toBeNull()
+  })
+
   it('shows usage first and only a header entry when setup is complete', async () => {
     await renderOverview()
 

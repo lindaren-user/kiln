@@ -32,7 +32,10 @@ export function useImageApiKeys() {
   const keysQuery = useQuery({
     queryKey: ['image-generation-keys'],
     queryFn: listEnabledApiKeys,
-    staleTime: 5 * 60 * 1000,
+    // Keys are created on another page, so a cached list would keep telling a
+    // returning user there is no key. Ask again on every mount instead.
+    staleTime: 0,
+    refetchOnMount: 'always',
   })
   const keys = keysQuery.data ?? []
 
@@ -48,5 +51,13 @@ export function useImageApiKeys() {
     saveSelectedApiKeyId(id)
   }, [])
 
-  return { keys, selectedKeyId, selectKey, isLoading: keysQuery.isLoading }
+  return {
+    keys,
+    selectedKeyId,
+    selectKey,
+    // A stale empty list refetches on mount; keep the "no keys" prompt away
+    // until that request settles.
+    isLoading:
+      keysQuery.isPending || (keysQuery.isFetching && keys.length === 0),
+  }
 }
