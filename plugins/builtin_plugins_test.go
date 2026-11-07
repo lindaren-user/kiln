@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var expectedKeys = []string{"alibaba", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "vertex-ai", "vidu", "xai"}
+var expectedKeys = []string{"alibaba", "asdada", "doubao", "google", "hailuo", "ip233", "jimeng", "kling", "sora", "sunoapi", "top-image", "vertex-ai", "vidu", "xai"}
 
 func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing.T) {
 	generation := jsplugin.DefaultRegistry.Generation()
@@ -457,5 +457,227 @@ func TestBuiltInPluginsAddressNewAPIUpstreamOnNativeRoutes(t *testing.T) {
 				assert.Equal(t, variant.wantSSEHeader, hasSSEHeader)
 			})
 		}
+	})
+}
+
+func TestTopImageVideoDriver(t *testing.T) {
+	plugin, found := jsplugin.DefaultRegistry.Generation().Get("top-image")
+	require.True(t, found)
+
+	call := func(t *testing.T, hook string, args ...any) map[string]any {
+		t.Helper()
+		value, err := plugin.Engine.Call(t.Context(), hook, args...)
+		require.NoError(t, err, hook)
+		encoded, err := common.Marshal(value)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, common.Unmarshal(encoded, &decoded))
+		return decoded
+	}
+	ctx := func(model string, body map[string]any) map[string]any {
+		return map[string]any{
+			"baseUrl": "https://topimage.top", "apiKey": "secret", "model": "alias", "upstreamModel": model,
+			"requestBody": body, "files": []any{},
+		}
+	}
+
+	t.Run("quick generate body", func(t *testing.T) {
+		submit := call(t, "buildSubmitRequest", ctx("sd2.0满血版", map[string]any{
+			"prompt": "海浪", "duration": 8, "size": "720x1280", "images": []any{"https://example.com/a.png"},
+		}))
+		assert.Equal(t, "https://topimage.top/openapi/v1/videos", submit["url"])
+		assert.Equal(t, "POST", submit["method"])
+		headers, _ := submit["headers"].(map[string]any)
+		assert.Equal(t, "Bearer secret", headers["Authorization"])
+		body, _ := submit["body"].(map[string]any)
+		assert.Equal(t, "sd2.0满血版", body["model"])
+		assert.Equal(t, "海浪", body["prompt"])
+		assert.EqualValues(t, 8, body["duration"])
+		assert.Equal(t, "9:16", body["ratio"])
+		assert.Equal(t, []any{"https://example.com/a.png"}, body["referenceImages"])
+		assert.Equal(t, "image_to_video", submit["action"])
+	})
+
+	t.Run("duration bounds", func(t *testing.T) {
+		_, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", ctx("sd2.0满血版", map[string]any{"prompt": "海浪", "duration": 3}))
+		require.Error(t, err)
+		edit := call(t, "buildSubmitRequest", ctx("官转SD2.5-30图版-720P", map[string]any{"prompt": "延长", "duration": -1, "mode": "extend"}))
+		body, _ := edit["body"].(map[string]any)
+		assert.EqualValues(t, -1, body["duration"])
+		assert.Equal(t, "extend", body["mode"])
+	})
+
+	t.Run("console reference spellings reach the vendor fields", func(t *testing.T) {
+		submit := call(t, "buildSubmitRequest", ctx("sd2.0满血版", map[string]any{
+			"prompt":           "海浪",
+			"reference_videos": []any{"https://cdn.example/a.mp4"},
+			"reference_audios": []any{"https://cdn.example/a.mp3"},
+		}))
+		body, _ := submit["body"].(map[string]any)
+		assert.Equal(t, []any{"https://cdn.example/a.mp4"}, body["referenceVideos"])
+		assert.Equal(t, []any{"https://cdn.example/a.mp3"}, body["referenceAudios"])
+	})
+
+	t.Run("usage", func(t *testing.T) {
+		perCall := call(t, "extractUsage", ctx("sd2-fast", map[string]any{"prompt": "海浪", "duration": 8}))
+		assert.EqualValues(t, 1, perCall["count"])
+		_, hasSeconds := perCall["seconds"]
+		assert.False(t, hasSeconds)
+
+		perSecond := call(t, "extractUsage", ctx("官转SD2.0-满血9图版-短剧专用-720P", map[string]any{"prompt": "海浪", "duration": 8}))
+		assert.EqualValues(t, 8, perSecond["seconds"])
+		reserved := call(t, "extractUsage", ctx("官转SD2.5-30图版-480P", map[string]any{"prompt": "海浪", "duration": -1}))
+		assert.EqualValues(t, 30, reserved["seconds"])
+		settled := call(t, "extractUsageOnComplete", ctx("官转SD2.5-30图版-480P", nil), nil, map[string]any{"billing_seconds": 20, "reference_video_duration": 12, "duration": 8})
+		assert.EqualValues(t, 20, settled["seconds"])
+	})
+
+	t.Run("probe", func(t *testing.T) {
+		probe := call(t, "buildProbeRequest", map[string]any{"baseUrl": "https://topimage.top", "apiKey": "secret"})
+		assert.Equal(t, "https://topimage.top/openapi/v1/models", probe["url"])
+		assert.Equal(t, "GET", probe["method"])
+		headers, _ := probe["headers"].(map[string]any)
+		assert.Equal(t, "Bearer secret", headers["Authorization"])
+	})
+
+	t.Run("poll", func(t *testing.T) {
+		created := call(t, "parseSubmitResponse", map[string]any{}, map[string]any{"statusCode": 200, "body": map[string]any{"id": "vid_1", "status": "queued"}})
+		assert.Equal(t, "vid_1", created["taskId"])
+		query := call(t, "buildQueryRequest", map[string]any{"baseUrl": "https://topimage.top", "apiKey": "secret", "taskId": "vid_1"})
+		assert.Equal(t, "https://topimage.top/openapi/v1/videos/vid_1", query["url"])
+
+		completed := call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "completed", "video_url": "https://topimage.top/video.mp4"})
+		assert.Equal(t, "SUCCESS", completed["status"])
+		assert.Equal(t, "https://topimage.top/video.mp4", completed["url"])
+		stored := call(t, "buildContentRequest", map[string]any{
+			"artifactKey": "video", "upstreamTaskId": "vid_1", "baseUrl": "https://topimage.top", "apiKey": "secret",
+			"data":          map[string]any{"video_url": "https://cdn.example/video.mp4?token=signed"},
+			"clientRequest": map[string]any{"method": "GET"},
+		})
+		assert.Equal(t, "https://cdn.example/video.mp4?token=signed", stored["url"])
+		assert.Equal(t, true, stored["credentialless"])
+		fallback := call(t, "buildContentRequest", map[string]any{
+			"artifactKey": "video", "upstreamTaskId": "vid_1", "baseUrl": "https://topimage.top", "apiKey": "secret",
+			"data": map[string]any{}, "clientRequest": map[string]any{"method": "GET"},
+		})
+		assert.Equal(t, "https://topimage.top/openapi/v1/videos/vid_1/content", fallback["url"])
+		assert.Equal(t, "IN_PROGRESS", call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "unknown"})["status"])
+		assert.Equal(t, "IN_PROGRESS", call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "completed", "delivery_status": "archiving"})["status"])
+		failed := call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "failed", "error": "生成失败"})
+		assert.Equal(t, "FAILURE", failed["status"])
+		assert.Equal(t, "生成失败", failed["reason"])
+		assert.Equal(t, "UNKNOWN", call(t, "parseTaskResult", map[string]any{}, map[string]any{})["status"])
+	})
+}
+
+func TestAsdadaVideoDriver(t *testing.T) {
+	plugin, found := jsplugin.DefaultRegistry.Generation().Get("asdada")
+	require.True(t, found)
+
+	call := func(t *testing.T, hook string, args ...any) map[string]any {
+		t.Helper()
+		value, err := plugin.Engine.Call(t.Context(), hook, args...)
+		require.NoError(t, err, hook)
+		encoded, err := common.Marshal(value)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, common.Unmarshal(encoded, &decoded))
+		return decoded
+	}
+	ctx := func(model string, body map[string]any) map[string]any {
+		return map[string]any{
+			"baseUrl": "https://asdada.site", "apiKey": "secret", "model": "alias", "upstreamModel": model,
+			"publicTaskId": "task_public", "requestBody": body, "files": []any{},
+		}
+	}
+
+	t.Run("quick generate body", func(t *testing.T) {
+		submit := call(t, "buildSubmitRequest", ctx("sd2.5-y", map[string]any{
+			"prompt": "海浪", "duration": 8, "size": "1280x720", "images": []any{"https://asdada.site/asset/a"},
+		}))
+		assert.Equal(t, "https://asdada.site/v1/videos/generations", submit["url"])
+		assert.Equal(t, "POST", submit["method"])
+		headers, _ := submit["headers"].(map[string]any)
+		assert.Equal(t, "Bearer secret", headers["Authorization"])
+		assert.Equal(t, "task_public", headers["Idempotency-Key"])
+		body, _ := submit["body"].(map[string]any)
+		assert.Equal(t, "sd2.5-y", body["model"])
+		assert.Equal(t, "海浪", body["prompt"])
+		assert.EqualValues(t, 8, body["duration"])
+		assert.Equal(t, "16:9", body["aspect_ratio"])
+		assert.Equal(t, "720p", body["resolution"])
+		assert.Equal(t, []any{"https://asdada.site/asset/a"}, body["images"])
+	})
+
+	t.Run("console reference spellings reach the vendor fields", func(t *testing.T) {
+		submit := call(t, "buildSubmitRequest", ctx("sd2.5-y", map[string]any{
+			"prompt":           "海浪",
+			"duration":         8,
+			"reference_videos": []any{"https://cdn.example/a.mp4"},
+			"reference_audios": []any{"https://cdn.example/a.mp3"},
+		}))
+		body, _ := submit["body"].(map[string]any)
+		assert.Equal(t, []any{"https://cdn.example/a.mp4"}, body["videos"])
+		assert.Equal(t, []any{"https://cdn.example/a.mp3"}, body["audios"])
+	})
+
+	t.Run("model limits", func(t *testing.T) {
+		portrait := call(t, "buildSubmitRequest", ctx("sd2-933-720p-9:16", map[string]any{"prompt": "海浪", "duration": 10, "size": "1280x720"}))
+		body, _ := portrait["body"].(map[string]any)
+		assert.Equal(t, "9:16", body["aspect_ratio"])
+		assert.Equal(t, "720p", body["resolution"])
+		_, err := plugin.Engine.Call(t.Context(), "buildSubmitRequest", ctx("sd2-933-720p-9:16", map[string]any{"prompt": "海浪", "aspect_ratio": "16:9"}))
+		require.Error(t, err)
+		_, err = plugin.Engine.Call(t.Context(), "buildSubmitRequest", ctx("sd2-933-720p-9:16", map[string]any{"prompt": "海浪", "duration": 4}))
+		require.Error(t, err)
+		// A count past the model's published allowance is forwarded, not refused:
+		// the allowance is a console hint and the vendor does the rejecting.
+		overflow := call(t, "buildSubmitRequest", ctx("SD-特价", map[string]any{"prompt": "海浪", "duration": 8, "images": []any{"asset"}}))
+		overflowBody, _ := overflow["body"].(map[string]any)
+		assert.Equal(t, []any{"asset"}, overflowBody["images"])
+		_, err = plugin.Engine.Call(t.Context(), "buildSubmitRequest", ctx("sd2.5-z", map[string]any{"prompt": "海浪", "images": []any{"data:image/png;base64,aaaa"}}))
+		require.Error(t, err)
+	})
+
+	t.Run("usage and probe", func(t *testing.T) {
+		usage := call(t, "extractUsage", ctx("sd2.5-z", map[string]any{"prompt": "海浪", "duration": 8}))
+		assert.EqualValues(t, 1, usage["count"])
+		probe := call(t, "buildProbeRequest", map[string]any{"baseUrl": "https://asdada.site", "apiKey": "secret"})
+		assert.Equal(t, "https://asdada.site/v1/models", probe["url"])
+	})
+
+	t.Run("poll and content", func(t *testing.T) {
+		created := call(t, "parseSubmitResponse", map[string]any{}, map[string]any{"statusCode": 202, "body": map[string]any{"id": "task_up", "task_id": "task_up", "status": "queued"}})
+		assert.Equal(t, "task_up", created["taskId"])
+		query := call(t, "buildQueryRequest", map[string]any{"baseUrl": "https://asdada.site", "apiKey": "secret", "taskId": "task_up"})
+		assert.Equal(t, "https://asdada.site/v1/videos/task_up", query["url"])
+		running := call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "in_progress", "progress": 30})
+		assert.Equal(t, "IN_PROGRESS", running["status"])
+		assert.Equal(t, "30%", running["progress"])
+		completed := call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "completed", "video_url": "/api/tasks/task_up/content"})
+		assert.Equal(t, "SUCCESS", completed["status"])
+		_, hasURL := completed["url"]
+		assert.False(t, hasURL)
+		content := call(t, "buildContentRequest", map[string]any{
+			"artifactKey": "video", "upstreamTaskId": "task_up", "baseUrl": "https://asdada.site", "apiKey": "secret",
+			"data":          map[string]any{"video_url": "/api/tasks/task_up/content"},
+			"clientRequest": map[string]any{"method": "GET"},
+		})
+		assert.Equal(t, "https://asdada.site/v1/videos/task_up/content", content["url"])
+		headers, _ := content["headers"].(map[string]any)
+		assert.Equal(t, "Bearer secret", headers["Authorization"])
+		signed := call(t, "buildContentRequest", map[string]any{
+			"artifactKey": "video", "upstreamTaskId": "task_up", "baseUrl": "https://asdada.site", "apiKey": "secret",
+			"data":          map[string]any{"video_url": "https://cdn.example/video.mp4"},
+			"clientRequest": map[string]any{"method": "GET"},
+		})
+		assert.Equal(t, "https://cdn.example/video.mp4", signed["url"])
+		assert.Equal(t, true, signed["credentialless"])
+		failed := call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "failed", "error": map[string]any{"message": "生成失败"}})
+		assert.Equal(t, "FAILURE", failed["status"])
+		assert.Equal(t, "生成失败", failed["reason"])
+		cancelled := call(t, "parseTaskResult", map[string]any{}, map[string]any{"status": "cancelled"})
+		assert.Equal(t, "FAILURE", cancelled["status"])
+		assert.Equal(t, "UNKNOWN", call(t, "parseTaskResult", map[string]any{}, map[string]any{})["status"])
 	})
 }
