@@ -101,7 +101,14 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		return config != nil && config.SupportsPathForModel(filter.RequestPath, modelName)
 	case dto.FilterTaskPluginIdentity:
 		if filter.TaskPluginKey == "" {
-			return ch.Type != constant.ChannelTypeTaskPlugin
+			// An empty key keeps task plugin channels off ordinary routes.
+			// Declared plugin keys reopen only the channels bound to a plugin
+			// that owns the model, which is how /v1/video/generations reaches
+			// a type-61 channel without claiming the OpenAI video protocol.
+			if ch.Type != constant.ChannelTypeTaskPlugin || len(filter.TaskPluginKeys) == 0 {
+				return ch.Type != constant.ChannelTypeTaskPlugin
+			}
+			return slices.ContainsFunc(filter.TaskPluginKeys, ch.GetSetting().BindsTaskPlugin)
 		}
 		if ch.Type == constant.ChannelTypeTaskPlugin || ch.Type == constant.ChannelTypeNewAPI {
 			// A New API channel serves every plugin it is extended with; the

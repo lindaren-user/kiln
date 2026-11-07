@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	_ "github.com/QuantumNous/new-api/plugins"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
@@ -474,6 +475,39 @@ func TestRunChannelTestWorkersStopsAfterCancellation(t *testing.T) {
 	}
 	assert.Equal(t, channelTestSummary{Tested: 2, Succeeded: 2}, summary)
 	assert.Equal(t, []int{0}, progress)
+}
+
+func TestTaskPluginChannelProbe(t *testing.T) {
+	var gotAuthorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthorization = r.Header.Get("Authorization")
+		if r.URL.Path != "/openapi/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	channel := &model.Channel{Type: constant.ChannelTypeTaskPlugin, Key: "secret", BaseURL: &server.URL}
+	channel.SetSetting(dto.ChannelSettings{TaskPluginKey: "top-image"})
+	result := testChannel(context.Background(), channel, 1, "", "", false)
+	require.NoError(t, result.localErr)
+	assert.Nil(t, result.newAPIError)
+	assert.Equal(t, "Bearer secret", gotAuthorization)
+
+	rejected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no", http.StatusUnauthorized)
+	}))
+	t.Cleanup(rejected.Close)
+	channel.BaseURL = &rejected.URL
+	result = testChannel(context.Background(), channel, 1, "", "", false)
+	require.ErrorContains(t, result.localErr, "401")
+
+	channel.SetSetting(dto.ChannelSettings{TaskPluginKey: "sora"})
+	result = testChannel(context.Background(), channel, 1, "", "", false)
+	require.ErrorContains(t, result.localErr, "channel test is not supported")
 }
 
 func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {

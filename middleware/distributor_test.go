@@ -10,10 +10,13 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	hostdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
+	_ "github.com/QuantumNous/new-api/plugins"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -399,4 +402,58 @@ func TestSharedEndpointRebindsToBoundNewAPIExtension(t *testing.T) {
 	require.Nil(t, SetupContextForSelectedChannel(c, channel, "task-model"))
 	assert.Equal(t, "alpha", c.GetString("task_plugin_key"), "the first bound candidate executes regardless of the earlier pin")
 	assert.Equal(t, "alpha", c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint).Plugin.Meta.Key)
+}
+
+func TestLegacyVideoGenerationsAdmitsDeclaredTaskPlugin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	constraints := service.GetChannelConstraints(c)
+	constraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+
+	allowDeclaredTaskPlugins(c, "官转SD2.5-30图版-480P")
+
+	require.Equal(t, []string{"top-image"}, constraints.Filters[0].TaskPluginKeys)
+
+	chat, _ := gin.CreateTestContext(httptest.NewRecorder())
+	chat.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	chatConstraints := service.GetChannelConstraints(chat)
+	chatConstraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+	allowDeclaredTaskPlugins(chat, "官转SD2.5-30图版-480P")
+	assert.Empty(t, chatConstraints.Filters[0].TaskPluginKeys)
+
+	unknown, _ := gin.CreateTestContext(httptest.NewRecorder())
+	unknown.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	unknownConstraints := service.GetChannelConstraints(unknown)
+	unknownConstraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+	allowDeclaredTaskPlugins(unknown, "not-a-declared-video-model")
+	assert.Empty(t, unknownConstraints.Filters[0].TaskPluginKeys)
+}
+
+func TestLegacyVideoGenerationsAdmitsMappedTaskPlugin(t *testing.T) {
+	setupOriginTaskDB(t)
+	model.InvalidatePricingCache()
+	t.Cleanup(model.InvalidatePricingCache)
+	mapping := `{"minimax-h3":"ip233-minimax-h3"}`
+	channel := &model.Channel{
+		Name: "mapped-video", Key: "test-key", Status: common.ChannelStatusEnabled,
+		Type: constant.ChannelTypeTaskPlugin, Models: "minimax-h3", ModelMapping: &mapping,
+	}
+	channel.SetSetting(dto.ChannelSettings{TaskPluginKey: "ip233"})
+	require.NoError(t, model.DB.Create(channel).Error)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", nil)
+	constraints := service.GetChannelConstraints(c)
+	constraints.AddFilter(hostdto.ChannelFilter{Kind: hostdto.FilterTaskPluginIdentity})
+
+	allowDeclaredTaskPlugins(c, "minimax-h3")
+
+	assert.Contains(t, constraints.Filters[0].TaskPluginKeys, "ip233")
+	allowed, _ := model.ChannelSatisfiesFilters(channel, "minimax-h3", constraints.Filters)
+	assert.True(t, allowed, "a selectable mapped video must reach its bound plugin")
+	unrelated := &model.Channel{Type: constant.ChannelTypeTaskPlugin}
+	unrelated.SetSetting(dto.ChannelSettings{TaskPluginKey: "top-image"})
+	allowed, _ = model.ChannelSatisfiesFilters(unrelated, "minimax-h3", constraints.Filters)
+	assert.False(t, allowed, "unrelated plugins must remain excluded")
 }

@@ -31,6 +31,52 @@ type ModelRequest struct {
 	Group string `json:"group,omitempty"`
 }
 
+// allowDeclaredTaskPlugins lets a legacy video submission use a type-61
+// channel whose plugin declares the model. The OpenAI video protocol stays
+// unclaimed on this path, so the task DTO and its result URL are unchanged.
+func allowDeclaredTaskPlugins(c *gin.Context, modelName string) {
+	if c == nil || c.Request == nil || c.Request.Method != http.MethodPost || c.Request.URL.Path != "/v1/video/generations" {
+		return
+	}
+	if c.GetString("expected_task_plugin_key") != "" || strings.TrimSpace(modelName) == "" {
+		return
+	}
+	generation := jsplugin.DefaultRegistry.Generation()
+	if generation == nil {
+		return
+	}
+	// A mapped alias can also match another plugin's declared spelling.
+	// Include the mapped provider without excluding channels serving that name.
+	lookups := []string{modelName}
+	if upstream := model.PublicModelUpstreams()[modelName]; upstream != "" {
+		lookups = append(lookups, upstream)
+	}
+	var keys []string
+	for _, lookup := range lookups {
+		if declared, ok := generation.CanonicalModel(lookup); ok {
+			lookup = declared
+		} else if target, ok := model.ResolveTaskModelAlias(generation, lookup); ok && target.Declared != "" {
+			lookup = target.Declared
+		}
+		for _, plugin := range generation.PluginsByModel(lookup) {
+			if plugin != nil && plugin.Meta.Key != "" && !slices.Contains(keys, plugin.Meta.Key) {
+				keys = append(keys, plugin.Meta.Key)
+			}
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	constraints := service.GetChannelConstraints(c)
+	for index := range constraints.Filters {
+		filter := &constraints.Filters[index]
+		if filter.Kind == taskdto.FilterTaskPluginIdentity && filter.TaskPluginKey == "" {
+			filter.TaskPluginKeys = keys
+			return
+		}
+	}
+}
+
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
@@ -50,6 +96,7 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, invalidRequestStatus(err), i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		allowDeclaredTaskPlugins(c, modelRequest.Model)
 		_, pinned, _ := constraints.ResolvedPin()
 		if !pinned {
 			// Select a channel for the user
