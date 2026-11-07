@@ -24,6 +24,48 @@ export type MentionFile = {
   mediaType?: string
 }
 
+export type ReferenceKind = 'image' | 'audio' | 'video' | 'file'
+
+const EXTENSION_KINDS: [RegExp, ReferenceKind][] = [
+  [/\.(png|jpe?g|gif|webp|bmp|avif|heic|heif)$/i, 'image'],
+  [/\.(mp3|wav|m4a|aac|ogg|oga|flac|opus|amr)$/i, 'audio'],
+  [/\.(mp4|m4v|webm|mov|mkv|avi)$/i, 'video'],
+]
+
+/**
+ * What a reference is. Browsers report an empty or wrong MIME type for some
+ * picked files, so the extension decides audio and video before the type
+ * does; everything else follows the type, then falls back to a plain file.
+ */
+export function referenceKind(file: {
+  filename?: string
+  mediaType?: string
+}): ReferenceKind {
+  const name = file.filename ?? ''
+  for (const [pattern, kind] of EXTENSION_KINDS) {
+    if (pattern.test(name)) return kind
+  }
+  const type = (file.mediaType ?? '').toLowerCase()
+  if (type.startsWith('image/')) return 'image'
+  if (type.startsWith('audio/')) return 'audio'
+  if (type.startsWith('video/')) return 'video'
+  return 'file'
+}
+
+/** Accept-rule prefixes ("image/*") as kinds the selection permits. */
+export function acceptedReferenceKinds(accept: string): Set<ReferenceKind> {
+  const kinds = new Set<ReferenceKind>()
+  for (const rule of accept.split(',')) {
+    const trimmed = rule.trim().toLowerCase()
+    if (!trimmed.endsWith('/*')) continue
+    const kind = trimmed.slice(0, -2)
+    if (kind === 'image' || kind === 'audio' || kind === 'video') {
+      kinds.add(kind)
+    }
+  }
+  return kinds
+}
+
 /** The @ query touching the caret. Null when the caret is not inside one. */
 export function activeMentionQuery(textBeforeCaret: string): string | null {
   const match = /(?:^|\s)@([^\s@]*)$/.exec(textBeforeCaret)

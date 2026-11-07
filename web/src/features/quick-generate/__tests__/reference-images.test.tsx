@@ -16,13 +16,34 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApiKey } from '@/features/keys/types'
 
 import { GenerateComposer } from '../components/generate-composer'
 import { capabilityFor, defaultValues } from '../lib/capabilities'
+import {
+  loadReferenceFiles,
+  saveReferenceFiles,
+} from '../lib/reference-storage'
+
+// IndexedDB is the boundary this component talks to; the module around it is
+// tested against the real storage in a browser only.
+vi.mock('../lib/reference-storage', () => ({
+  loadReferenceFiles: vi.fn(),
+  saveReferenceFiles: vi.fn(),
+}))
+
+const loadReferenceFilesMock = vi.mocked(loadReferenceFiles)
+const saveReferenceFilesMock = vi.mocked(saveReferenceFiles)
+
+beforeEach(() => {
+  loadReferenceFilesMock.mockReset()
+  saveReferenceFilesMock.mockReset()
+  loadReferenceFilesMock.mockResolvedValue([])
+  saveReferenceFilesMock.mockResolvedValue(undefined)
+})
 
 const API_KEY: ApiKey = {
   id: 7,
@@ -64,6 +85,8 @@ function renderComposer(
       promptPlaceholder='Describe what you want to create'
       onModelChange={vi.fn()}
       capability={capability}
+      prompt=''
+      onPromptChange={vi.fn()}
       values={defaultValues(capability)}
       onValueChange={vi.fn()}
       keys={[API_KEY]}
@@ -82,6 +105,37 @@ function dropFiles(files: File[]) {
   if (!(form instanceof HTMLFormElement)) throw new Error('composer form')
   fireEvent.drop(form, { dataTransfer: { files, types: ['Files'] } })
 }
+
+describe('reference persistence', () => {
+  const IMAGE_REFERENCE = {
+    referenceImages: { max: 1, field: 'images' as const, encoding: 'dataUrl' as const },
+  }
+
+  it('puts back the references of the previous visit', async () => {
+    loadReferenceFilesMock.mockResolvedValue([
+      new File(['img'], 'cat.png', { type: 'image/png' }),
+    ])
+
+    renderComposer('sora-2', 'video', IMAGE_REFERENCE)
+
+    expect(await screen.findByTitle('cat.png')).toBeInTheDocument()
+    // The restored files came from storage; writing them straight back adds
+    // nothing and could only fail on a full disk.
+    expect(saveReferenceFilesMock).not.toHaveBeenCalled()
+  })
+
+  it('stores the references as they change', async () => {
+    renderComposer('sora-2', 'video', IMAGE_REFERENCE)
+    await waitFor(() => expect(loadReferenceFilesMock).toHaveBeenCalled())
+
+    dropFiles([new File(['img'], 'frame.png', { type: 'image/png' })])
+
+    await waitFor(() => expect(saveReferenceFilesMock).toHaveBeenCalled())
+    expect(
+      saveReferenceFilesMock.mock.lastCall?.[0].map((file) => file.filename)
+    ).toEqual(['frame.png'])
+  })
+})
 
 describe('reference media upload', () => {
   it('offers an image-only picker when the model accepts reference images', () => {

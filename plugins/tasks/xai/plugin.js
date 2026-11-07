@@ -304,7 +304,7 @@ function generationSource(req) {
   const source = Object.assign(
     {},
     plainObject(req.metadata) || {},
-    req.size === undefined || req.size === null || req.size === "" ? {} : sizeOptions(req.size),
+    req.size === undefined || req.size === null || req.size === "" ? {} : sizeOptions(req.size)
   );
   for (const key of Object.keys(req)) {
     if (req[key] !== undefined && req[key] !== null && req[key] !== "") source[key] = req[key];
@@ -570,7 +570,7 @@ function outputResolution(url) {
     const track = videoTrack(url);
     if (!track) return "";
     return Math.min(track.width, track.height) > 480 ? "720p" : "480p";
-  } catch (_error) {
+  } catch {
     return "";
   }
 }
@@ -785,3 +785,28 @@ export const protocols = {
     },
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => ({
+  models: [name],
+  kind: "video",
+  fields: [
+    { key: "seconds", labelKey: "Duration", type: "number", defaultValue: DEFAULT_DURATION, min: 1, max: MAX_DURATION, requestPath: ["duration"] },
+    {
+      key: "ratio",
+      labelKey: "Aspect Ratio",
+      type: "select",
+      defaultValue: "16:9",
+      requestPath: ["metadata", "aspect_ratio"],
+      options: ASPECT_RATIOS.map((value) => ({ value, label: value })),
+    },
+    {
+      key: "resolution",
+      labelKey: "Resolution",
+      type: "select",
+      defaultValue: DEFAULT_RESOLUTION,
+      requestPath: ["metadata", "resolution"],
+      options: VIDEO_MODELS[name].resolutions.map((value) => ({ value, label: value })),
+    },
+  ],
+  referenceImages: { max: 1, field: "images", encoding: "dataUrl" },
+}));

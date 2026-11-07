@@ -21,7 +21,6 @@ import { t } from 'i18next'
 import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 
-import type { VideoRequest } from './lib/capabilities'
 import type { ReferenceAttachment } from './types'
 
 type SubmitPayload = {
@@ -305,7 +304,7 @@ export async function submitVideo(params: {
   apiKey: string
   model: string
   prompt: string
-  request: VideoRequest
+  request: Record<string, unknown>
 }): Promise<string> {
   const response = await fetch('/v1/video/generations', {
     method: 'POST',
@@ -350,7 +349,11 @@ export async function fetchVideoTask(params: {
     .catch(() => null)) as FetchPayload | null
 
   if (!response.ok) {
-    throw createServerError(payload, t('Failed to read the video task'))
+    // The poller retries transient failures; the status tells it which.
+    throw Object.assign(
+      createServerError(payload, t('Failed to read the video task')),
+      { status: response.status }
+    )
   }
 
   const data = payload?.data ?? {}

@@ -128,6 +128,15 @@ function isOptionalJsonObject(value: string | undefined): boolean {
   }
 }
 
+function isOptionalJsonArray(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    return parsed === undefined || Array.isArray(parsed)
+  } catch {
+    return false
+  }
+}
+
 function isOptionalModelMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -253,6 +262,10 @@ export const channelFormSchema = z
       .string()
       .optional()
       .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
+    generation_profiles: z
+      .string()
+      .optional()
+      .refine(isOptionalJsonArray, ERROR_MESSAGES.INVALID_JSON),
     advanced_custom: z.string().optional(),
     other: z.string().optional(),
     // Multi-key options (not sent to backend directly)
@@ -453,6 +466,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   param_override: '',
   header_override: '',
   settings: '{}',
+  generation_profiles: '',
   other: '',
   multi_key_mode: 'single',
   multi_key_type: 'random',
@@ -568,6 +582,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let generationProfiles = ''
 
   if (channel.settings) {
     try {
@@ -600,6 +615,12 @@ export function transformChannelToFormDefaults(
         : ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
+      }
+      if (
+        Array.isArray(parsed.generation_profiles) &&
+        parsed.generation_profiles.length > 0
+      ) {
+        generationProfiles = JSON.stringify(parsed.generation_profiles, null, 2)
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -656,6 +677,7 @@ export function transformChannelToFormDefaults(
     upstream_model_update_auto_sync_enabled: upstreamModelUpdateAutoSyncEnabled,
     upstream_model_update_ignored_models: upstreamModelUpdateIgnoredModels,
     advanced_custom: advancedCustom,
+    generation_profiles: generationProfiles,
   }
 }
 
@@ -853,6 +875,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     }
   } else if ('advanced_custom' in settingsObj) {
     delete settingsObj.advanced_custom
+  }
+
+  const generationProfiles = parseOptionalJson(formData.generation_profiles)
+  if (Array.isArray(generationProfiles) && generationProfiles.length > 0) {
+    settingsObj.generation_profiles = generationProfiles
+  } else {
+    delete settingsObj.generation_profiles
   }
 
   return JSON.stringify(settingsObj)

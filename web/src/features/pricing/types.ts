@@ -59,6 +59,8 @@ export type PricingModel = {
   billing_plugin_variants?: BillingPluginVariant[]
   id: number
   model_name: string
+  /** Mapped upstream model. Parameter lists follow this name, not the published alias. */
+  upstream_model?: string
   description?: string
   icon?: string
   vendor_id?: number
@@ -87,6 +89,7 @@ export type PricingModel = {
   billing_usage_schema?: BillingUsageSchema
   /** Display-only labeled usage vectors for pricing examples. */
   billing_usage_examples?: BillingUsageExample[]
+  generation_schemas?: Partial<Record<'image' | 'video', GenerationSchema>>
   /** Pricing version returned by backend, useful for cache busting */
   pricing_version?: string
   /**
@@ -101,6 +104,30 @@ export type PricingModel = {
   input_modalities?: Modality[]
   output_modalities?: Modality[]
   capabilities?: ModelCapability[]
+}
+
+export type GenerationInputField = {
+  key: string
+  labelKey: string
+  label?: Record<string, string>
+  type: 'select' | 'number'
+  valueType?: 'number' | 'boolean'
+  requestPath: string[]
+  options?: { value: string; label: string }[]
+  defaultValue: string | number
+  min?: number
+  max?: number
+}
+
+export type GenerationSchema = {
+  fields: GenerationInputField[]
+  referenceImages?: {
+    max: number
+    field: 'images' | 'image'
+    encoding: 'dataUrl' | 'base64'
+    edit?: boolean
+  }
+  mediaNotice?: boolean
 }
 
 /** Input/output modalities supported by a model. */

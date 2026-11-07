@@ -604,3 +604,30 @@ export const native = {
     return { code: code, data: null, message: error.message, request_id: error.requestId || "", status: code };
   },
 };
+
+meta.generationProfiles = [
+  {
+    models: meta.models,
+    kind: "video",
+    fields: [
+      {
+        key: "seconds",
+        labelKey: "Duration",
+        type: "select",
+        valueType: "number",
+        defaultValue: "5",
+        requestPath: ["duration"],
+        options: [{ value: "5", label: "5" }],
+      },
+      {
+        key: "ratio",
+        labelKey: "Aspect Ratio",
+        type: "select",
+        defaultValue: "16:9",
+        requestPath: ["metadata", "aspect_ratio"],
+        options: ASPECT_RATIOS.map((value) => ({ value, label: value })),
+      },
+    ],
+    referenceImages: { max: 2, field: "images", encoding: "dataUrl" },
+  },
+];

@@ -24,9 +24,10 @@ export type GenerateImageParams = {
   apiKey: string
   model: string
   prompt: string
-  size: string
-  count: number
-  /** Nano Banana Pro image size, sent as `quality` (`1K`, `2K`, `4K`). */
+  size?: string
+  count?: number
+  parameters?: Record<string, unknown>
+  operation?: 'generate' | 'edit'
   quality?: string
   /** Seedream reference images. */
   image?: string[]

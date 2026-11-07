@@ -703,3 +703,64 @@ protocols.openai_video = {
     return legacyRenderers.openai_video(task);
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => {
+  if (omniModel({ model: name }))
+    return {
+      models: [name],
+      kind: "video",
+      fields: [
+        { key: "seconds", labelKey: "Duration", type: "number", defaultValue: 8, min: 3, max: 10, requestPath: ["duration"] },
+        {
+          key: "resolution",
+          labelKey: "Resolution",
+          type: "select",
+          defaultValue: "720p",
+          requestPath: ["metadata", "resolution"],
+          options: RESOLUTIONS.map((value) => ({ value, label: value })),
+        },
+        {
+          key: "size",
+          labelKey: "Aspect Ratio",
+          type: "select",
+          defaultValue: "1280x720",
+          requestPath: ["size"],
+          options: [
+            { value: "1280x720", label: "16:9" },
+            { value: "720x1280", label: "9:16" },
+          ],
+        },
+      ],
+    };
+  return {
+    models: [name],
+    kind: "video",
+    fields: [
+      {
+        key: "seconds",
+        labelKey: "Duration",
+        type: "select",
+        valueType: "number",
+        defaultValue: "8",
+        requestPath: ["duration"],
+        options: ["4", "6", "8"].map((value) => ({ value, label: value })),
+      },
+      {
+        key: "ratio",
+        labelKey: "Aspect Ratio",
+        type: "select",
+        defaultValue: "16:9",
+        requestPath: ["metadata", "aspectRatio"],
+        options: ["16:9", "9:16"].map((value) => ({ value, label: value })),
+      },
+      {
+        key: "resolution",
+        labelKey: "Resolution",
+        type: "select",
+        defaultValue: "720p",
+        requestPath: ["metadata", "resolution"],
+        options: ["720p", "1080p", "4k"].map((value) => ({ value, label: value })),
+      },
+    ],
+  };
+});

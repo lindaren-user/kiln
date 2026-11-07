@@ -251,6 +251,24 @@ func TestHailuoH3BuildSubmitRequest(t *testing.T) {
 			wantAction: "image_to_video",
 		},
 		{
+			name: "flat reference lists reach the content, counted once beside metadata",
+			request: map[string]any{
+				"prompt":           "p",
+				"reference_videos": []any{"ref.mp4"},
+				"reference_audios": []any{"a.mp3"},
+				"metadata": map[string]any{
+					"reference_video": []any{"ref.mp4"},
+					"reference_audio": []any{"a.mp3"},
+				},
+			},
+			wantBody: `{"model":"MiniMax-H3","content":[
+				{"type":"text","text":"p"},
+				{"type":"video_url","role":"reference_video","video_url":{"url":"ref.mp4"}},
+				{"type":"audio_url","role":"reference_audio","audio_url":{"url":"a.mp3"}}],
+				"resolution":"768P","duration":5,"ratio":"adaptive"}`,
+			wantAction: "image_to_video",
+		},
+		{
 			name: "content passthrough prepends the prompt when no text item exists",
 			request: map[string]any{"prompt": "p", "metadata": map[string]any{"content": []any{
 				map[string]any{"type": "image_url", "role": "reference_image", "image_url": map[string]any{"url": "img.png"}},

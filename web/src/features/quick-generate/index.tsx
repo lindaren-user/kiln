@@ -32,7 +32,7 @@ import { FormNavigationGuard } from '@/features/system-settings/components/form-
 
 import { submitVideo, uploadQuickGenerateReferences } from './api'
 import { GenerateComposer } from './components/generate-composer'
-import { ImageLightbox } from './components/image-lightbox'
+import { MediaLightbox } from './components/media-lightbox'
 import { ResultPanel } from './components/result-panel'
 import { useGenerationModels } from './hooks/use-generation-models'
 import {
@@ -41,8 +41,19 @@ import {
   capabilityFor,
   compatibleValues,
 } from './lib/capabilities'
+import {
+  loadComposerDraft,
+  saveComposerDraft,
+} from './lib/draft-storage'
 import { downloadMedia, mediaFilename } from './lib/download-media'
+import { referenceKind } from './lib/file-mention'
 import { pollVideoTask } from './lib/poll-video'
+import {
+  clearRunningVideoTask,
+  loadRunningVideoTask,
+  saveRunningVideoTask,
+  type RunningVideoTask,
+} from './lib/video-task-storage'
 import type {
   Generation,
   GenerationParams,
@@ -71,9 +82,20 @@ export function QuickGenerate() {
     isLoading: keysLoading,
   } = useImageApiKeys()
 
-  const [generation, setGeneration] = useState<Generation | null>(null)
-  const [preferredModel, setPreferredModel] = useState('')
-  const [values, setValues] = useState<GenerationValues>({})
+  // TODO: list the recent generations under the result. The page already
+  // tracks every run by id (including the polled video tasks), so the list
+  // should read that state instead of adding a second request path.
+
+  // A video task outlives the page: the stored run is shown again on mount and
+  // polling continues from its task id. An image has nothing to rejoin.
+  const [restoredTask] = useState(loadRunningVideoTask)
+  const [generation, setGeneration] = useState<Generation | null>(restoredTask)
+  // The unsent draft — prompt, model and its parameters — is restored from the
+  // previous visit. The result below is not: media stays in memory only.
+  const [draft] = useState(loadComposerDraft)
+  const [prompt, setPrompt] = useState(draft.prompt)
+  const [preferredModel, setPreferredModel] = useState(draft.model)
+  const [values, setValues] = useState<GenerationValues>(draft.values)
   // `zoomIndex` outlives the open state so the closing animation never renders
   // an empty image, which used to look like a second dialog flashing open.
   const [zoomIndex, setZoomIndex] = useState<number | null>(null)
@@ -99,10 +121,9 @@ export function QuickGenerate() {
     : t('This model has no description yet.')
   const selectedModel = models.find((item) => item.name === model)
   const kind = selectedModel?.kind ?? ('image' as const)
-  const parameterModel = selectedModel?.parameterModel || model
   const capability = useMemo(
-    () => capabilityFor(parameterModel, kind),
-    [parameterModel, kind]
+    () => selectedModel?.capability ?? capabilityFor(kind),
+    [kind, selectedModel]
   )
   const effectiveValues = useMemo(
     () => compatibleValues(capability, values),
@@ -111,14 +132,18 @@ export function QuickGenerate() {
   const runPrice = useMemo(() => {
     if (!model) return ''
     if (kind === 'video') {
-      return priceForRun(model, {
-        seconds: buildVideoRequest(effectiveValues, parameterModel).duration,
-      })
+      return priceForRun(
+        model,
+        { seconds: Number(effectiveValues.seconds ?? 0) },
+        effectiveValues
+      )
     }
-    return priceForRun(model, {
-      count: buildImageRequest(effectiveValues, parameterModel).count,
-    })
-  }, [effectiveValues, kind, model, parameterModel, priceForRun])
+    return priceForRun(
+      model,
+      { count: Number(effectiveValues.count ?? 1) },
+      effectiveValues
+    )
+  }, [effectiveValues, kind, model, priceForRun])
 
   // A different model accepts a different set of parameters, so switching the
   // model drops the previous model's values instead of sending them again.
@@ -127,15 +152,90 @@ export function QuickGenerate() {
     setValues({})
   }, [])
 
-  useEffect(
-    () => () => {
-      activeRunRef.current = ''
-    },
-    []
-  )
+  // StrictMode rehearses an unmount right after mounting, then runs the
+  // effects again. Re-arming in the setup keeps that rehearsal from cancelling
+  // a poll that is still wanted; a real unmount leaves it false.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  // Keep the draft with every edit, so leaving the page or reloading loses
+  // nothing the user typed.
+  useEffect(() => {
+    saveComposerDraft({ prompt, model: preferredModel, values })
+  }, [preferredModel, prompt, values])
 
   const busy = generation?.status === 'running'
   const noModels = !modelsLoading && models.length === 0
+
+  /** Writes a patch into the run with this id; a replaced run is left alone. */
+  const applyRunPatch = useCallback((id: string, patch: Partial<Generation>) => {
+    setGeneration((current) =>
+      current?.id === id ? { ...current, ...patch } : current
+    )
+  }, [])
+
+  /**
+   * Polls a submitted task and writes its outcome into the result panel. The
+   * stored record is cleared only when the task settles: a task the page stops
+   * waiting for is picked up again after a reload.
+   */
+  const followVideoTask = useCallback(
+    async (task: RunningVideoTask, apiKey: string) => {
+      const isCancelled = () => !mounted.current || activeRunRef.current !== task.id
+      let storedProgress = task.progress
+      const url = await pollVideoTask({
+        apiKey,
+        taskId: task.taskId,
+        startProgress: task.progress,
+        isCancelled,
+        onProgress: (progress) => {
+          applyRunPatch(task.id, { progress })
+          // Keep the stored copy current, so a reload resumes at this point.
+          if (progress !== storedProgress) {
+            storedProgress = progress
+            saveRunningVideoTask({ ...task, progress })
+          }
+        },
+      })
+      if (url === null || isCancelled()) return
+      clearRunningVideoTask()
+      applyRunPatch(task.id, {
+        status: 'done',
+        progress: undefined,
+        media: [{ url, type: 'video' }],
+      })
+    },
+    [applyRunPatch]
+  )
+
+  /**
+   * Resolves the task's key, polls it, and settles its outcome. A fresh
+   * submission and the task restored after a reload both enter here.
+   */
+  const runVideoTask = useCallback(
+    async (task: RunningVideoTask) => {
+      const isCancelled = () => activeRunRef.current !== task.id
+      try {
+        const apiKey = await resolveApiKey(task.keyId)
+        if (isCancelled()) return
+        await followVideoTask(task, apiKey)
+      } catch (error) {
+        if (isCancelled()) return
+        clearRunningVideoTask()
+        applyRunPatch(task.id, {
+          status: 'error',
+          error:
+            error instanceof Error ? error.message : t('Generation failed'),
+        })
+      }
+    },
+    [applyRunPatch, followVideoTask, t]
+  )
 
   const runGeneration = useCallback(
     async (params: GenerationParams, prompt: string) => {
@@ -143,22 +243,26 @@ export function QuickGenerate() {
 
       const id = nanoid()
       activeRunRef.current = id
+      // Any new run replaces the remembered task; the one upstream still
+      // stays in the task log.
+      clearRunningVideoTask()
       setZoomIndex(null)
       setZoomOpen(false)
-      setGeneration({
+      const run: Generation = {
         ...params,
         id,
         prompt,
         status: 'running',
         media: [],
         saved: false,
-      })
+        startedAt: Date.now(),
+      }
+      setGeneration(run)
 
-      const isCancelled = () => activeRunRef.current !== id
+      const isCancelled = () => !mounted.current || activeRunRef.current !== id
 
       try {
         const apiKey = await resolveApiKey(selectedKeyId)
-        const parameterModel = params.parameterModel || params.model
         setUploadingReferences(params.references.length > 0)
         const uploadedReferences = await uploadQuickGenerateReferences(
           params.references
@@ -166,7 +270,7 @@ export function QuickGenerate() {
         setUploadingReferences(false)
         if (isCancelled()) return
         const imageReferences = uploadedReferences
-          .filter((reference) => reference.mediaType.startsWith('image/'))
+          .filter((reference) => referenceKind(reference) === 'image')
           .map((reference) => reference.url)
 
         if (params.kind === 'video') {
@@ -176,93 +280,80 @@ export function QuickGenerate() {
             prompt,
             request: buildVideoRequest(
               params.values,
-              parameterModel,
+              params.capability,
               imageReferences,
               uploadedReferences
             ),
           })
-          const url = await pollVideoTask({
-            apiKey,
+          // The task now lives upstream: remember it before waiting, so even
+          // leaving the page right now can be resumed. The stored references
+          // are the uploaded ones, which still resolve after a reload.
+          const task: RunningVideoTask = {
+            ...run,
+            references: uploadedReferences,
             taskId,
-            isCancelled,
-            onProgress: (progress) => {
-              setGeneration((current) =>
-                current?.id === id ? { ...current, progress } : current
-              )
-            },
-          })
-          if (url === null || isCancelled()) return
-          setGeneration((current) =>
-            current?.id === id
-              ? {
-                  ...current,
-                  status: 'done',
-                  progress: undefined,
-                  media: [{ url, type: 'video' }],
-                }
-              : current
-          )
+            keyId: selectedKeyId,
+          }
+          saveRunningVideoTask(task)
+          await runVideoTask(task)
           return
         }
 
         const request = buildImageRequest(
           params.values,
-          parameterModel,
+          params.capability,
           imageReferences
         )
         const images = await generateImages({
           apiKey,
           model: params.model,
           prompt,
-          size: request.size,
-          count: request.count,
-          quality: request.quality,
-          image: request.image,
-          images: request.images,
+          parameters: request,
+          operation: params.capability.referenceImages?.edit ? 'edit' : 'generate',
         })
         if (isCancelled()) return
-        setGeneration((current) =>
-          current?.id === id
-            ? {
-                ...current,
-                status: 'done',
-                media: images.map((url) => ({ url, type: 'image' })),
-              }
-            : current
-        )
+        applyRunPatch(id, {
+          status: 'done',
+          media: images.map((url) => ({ url, type: 'image' })),
+        })
       } catch (error) {
         setUploadingReferences(false)
         if (isCancelled()) return
-        setGeneration((current) =>
-          current?.id === id
-            ? {
-                ...current,
-                status: 'error',
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : t('Generation failed'),
-              }
-            : current
-        )
+        applyRunPatch(id, {
+          status: 'error',
+          error:
+            error instanceof Error ? error.message : t('Generation failed'),
+        })
       }
     },
-    [selectedKeyId, t]
+    [applyRunPatch, runVideoTask, selectedKeyId, t]
   )
+
+  // Rejoin the video task the previous visit left running. The guard keeps a
+  // language change (which recreates `t`) from starting a second poll; the
+  // mounted flag above keeps the StrictMode rehearsal from cancelling the one
+  // poll that was started.
+  const resumed = useRef(false)
+  useEffect(() => {
+    if (!restoredTask || resumed.current) return
+    resumed.current = true
+    activeRunRef.current = restoredTask.id
+    void runVideoTask(restoredTask)
+  }, [restoredTask, runVideoTask])
 
   const generate = useCallback(
     (prompt: string, references: ReferenceAttachment[]) =>
       runGeneration(
         {
           model,
-          parameterModel,
           kind,
+          capability,
           values: effectiveValues,
           references,
         },
         prompt
       ),
-    [effectiveValues, kind, model, parameterModel, runGeneration]
+    [capability, effectiveValues, kind, model, runGeneration]
   )
 
   /** Replays the failed request with the parameters it was sent with. */
@@ -272,6 +363,7 @@ export function QuickGenerate() {
       {
         model: generation.model,
         kind: generation.kind,
+        capability: generation.capability,
         values: generation.values,
         references: generation.references,
       },
@@ -343,8 +435,11 @@ export function QuickGenerate() {
     [generation, saveMedia]
   )
 
+  // A running video is resumable, so leaving the page costs nothing. An image
+  // cannot be rejoined, so the warning is the only way to keep its result.
+  const runningImage = busy && generation?.kind === 'image'
   const unsaved =
-    generation?.status === 'running' ||
+    runningImage ||
     (generation?.status === 'done' &&
       generation.media.length > 0 &&
       !generation.saved)
@@ -353,30 +448,46 @@ export function QuickGenerate() {
 
   return (
     <div className='mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col gap-3 p-4'>
-      {/* Images stay in memory. Completed videos remain in the task log. */}
+      {/* A running video is picked up again from its task id, so only an
+          image in flight and an unsaved result warn before leaving. */}
       <FormNavigationGuard
         when={unsaved}
-        title={t('Result not downloaded')}
-        message={t('Download the result first, or it will be lost.')}
+        title={t(
+          runningImage ? 'Image still generating' : 'Result not downloaded'
+        )}
+        message={t(
+          runningImage
+            ? 'Leaving this page stops waiting for the image, and the result will not appear here.'
+            : 'Download the result first, or it will be lost.'
+        )}
       />
       <div className='border-border/70 bg-muted/30 flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5'>
         <TriangleAlert
           className='text-warning mt-0.5 size-4 shrink-0'
           aria-hidden='true'
         />
-        <p>
-          <span className='font-medium'>
+        <ul className='list-disc space-y-1 pl-4'>
+          <li className='font-medium'>
             {t(
               'For testing only. Using this as a workbench is not recommended.'
             )}
-          </span>{' '}
-          {t(
-            'Images are not saved. Videos can be opened from "Task logs → Artifacts". Download any image you want to keep before leaving or generating again.'
-          )}{' '}
-          {t(
-            'After upstream has accepted a generation, leaving this page or stopping the browser request does not cancel it. Check task logs before trying again.'
-          )}
-        </p>
+          </li>
+          <li>
+            {t(
+              'Images are not saved: an image still generating is lost when you leave or reload this page. Download what you want to keep first.'
+            )}
+          </li>
+          <li>
+            {t(
+              'A video task keeps running while you are away: leave or reload this page and it is picked up again.'
+            )}
+          </li>
+          <li>
+            {t(
+              'If the video will not play here, open it from Task log → Artifacts.'
+            )}
+          </li>
+        </ul>
       </div>
 
       <div className='flex min-h-0 flex-1 flex-col gap-2'>
@@ -433,6 +544,8 @@ export function QuickGenerate() {
           promptPlaceholder={promptPlaceholder}
           onModelChange={changeModel}
           capability={capability}
+          prompt={prompt}
+          onPromptChange={setPrompt}
           values={effectiveValues}
           onValueChange={(key, value) =>
             setValues((current) => ({ ...current, [key]: value }))
@@ -447,11 +560,12 @@ export function QuickGenerate() {
         />
       </div>
 
-      <ImageLightbox
+      <MediaLightbox
         open={zoomOpen}
         onOpenChange={setZoomOpen}
         src={zoomedImage ?? ''}
         alt={generation?.prompt ?? ''}
+        kind='image'
         onDownload={() => {
           if (zoomIndex !== null) void download(zoomIndex)
         }}

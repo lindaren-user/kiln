@@ -506,7 +506,7 @@ export const native = {
     const entry = Object.assign(
       { status: statusMap[task.status] || "submitted", create_time: task.created_at * 1000, update_time: (task.updated_at || task.created_at) * 1000 },
       kling4Entry(result),
-      { id: task.task_id },
+      { id: task.task_id }
     );
     if (task.status === "FAILURE" && entry.status !== "failed") {
       entry.status = "failed";
@@ -548,7 +548,8 @@ export function buildSubmitRequest(ctx) {
     if (req.prompt) body.prompt = req.prompt;
     if (req.image) body.image = req.image;
     if (req.mode) body.mode = req.mode;
-    if (action === "text_to_video" && req.size !== undefined && req.size !== null && req.size !== "") body.aspect_ratio = aspectRatio(sizeDimensions(req.size), KLING_ASPECT_RATIOS);
+    if (action === "text_to_video" && req.size !== undefined && req.size !== null && req.size !== "")
+      body.aspect_ratio = aspectRatio(sizeDimensions(req.size), KLING_ASPECT_RATIOS);
     Object.assign(body, metadata);
     body.model_name = model;
     body.mode = klingMode(body.mode);
@@ -831,3 +832,61 @@ export const protocols = {
     },
   },
 };
+
+meta.generationProfiles = meta.models.map((name) => {
+  if (KLING4_MODELS.includes(name))
+    return {
+      models: [name],
+      kind: "video",
+      fields: [
+        {
+          key: "seconds",
+          labelKey: "Duration",
+          type: "number",
+          defaultValue: 5,
+          min: KLING4_MIN_SECONDS,
+          max: KLING4_MAX_SECONDS,
+          requestPath: ["metadata", "settings", "duration"],
+        },
+        {
+          key: "ratio",
+          labelKey: "Aspect Ratio",
+          type: "select",
+          defaultValue: "16:9",
+          requestPath: ["metadata", "settings", "aspect_ratio"],
+          options: KLING4_ASPECT_RATIOS.map((value) => ({ value, label: value })),
+        },
+        {
+          key: "resolution",
+          labelKey: "Resolution",
+          type: "select",
+          defaultValue: "720p",
+          requestPath: ["metadata", "settings", "resolution"],
+          options: Object.keys(KLING4_UNITS).map((value) => ({ value, label: value })),
+        },
+      ],
+    };
+  return {
+    models: [name],
+    kind: "video",
+    fields: [
+      {
+        key: "seconds",
+        labelKey: "Duration",
+        type: "select",
+        valueType: "number",
+        defaultValue: "5",
+        requestPath: ["duration"],
+        options: ["5", "10"].map((value) => ({ value, label: value })),
+      },
+      {
+        key: "ratio",
+        labelKey: "Aspect Ratio",
+        type: "select",
+        defaultValue: "16:9",
+        requestPath: ["metadata", "aspect_ratio"],
+        options: KLING_ASPECT_RATIOS.map((value) => ({ value, label: value })),
+      },
+    ],
+  };
+});

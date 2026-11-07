@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -43,6 +43,14 @@ import { resolveLocalizedText } from '@/lib/localized-text'
 import { cn } from '@/lib/utils'
 
 import type { ModelCapability, ParamField } from '../lib/capabilities'
+import {
+  acceptedReferenceKinds,
+  referenceKind,
+} from '../lib/file-mention'
+import {
+  loadReferenceFiles,
+  saveReferenceFiles,
+} from '../lib/reference-storage'
 import type { GenerationValues, ReferenceAttachment } from '../types'
 import { PromptMentionInput } from './prompt-mention-input'
 
@@ -67,6 +75,9 @@ type GenerateComposerProps = {
   keys: ApiKey[]
   selectedKeyId: number | null
   onKeyChange: (id: number) => void
+  /** The draft text, owned by the page so it survives a reload with it. */
+  prompt: string
+  onPromptChange: (value: string) => void
   /** Returns false when the prompt was held back (e.g. waiting on a confirm). */
   onSubmit: (prompt: string, references: ReferenceAttachment[]) => boolean
   busy: boolean
@@ -192,6 +203,89 @@ function AddReferenceImage(props: { disabled?: boolean }) {
   )
 }
 
+/**
+ * A model switch keeps the prompt's attachments, but the new model may not
+ * accept them: an audio reference for a video model must not reach an image
+ * request. Drop every file the new capability no longer routes.
+ */
+function DropUnacceptedReferences(props: { accept: string }) {
+  const attachments = usePromptInputAttachments()
+  const accepted = acceptedReferenceKinds(props.accept)
+  useEffect(() => {
+    // The list only shrinks, so one pass per attachment change settles it.
+    for (const file of attachments.files) {
+      if (!accepted.has(referenceKind(file))) attachments.remove(file.id)
+    }
+  }, [accepted, attachments])
+  return null
+}
+
+/**
+ * Puts back the references of the previous visit and keeps the stored copy in
+ * step with the composer. Rendered inside PromptInput for its attachment list.
+ * `ready` is false until a real model is selected: the fallback capability
+ * accepts no media, so restoring before then would erase the stored set.
+ */
+function PersistReferences(props: { ready: boolean }) {
+  const attachments = usePromptInputAttachments()
+  // The attachment context is rebuilt on every render, so the values are read
+  // through refs: restoring runs once, not once per render.
+  const addRef = useRef(attachments.add)
+  const filesRef = useRef(attachments.files)
+  useEffect(() => {
+    addRef.current = attachments.add
+    filesRef.current = attachments.files
+  })
+  const started = useRef(false)
+  const restored = useRef(false)
+  const alive = useRef(true)
+  // Restoring re-adds the files that were just read; that echo needs no save.
+  const skipSave = useRef(false)
+  const savedSignature = useRef<string | null>(null)
+
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!props.ready || started.current) return
+    started.current = true
+    loadReferenceFiles()
+      .then((files) => {
+        if (!alive.current) return
+        if (files.length > 0) {
+          skipSave.current = true
+          addRef.current(files)
+        }
+        restored.current = true
+      })
+      .catch(() => {
+        if (alive.current) restored.current = true
+      })
+  }, [props.ready])
+
+  // The list is a fresh array on every render, so the effect watches which
+  // files are attached rather than the array itself.
+  const signature = attachments.files.map((file) => file.id).join('|')
+  useEffect(() => {
+    if (!restored.current) return
+    if (skipSave.current) {
+      skipSave.current = false
+      savedSignature.current = signature
+      return
+    }
+    if (signature === savedSignature.current) return
+    savedSignature.current = signature
+    // A failed save (quota, private mode) only costs the stored copy.
+    void saveReferenceFiles(filesRef.current).catch(() => undefined)
+  }, [signature])
+
+  return null
+}
+
 /** One capability field, labelled and drawn as a footer control. */
 function ParamFieldControl(props: {
   field: ParamField
@@ -200,9 +294,12 @@ function ParamFieldControl(props: {
   disabled?: boolean
 }) {
   const { t, i18n } = useTranslation()
+  // A "Duration" field in a generation profile is the clip length, while the
+  // usage logs reuse that key for elapsed time (耗时), so the composer asks for
+  // the clip-length translation rather than showing the wrong one.
   const label = props.field.label
     ? resolveLocalizedText(props.field.label, i18n.language)
-    : t(props.field.labelKey)
+    : t(props.field.labelKey === 'Duration' ? 'Video duration' : props.field.labelKey)
   if (props.field.type === 'select') {
     return (
       <ParamSelect
@@ -233,7 +330,6 @@ function ParamFieldControl(props: {
  */
 export function GenerateComposer(props: GenerateComposerProps) {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
 
   const fields = props.capability.fields
   const keyItems = useMemo(
@@ -244,7 +340,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
     !props.disabled &&
     props.model !== '' &&
     props.selectedKeyId !== null &&
-    text.trim() !== ''
+    props.prompt.trim() !== ''
 
   const referenceImages = props.capability.referenceImages
   const acceptsReferences =
@@ -259,6 +355,14 @@ export function GenerateComposer(props: GenerateComposerProps) {
   ]
     .filter(Boolean)
     .join(',')
+  // The prompt input rebuilds its attachment context when a callback changes
+  // identity, so a stable handler keeps the composer from resaving per render.
+  const handleFileError = useCallback(
+    (error: { message: string }) => {
+      if (acceptsReferences) toast.error(error.message)
+    },
+    [acceptsReferences]
+  )
   const handleSubmit = (message: PromptInputMessage) => {
     const prompt = message.text?.trim() ?? ''
     if (!prompt || !ready) return
@@ -267,6 +371,7 @@ export function GenerateComposer(props: GenerateComposerProps) {
       .map((file) => ({
         url: file.url,
         mediaType: file.mediaType ?? 'application/octet-stream',
+        filename: file.filename,
       }))
     props.onSubmit(prompt, references)
     // Keep the prompt and the files. PromptInput clears attachments when
@@ -285,14 +390,14 @@ export function GenerateComposer(props: GenerateComposerProps) {
       multiple={maxReferences > 1}
       maxFiles={maxReferences}
       maxFileSize={MAX_REFERENCE_MEDIA_BYTES}
-      onError={(error) => {
-        if (acceptsReferences) toast.error(error.message)
-      }}
+      onError={handleFileError}
       onSubmit={handleSubmit}
     >
+      <DropUnacceptedReferences accept={acceptedTypes} />
+      <PersistReferences ready={props.model !== ''} />
       <PromptMentionInput
-        value={text}
-        onChange={setText}
+        value={props.prompt}
+        onChange={props.onPromptChange}
         placeholder={props.promptPlaceholder}
         label={t('Prompt')}
         uploading={props.uploading}

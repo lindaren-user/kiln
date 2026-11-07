@@ -327,6 +327,46 @@ func TestRegistryDecodesAndValidatesUsageSchema(t *testing.T) {
 	})
 }
 
+func TestRegistryDecodesGenerationProfiles(t *testing.T) {
+	source := routingTestPluginSource(
+		"generation-profile",
+		0,
+		`["ip233-minimax-h3"]`,
+		`generationProfiles: [{
+			models: ["ip233-minimax-h3"], kind: "video",
+			fields: [
+				{key: "seconds", labelKey: "Duration", type: "number", defaultValue: 4, min: 4, max: 15, valueType: "number", requestPath: ["duration"]},
+				{key: "resolution", labelKey: "Resolution", type: "select", defaultValue: "768p", options: [{value: "768p", label: "768p"}], requestPath: ["metadata", "resolution"]},
+			],
+		}],`,
+		"",
+	)
+	plugin, err := CompilePlugin(source, Options{})
+	require.NoError(t, err)
+
+	schema := plugin.Meta.GenerationForModels("video", "IP233-MINIMAX-H3")
+	require.NotNil(t, schema)
+	require.Len(t, schema.Fields, 2)
+	assert.Equal(t, "seconds", schema.Fields[0].Key)
+	assert.Equal(t, float64(4), schema.Fields[0].DefaultValue)
+	assert.Equal(t, []string{"metadata", "resolution"}, schema.Fields[1].RequestPath)
+
+	schema.Fields[1].Options[0].Value = "mutated"
+	unchanged := plugin.Meta.GenerationForModels("video", "ip233-minimax-h3")
+	require.NotNil(t, unchanged)
+	assert.Equal(t, "768p", unchanged.Fields[1].Options[0].Value)
+
+	invalid := routingTestPluginSource(
+		"generation-profile-invalid",
+		0,
+		`["model"]`,
+		`generationProfiles: [{models: ["model"], kind: "video", fields: [{key: "seconds", labelKey: "Duration", type: "number", defaultValue: 4, min: 5, max: 15, requestPath: ["duration"]}]}],`,
+		"",
+	)
+	_, err = CompilePlugin(invalid, Options{})
+	require.ErrorContains(t, err, "in-range default")
+}
+
 func TestUsageUnitLabelContract(t *testing.T) {
 	source := routingTestPluginSource("unit-label", 0, `["model"]`, `usageSchema: {
 		images: {type: "number", unit: "count", unitLabel: {EN: " image ", zh: "张"}},

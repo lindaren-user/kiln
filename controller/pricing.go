@@ -57,6 +57,7 @@ func GetPricing(c *gin.Context) {
 
 	usableGroup = service.GetUserUsableGroups(group)
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
+	priced := pricingWithUpstreams(pricing)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
 		if _, ok := usableGroup[group]; !ok {
@@ -66,7 +67,7 @@ func GetPricing(c *gin.Context) {
 
 	c.JSON(200, gin.H{
 		"success":            true,
-		"data":               pricing,
+		"data":               priced,
 		"vendors":            model.GetVendors(),
 		"group_ratio":        groupRatio,
 		"usable_group":       usableGroup,
@@ -74,6 +75,26 @@ func GetPricing(c *gin.Context) {
 		"auto_groups":        service.GetUserAutoGroup(group),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
+}
+
+type pricingWithUpstream struct {
+	model.Pricing
+	UpstreamModel string `json:"upstream_model,omitempty"`
+}
+
+func pricingWithUpstreams(pricing []model.Pricing) []pricingWithUpstream {
+	if pricing == nil {
+		return nil
+	}
+	upstreams := model.PublicModelUpstreams()
+	items := make([]pricingWithUpstream, len(pricing))
+	for i, item := range pricing {
+		items[i] = pricingWithUpstream{
+			Pricing:       item,
+			UpstreamModel: upstreams[item.ModelName],
+		}
+	}
+	return items
 }
 
 func ResetModelRatio(c *gin.Context) {

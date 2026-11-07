@@ -17,12 +17,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ApiKey } from '@/features/keys/types'
 
 import { GenerateComposer } from '../components/generate-composer'
 import { capabilityFor, defaultValues } from '../lib/capabilities'
+
+const imageSchema = {
+  fields: [
+    { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select' as const, defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
+    { key: 'count', labelKey: 'Count', type: 'select' as const, defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'] },
+  ],
+}
 
 const API_KEY: ApiKey = {
   id: 7,
@@ -44,16 +52,22 @@ const API_KEY: ApiKey = {
   allow_user_quota_query: false,
 }
 
-function renderComposer() {
-  const capability = capabilityFor('z-image', 'image')
-  render(
+/** The page owns the prompt; the harness stands in for it. */
+function Composer(props: {
+  model: string
+  capability: ReturnType<typeof capabilityFor>
+}) {
+  const [prompt, setPrompt] = useState('')
+  return (
     <GenerateComposer
-      modelItems={[{ value: 'z-image', label: 'z-image' }]}
-      model='z-image'
+      modelItems={[{ value: props.model, label: props.model }]}
+      model={props.model}
       promptPlaceholder='Describe what you want to create'
       onModelChange={vi.fn()}
-      capability={capability}
-      values={defaultValues(capability)}
+      capability={props.capability}
+      prompt={prompt}
+      onPromptChange={setPrompt}
+      values={defaultValues(props.capability)}
       onValueChange={vi.fn()}
       keys={[API_KEY]}
       selectedKeyId={API_KEY.id}
@@ -63,6 +77,11 @@ function renderComposer() {
       disabled={false}
     />
   )
+}
+
+function renderComposer() {
+  const capability = capabilityFor('image', imageSchema)
+  render(<Composer model='z-image' capability={capability} />)
 }
 
 function commonAncestor(elements: HTMLElement[]): HTMLElement {
@@ -94,46 +113,14 @@ describe('composer footer layout', () => {
   })
 
   it('keeps the prompt when the model changes', () => {
-    const first = capabilityFor('z-image', 'image')
-    const view = render(
-      <GenerateComposer
-        modelItems={[{ value: 'z-image', label: 'z-image' }]}
-        model='z-image'
-        promptPlaceholder='Describe what you want to create'
-        onModelChange={vi.fn()}
-        capability={first}
-        values={defaultValues(first)}
-        onValueChange={vi.fn()}
-        keys={[API_KEY]}
-        selectedKeyId={API_KEY.id}
-        onKeyChange={vi.fn()}
-        onSubmit={() => true}
-        busy={false}
-        disabled={false}
-      />
-    )
+    const first = capabilityFor('image', imageSchema)
+    const view = render(<Composer model='z-image' capability={first} />)
     const editor = screen.getByRole('textbox', { name: 'Prompt' })
     editor.textContent = 'keep this prompt'
     fireEvent.input(editor)
 
-    const next = capabilityFor('sora-2', 'video')
-    view.rerender(
-      <GenerateComposer
-        modelItems={[{ value: 'sora-2', label: 'sora-2' }]}
-        model='sora-2'
-        promptPlaceholder='Describe what you want to create'
-        onModelChange={vi.fn()}
-        capability={next}
-        values={defaultValues(next)}
-        onValueChange={vi.fn()}
-        keys={[API_KEY]}
-        selectedKeyId={API_KEY.id}
-        onKeyChange={vi.fn()}
-        onSubmit={() => true}
-        busy={false}
-        disabled={false}
-      />
-    )
+    const next = capabilityFor('video', { fields: [] })
+    view.rerender(<Composer model='sora-2' capability={next} />)
 
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveTextContent(
       'keep this prompt'
