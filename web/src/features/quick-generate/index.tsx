@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
-import { Download, TriangleAlert } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -34,6 +34,7 @@ import { submitVideo, uploadQuickGenerateReferences } from './api'
 import { GenerateComposer } from './components/generate-composer'
 import { MediaLightbox } from './components/media-lightbox'
 import { ResultPanel } from './components/result-panel'
+import { UsageNotice } from './components/usage-notice'
 import { useGenerationModels } from './hooks/use-generation-models'
 import {
   buildImageRequest,
@@ -461,34 +462,7 @@ export function QuickGenerate() {
             : 'Download the result first, or it will be lost.'
         )}
       />
-      <div className='border-border/70 bg-muted/30 flex shrink-0 items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5'>
-        <TriangleAlert
-          className='text-warning mt-0.5 size-4 shrink-0'
-          aria-hidden='true'
-        />
-        <ul className='list-disc space-y-1 pl-4'>
-          <li className='font-medium'>
-            {t(
-              'For testing only. Using this as a workbench is not recommended.'
-            )}
-          </li>
-          <li>
-            {t(
-              'Images are not saved: an image still generating is lost when you leave or reload this page. Download what you want to keep first.'
-            )}
-          </li>
-          <li>
-            {t(
-              'A video task keeps running while you are away: leave or reload this page and it is picked up again.'
-            )}
-          </li>
-          <li>
-            {t(
-              'If the video will not play here, open it from Task log → Artifacts.'
-            )}
-          </li>
-        </ul>
-      </div>
+      <UsageNotice />
 
       <div className='flex min-h-0 flex-1 flex-col gap-2'>
         {generation && generation.media.length > 0 && (
