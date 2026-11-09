@@ -134,9 +134,13 @@ export function usePricingColumns(
             </span>
           )
         }
+        // Same treatment as the card this table replaced, plus an explicit
+        // wrap: table cells are nowrap by default, and one unbreakable line
+        // widens the table and squeezes the price column until its amounts
+        // break mid-number.
         return (
           <span
-            className='text-warning line-clamp-2 text-sm leading-5 !font-semibold break-words'
+            className='text-muted-foreground line-clamp-2 text-[13px] leading-5 break-words whitespace-normal'
             title={description}
           >
             {description}
