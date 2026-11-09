@@ -27,7 +27,10 @@ import {
 import { isTokenBasedModel } from '@/features/pricing/lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '@/features/pricing/lib/price'
 import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
-import type { PricingModel } from '@/features/pricing/types'
+import type { BillingUsageSchema, PricingModel } from '@/features/pricing/types'
+
+import type { GenerationValues } from '../types'
+import type { ModelCapability } from './capabilities'
 
 /**
  * One short price for the model menu. Empty when the catalog has no price.
@@ -99,6 +102,30 @@ export type GenerationRunQuantity = {
   usage?: Record<string, string | number>
 }
 
+/** Converts selected generation controls into the facts the billing expression expects. */
+export function generationUsageFacts(
+  schema: BillingUsageSchema | undefined,
+  capability: ModelCapability,
+  values: GenerationValues | undefined
+): Record<string, string | number> | undefined {
+  if (!schema || !values) return undefined
+  const usage: Record<string, string | number> = {}
+  for (const field of capability.fields) {
+    const value = values[field.key]
+    if (value === undefined || value === '' || !schema[field.key]) continue
+    usage[field.key] =
+      field.type === 'number' || field.valueType === 'number'
+        ? Number(value)
+        : value
+  }
+  // Images are billed by the top-level `n`, which the page names `count`.
+  const count = values.count
+  if (schema.image_count && count !== undefined && count !== '') {
+    usage.image_count = Number(count)
+  }
+  return Object.keys(usage).length > 0 ? usage : undefined
+}
+
 /**
  * The exact price of the selected parameters for a task model, or null when
  * the expression cannot be evaluated here (no usage facts, a fixed price, or a
@@ -159,7 +186,12 @@ export function generationRunPrice(
   priceRate = 1,
   usdExchangeRate = 1
 ): string {
-  const exact = exactTaskPrice(model, quantities.usage, priceRate, usdExchangeRate)
+  const exact = exactTaskPrice(
+    model,
+    quantities.usage,
+    priceRate,
+    usdExchangeRate
+  )
   if (exact !== null) return exact
   const dynamic = getDynamicPricingSummary(model, {
     tokenUnit: 'M',

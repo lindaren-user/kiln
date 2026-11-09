@@ -20,7 +20,12 @@ import { describe, expect, it } from 'vitest'
 
 import type { PricingModel } from '@/features/pricing/types'
 
-import { generationModelPrice, generationRunPrice } from '../lib/model-price'
+import type { ModelCapability } from '../lib/capabilities'
+import {
+  generationModelPrice,
+  generationRunPrice,
+  generationUsageFacts,
+} from '../lib/model-price'
 
 const t = (key: string) => key
 
@@ -127,6 +132,53 @@ describe('generation model price', () => {
         { seconds: 5 }
       )
     ).toBe('$1')
+  })
+
+  it('prices the selected resolution when duration is a numeric select field', () => {
+    const capability: ModelCapability = {
+      kind: 'video',
+      fields: [
+        {
+          key: 'seconds',
+          labelKey: 'Duration',
+          type: 'select',
+          valueType: 'number',
+          requestPath: ['duration'],
+          defaultValue: '4',
+          options: [{ value: '4', label: '4' }],
+        },
+        {
+          key: 'resolution',
+          labelKey: 'Resolution',
+          type: 'select',
+          requestPath: ['metadata', 'resolution'],
+          defaultValue: '720p',
+          options: [{ value: '720p', label: '720p' }],
+        },
+      ],
+      referenceImages: null,
+      mediaNotice: false,
+    }
+    const source = model({
+      billing_mode: 'tiered_expr',
+      billing_expr:
+        'u("resolution") == "480p" ? tier("480p", u("seconds") * 0.221) : tier("720p", u("seconds") * 0.325)',
+      billing_usage_schema: {
+        seconds: { type: 'number', unit: 'second' },
+        resolution: { enum: ['480p', '720p'] },
+      },
+    })
+    const usage = generationUsageFacts(
+      source.billing_usage_schema,
+      capability,
+      {
+        seconds: '4',
+        resolution: '720p',
+      }
+    )
+
+    expect(usage).toEqual({ seconds: 4, resolution: '720p' })
+    expect(generationRunPrice(source, { seconds: 4, usage })).toBe('$1.3')
   })
 
   it('prices one image run from the requested count', () => {

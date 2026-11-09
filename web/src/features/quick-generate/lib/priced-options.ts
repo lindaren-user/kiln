@@ -30,16 +30,21 @@ import type { ModelCapability } from './capabilities'
  */
 export function pricedUsageValues(
   model: PricingModel,
-  field: string
+  field: string,
+  availableValues?: readonly string[]
 ): Set<string> | null {
-  if (!model.billing_usage_schema?.[field]?.enum?.length) return null
+  const usageSchema = model.billing_usage_schema
+  if (!usageSchema?.[field]?.enum?.length) return null
+  const schema = availableValues?.length
+    ? {
+        ...usageSchema,
+        [field]: { ...usageSchema[field], enum: [...availableValues] },
+      }
+    : usageSchema
   const expression = model.billing_expr?.trim()
   if (!expression) return null
   const values = new Set<string>()
-  for (const tier of getTaskPricingDisplayTiers(
-    expression,
-    model.billing_usage_schema
-  )) {
+  for (const tier of getTaskPricingDisplayTiers(expression, schema)) {
     const priced =
       tier.constant > 0 ||
       Object.values(tier.unitPrices).some((price) => price > 0)
@@ -64,7 +69,11 @@ export function restrictToPricedOptions(
   const fields = capability.fields.map((field) => {
     const options = field.options
     if (field.type !== 'select' || !options?.length) return field
-    const priced = pricedUsageValues(model, field.key)
+    const priced = pricedUsageValues(
+      model,
+      field.key,
+      options.map((option) => option.value)
+    )
     if (!priced) return field
     const kept = options.filter((option) => priced.has(option.value))
     if (kept.length === 0 || kept.length === options.length) return field

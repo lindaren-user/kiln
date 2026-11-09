@@ -85,6 +85,25 @@ describe('priced option filtering', () => {
     expect([...(priced ?? [])].sort()).toEqual(['1080P', '720P'])
   })
 
+  it('keeps the model-supported fallback tier when the billing enum has extra values', () => {
+    const capability = restrictToPricedOptions(
+      model({
+        billing_mode: 'tiered_expr',
+        billing_expr:
+          'u("resolution") == "480p" ? tier("480p", u("seconds") * 0.221) : tier("720p", u("seconds") * 0.325)',
+        billing_usage_schema: {
+          seconds: { type: 'number', unit: 'second' },
+          resolution: { enum: ['480p', '720p', '768p'] },
+        },
+      }),
+      videoCapability(['480p', '720p'])
+    )
+
+    expect(
+      capability.fields[0]?.options?.map((option) => option.value)
+    ).toEqual(['480p', '720p'])
+  })
+
   it('reads resolutions nested inside a per-second coefficient', () => {
     const capability = restrictToPricedOptions(
       model({

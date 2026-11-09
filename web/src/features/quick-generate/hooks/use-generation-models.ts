@@ -29,37 +29,13 @@ import type { PricingModel } from '@/features/pricing/types'
 
 import type { ModelCapability } from '../lib/capabilities'
 import {
+  generationUsageFacts,
   generationModelPrice,
   generationRunPrice,
   type GenerationRunQuantity,
 } from '../lib/model-price'
 import { restrictToPricedOptions } from '../lib/priced-options'
 import type { GenerationKind, GenerationValues } from '../types'
-
-/**
- * The usage facts the selected controls produce, so the run price reflects the
- * chosen resolution instead of the cheapest to the dearest tier.
- */
-function usageFrom(
-  model: PricingModel,
-  capability: ModelCapability,
-  values: GenerationValues | undefined
-): Record<string, string | number> | undefined {
-  const schema = model.billing_usage_schema
-  if (!schema || !values) return undefined
-  const usage: Record<string, string | number> = {}
-  for (const field of capability.fields) {
-    const value = values[field.key]
-    if (value === undefined || value === '' || !schema[field.key]) continue
-    usage[field.key] = field.type === 'number' ? Number(value) : value
-  }
-  // Images are billed by the top-level `n`, which the page names `count`.
-  const count = values.count
-  if (schema.image_count && count !== undefined && count !== '') {
-    usage.image_count = Number(count)
-  }
-  return Object.keys(usage).length > 0 ? usage : undefined
-}
 
 export type GenerationModel = {
   name: string
@@ -171,7 +147,11 @@ export function useGenerationModels() {
         model.source,
         {
           ...quantities,
-          usage: usageFrom(model.source, model.capability, values),
+          usage: generationUsageFacts(
+            model.source.billing_usage_schema,
+            model.capability,
+            values
+          ),
         },
         pricing.priceRate,
         pricing.usdExchangeRate
