@@ -90,6 +90,61 @@ export function filterMentionFiles(
   )
 }
 
-export function mentionLabel(file: MentionFile, fallback: string): string {
+export function mentionLabel(
+  file: { filename?: string },
+  fallback: string
+): string {
   return `@${file.filename || fallback}`
+}
+
+/** A mention is a whole token: it starts and ends at a space or another @. */
+const MENTION_EDGE = /[\s@]/
+
+/**
+ * Replaces every @file mention with the label for that reference's kind and
+ * its position among the references of the same kind, so the prompt reads
+ * "图片1", "音频1" instead of carrying local file names to the vendor. A file
+ * mentioned twice keeps one number, and a mention with no matching file is
+ * left alone.
+ */
+export function numberMentionTokens(
+  text: string,
+  files: { filename?: string; mediaType?: string }[],
+  fallback: string,
+  label: (kind: ReferenceKind, index: number) => string
+): string {
+  const labels = new Map<string, string>()
+  const counts: Record<ReferenceKind, number> = {
+    image: 0,
+    audio: 0,
+    video: 0,
+    file: 0,
+  }
+  for (const file of files) {
+    const kind = referenceKind(file)
+    counts[kind] += 1
+    const mention = mentionLabel(file, fallback)
+    if (!labels.has(mention)) labels.set(mention, label(kind, counts[kind]))
+  }
+  if (labels.size === 0) return text
+  // A shorter name that prefixes a longer one must not win the match.
+  const mentions = [...labels.keys()].sort((a, b) => b.length - a.length)
+  let out = ''
+  let at = 0
+  while (at < text.length) {
+    if (text[at] === '@' && (at === 0 || MENTION_EDGE.test(text[at - 1]))) {
+      const mention = mentions.find((candidate) =>
+        text.startsWith(candidate, at)
+      )
+      const after = mention ? text[at + mention.length] : undefined
+      if (mention && (after === undefined || MENTION_EDGE.test(after))) {
+        out += labels.get(mention)
+        at += mention.length
+        continue
+      }
+    }
+    out += text[at]
+    at += 1
+  }
+  return out
 }

@@ -28,6 +28,7 @@ import {
   activeMentionQuery,
   filterMentionFiles,
   mentionMark,
+  numberMentionTokens,
   referenceKind,
 } from '../lib/file-mention'
 
@@ -51,6 +52,56 @@ describe('file mention query', () => {
       '1',
       '2',
     ])
+  })
+})
+
+describe('mention numbering', () => {
+  const label = (kind: string, index: number) => `${kind}${index}`
+
+  it('numbers mentions by kind in attachment order', () => {
+    const files = [
+      { filename: 'cat.png' },
+      { filename: 'voice.mp3' },
+      { filename: 'dog.png' },
+    ]
+
+    expect(
+      numberMentionTokens(
+        '@cat.png then @voice.mp3 and @dog.png',
+        files,
+        'Image',
+        label
+      )
+    ).toBe('image1 then audio1 and image2')
+  })
+
+  it('keeps one number for a file mentioned twice', () => {
+    expect(
+      numberMentionTokens(
+        '@cat.png meets @cat.png',
+        [{ filename: 'cat.png' }],
+        'Image',
+        label
+      )
+    ).toBe('image1 meets image1')
+  })
+
+  it('leaves an unknown mention and a longer token alone', () => {
+    expect(
+      numberMentionTokens(
+        '@cat.pngx mail@cat.png @other.png',
+        [{ filename: 'cat.png' }],
+        'Image',
+        label
+      )
+    ).toBe('@cat.pngx mail@cat.png @other.png')
+  })
+
+  it('uses the fallback name for a file without one', () => {
+    // A file whose type is unknown is numbered with the plain-file label.
+    expect(
+      numberMentionTokens('@Image holds', [{}], 'Image', label)
+    ).toBe('file1 holds')
   })
 })
 

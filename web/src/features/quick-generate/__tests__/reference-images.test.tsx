@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApiKey } from '@/features/keys/types'
@@ -27,6 +28,7 @@ import {
   loadReferenceFiles,
   saveReferenceFiles,
 } from '../lib/reference-storage'
+import type { ReferenceAttachment } from '../types'
 
 // IndexedDB is the boundary this component talks to; the module around it is
 // tested against the real storage in a browser only.
@@ -105,6 +107,70 @@ function dropFiles(files: File[]) {
   if (!(form instanceof HTMLFormElement)) throw new Error('composer form')
   fireEvent.drop(form, { dataTransfer: { files, types: ['Files'] } })
 }
+
+/** A composer whose prompt is editable, so a typed mention reaches submit. */
+function SubmitHarness(props: {
+  onSubmit: (prompt: string, references: ReferenceAttachment[]) => void
+}) {
+  const [prompt, setPrompt] = useState('')
+  const capability = capabilityFor('video', {
+    fields: [],
+    mediaNotice: true,
+    referenceImages: { max: 3, field: 'images', encoding: 'dataUrl' },
+  })
+  return (
+    <GenerateComposer
+      modelItems={[{ value: 'wan3.0-video', label: 'wan3.0-video' }]}
+      model='wan3.0-video'
+      promptPlaceholder='Describe what you want to create'
+      onModelChange={vi.fn()}
+      capability={capability}
+      prompt={prompt}
+      onPromptChange={setPrompt}
+      values={defaultValues(capability)}
+      onValueChange={vi.fn()}
+      keys={[API_KEY]}
+      selectedKeyId={API_KEY.id}
+      onKeyChange={vi.fn()}
+      onSubmit={(value, references) => {
+        props.onSubmit(value, references)
+        return true
+      }}
+      busy={false}
+      disabled={false}
+    />
+  )
+}
+
+describe('submitting mentions', () => {
+  it('refers to the references by kind and number', async () => {
+    const onSubmit = vi.fn()
+    render(<SubmitHarness onSubmit={onSubmit} />)
+    await waitFor(() => expect(loadReferenceFilesMock).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText('Upload files'), {
+      target: {
+        files: [
+          new File(['a'], 'cat.png', { type: 'image/png' }),
+          new File(['b'], 'voice.mp3', { type: 'audio/mpeg' }),
+        ],
+      },
+    })
+
+    const editor = screen.getByRole('textbox', { name: 'Prompt' })
+    editor.textContent = 'animate @cat.png with @voice.mp3'
+    fireEvent.input(editor)
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.lastCall?.[0]).toBe('animate Image 1 with Audio 1')
+    expect(
+      onSubmit.mock.lastCall?.[1].map(
+        (reference: ReferenceAttachment) => reference.filename
+      )
+    ).toEqual(['cat.png', 'voice.mp3'])
+  })
+})
 
 describe('reference persistence', () => {
   const IMAGE_REFERENCE = {

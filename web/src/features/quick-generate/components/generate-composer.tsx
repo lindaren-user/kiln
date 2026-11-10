@@ -45,7 +45,9 @@ import { cn } from '@/lib/utils'
 import type { ModelCapability, ParamField } from '../lib/capabilities'
 import {
   acceptedReferenceKinds,
+  numberMentionTokens,
   referenceKind,
+  type ReferenceKind,
 } from '../lib/file-mention'
 import {
   loadReferenceFiles,
@@ -187,6 +189,18 @@ function ParamNumber(props: ParamNumberProps) {
 const REFERENCE_IMAGE_TYPES = 'image/*'
 const REFERENCE_VIDEO_AUDIO_TYPES = 'video/*,audio/*'
 const MAX_REFERENCE_MEDIA_BYTES = 100 * 1024 * 1024
+
+/**
+ * How a prompt refers to a reference: the kind and its number within that
+ * kind, because the vendor receives the media as an ordered list and never
+ * sees the local file names.
+ */
+const MENTION_LABEL_KEYS: Record<ReferenceKind, string> = {
+  image: 'Image {{index}}',
+  audio: 'Audio {{index}}',
+  video: 'Video {{index}}',
+  file: 'File {{index}}',
+}
 
 /** Opens the image picker. Dragging onto the prompt does the same. */
 function AddReferenceImage(props: { disabled?: boolean }) {
@@ -364,15 +378,22 @@ export function GenerateComposer(props: GenerateComposerProps) {
     [acceptsReferences]
   )
   const handleSubmit = (message: PromptInputMessage) => {
-    const prompt = message.text?.trim() ?? ''
+    const files = (message.files ?? []).filter((file) => Boolean(file.url))
+    // The chip keeps the file name for editing, but the request refers to the
+    // references by kind and number: "图片1" for the first image, "音频1" for
+    // the first audio, and so on.
+    const prompt = numberMentionTokens(
+      message.text?.trim() ?? '',
+      files,
+      t('Image'),
+      (kind, index) => t(MENTION_LABEL_KEYS[kind], { index })
+    )
     if (!prompt || !ready) return
-    const references = (message.files ?? [])
-      .filter((file) => Boolean(file.url))
-      .map((file) => ({
-        url: file.url,
-        mediaType: file.mediaType ?? 'application/octet-stream',
-        filename: file.filename,
-      }))
+    const references = files.map((file) => ({
+      url: file.url,
+      mediaType: file.mediaType ?? 'application/octet-stream',
+      filename: file.filename,
+    }))
     props.onSubmit(prompt, references)
     // Keep the prompt and the files. PromptInput clears attachments when
     // submit resolves, so this rejection leaves them in place.
