@@ -1,7 +1,7 @@
 // Vimo AI open API (https://vimo.asia/developers). One key serves every model
 // on the site, and a video is a task:
 //   POST /videos/generations          create (201)
-//   GET  /videos/generations/{id}     queued / in_progress / completed / failed
+//   GET  /videos/generations/{id}     queued / in_progress / completed / failed / cancelled
 //   GET  /api/tasks/{id}/content      the file behind video_url
 // video_url is a Vimo proxy address that downloads only with the same key, so
 // the task keeps the gateway's own artifact address and the content is fetched
@@ -24,34 +24,31 @@ const ASPECTS_6 = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const MODES_ALL = ["text", "image", "reference"];
 const MODES_TEXT_REF = ["text", "reference"];
 
-// GET /models on 2026-11-09: the duration range, ratios, resolutions, modes
+// GET /models on 2026-11-10: the duration range, ratios, resolutions, modes
 // and reference limits each video tier publishes. Vimo validates all of them,
-// so the request is checked against this table before it is sent.
+// so the request is checked against this table before it is sent. The catalog
+// is the only source of these ids; re-read it when a tier starts failing.
 const VIDEO_MODELS = {
-  "V": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "v6k-dola2-0": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 9, audios: 0, videos: 0 },
-  "v6k-seadanco2-5-720-2": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  // Absent from GET /models on some days through an upstream catalog bug, but
-  // channels already map model names to it, so it stays declared here. Its
-  // reference allowance is the one the other 2.5 tiers publish; the catalog
-  // omits the entry itself, so it is not observed for this tier.
-  "langzhen-sd2-5-m": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "v6k-seadanco2-5-720-30": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "jijiu-full-sd2-5-30-10": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 0 },
-  "v6k-kkseadanco2-5": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "gway-seedance-2-5-g4": { min: 5, max: 30, resolutions: ["480P", "720P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 30, audios: 10, videos: 10, perSecond: true },
-  "v6k-seadnco2-5-720": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "jijiu-SD2.5特价301010线路一": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "gway-seedance-2-5-g5-v2": { min: 5, max: 30, resolutions: ["720P", "1080P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "jijiu-full-seedance-2-5-d": { min: 4, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10, perSecond: true },
-  "jijiu-SD2.0特价稳定903z": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 9, audios: 3, videos: 0, perSecond: true },
-  "image2pro-seedance2-0": { min: 15, max: 15, resolutions: ["480P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 9, audios: 3, videos: 0 },
-  "blobdraw-Seedance2.5-HH渠道A": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
-  "gway-seedance-2-5-g2-1": { min: 5, max: 30, resolutions: ["720P", "480P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 0, perSecond: true },
-  "gway-seedance-2-5-g1": { min: 5, max: 30, resolutions: ["480P", "720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10, perSecond: true },
-  "gway-wan3-0": { min: 5, max: 30, resolutions: ["480P", "720P", "1080P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 10, audios: 5, videos: 0, perSecond: true },
-  "gway-seedance-2-0-g4": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 9, audios: 3, videos: 3, perSecond: true },
-  "gway-seedance2-0-g5-v2": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 9, audios: 3, videos: 3 },
+  "V-特价满血SD2.5-720": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "V-稳定seadanco2.5-720【主打】": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "V-稳定极速seadanco2.5-720-30图": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "V-seedance2.5-301010": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "JT-seedance-2.5【官转】": { min: 5, max: 30, resolutions: ["480P", "720P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 30, audios: 10, videos: 10, perSecond: true },
+  "V-极速seadnco2.5-720-301010": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "JT-seedance-2.5-v2": { min: 5, max: 30, resolutions: ["720P", "1080P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "I-Seedance2.0": { min: 15, max: 15, resolutions: ["480P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 9, audios: 3, videos: 0 },
+  "BB-Seedance2.5  301010": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 30, audios: 10, videos: 10 },
+  "JT-seedance-2.5【稳定】": { min: 5, max: 30, resolutions: ["720P", "480P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 0, perSecond: true },
+  "JT-seedance-2.5": { min: 5, max: 30, resolutions: ["480P", "720P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 10, perSecond: true },
+  "JT-wan3-Prime": { min: 2, max: 30, resolutions: ["720P", "1080P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 10, audios: 5, videos: 5, perSecond: true },
+  "JT-wan3-特惠": { min: 2, max: 30, resolutions: ["1080P"], aspects: ASPECTS_2, modes: MODES_ALL, images: 10, audios: 5, videos: 5 },
+  "JT-wan3.0-超限": { min: 5, max: 30, resolutions: ["480P", "720P", "1080P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 10, audios: 5, videos: 0, perSecond: true },
+  "JT-seedance-2.0-g4【满血】": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 9, audios: 3, videos: 3, perSecond: true },
+  "JT-seedance2.0【官】": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 9, audios: 3, videos: 3 },
+  "V-SD2.0": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_TEXT_REF, images: 9, audios: 3, videos: 0 },
+  "V-SD2.0【满血】": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 9, audios: 3, videos: 3 },
+  "JT-seedance-2.5【总数不超30】": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 30, audios: 10, videos: 10 },
+  "SD2.5-【超级特价】-JTv4": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 9, audios: 3, videos: 0 },
 };
 
 const VIDEO_MODEL_NAMES = Object.keys(VIDEO_MODELS);
@@ -87,7 +84,7 @@ export const meta = {
     en: "Video generation through Vimo AI",
     zh: "通过 Vimo AI 生成视频",
   },
-  version: "1.0.0",
+  version: "1.1.0",
   author: { name: "Kiln" },
   website: "https://vimo.asia",
   baseUrl: "https://vimo.asia/api/v1",
