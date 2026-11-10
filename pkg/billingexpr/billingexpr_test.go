@@ -61,7 +61,7 @@ func TestFixedPriceRejectsInvalidLeavesIncludingUnselectedBranches(t *testing.T)
 	}
 }
 
-func TestFixedPriceQuotaBoundariesAndUnsupportedTaskSnapshots(t *testing.T) {
+func TestFixedPriceQuotaBoundariesAndTaskSnapshots(t *testing.T) {
 	for _, tc := range []struct {
 		name, expression string
 		group            float64
@@ -86,13 +86,17 @@ func TestFixedPriceQuotaBoundariesAndUnsupportedTaskSnapshots(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+			// A task that settles on a fixed leaf charges the same per-request
+			// price as an ordinary request.
 			snap.TaskUsageBilling = true
-			_, err = billingexpr.ComputeTieredQuota(snap, billingexpr.TokenParams{})
-			require.ErrorContains(t, err, "task usage")
+			taskResult, err := billingexpr.ComputeTieredQuota(snap, billingexpr.TokenParams{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, taskResult.ActualQuotaAfterGroup)
+			assert.Equal(t, billingexpr.BillingUnitRequest, taskResult.BillingUnit)
 		})
 	}
 	const optimized = `true ? tier("tokens", p) : tier("request", fixed(0.01))`
-	assert.True(t, billingexpr.UsesFixedPricing(optimized))
+	assert.True(t, billingexpr.UsesFixedPricingByHash(optimized, billingexpr.ExprHashString(optimized)))
 	_, trace, err := billingexpr.RunExpr(optimized, billingexpr.TokenParams{P: 10})
 	require.NoError(t, err)
 	assert.Equal(t, billingexpr.BillingUnitToken, trace.BillingUnit)

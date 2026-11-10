@@ -7,13 +7,10 @@ import (
 	"github.com/expr-lang/expr/ast"
 )
 
-// UsesFixedPricing includes unselected branches, even when compilation later
-// optimizes them away. Hosts use it to reject unsupported billing entrances.
-func UsesFixedPricing(expression string) bool {
-	return UsesFixedPricingByHash(expression, ExprHashString(expression))
-}
-
-// UsesFixedPricingByHash avoids hashing an expression already in a snapshot.
+// UsesFixedPricingByHash includes unselected branches, even when compilation
+// later optimizes them away. Hosts use it to reject unsupported billing
+// entrances (for example Realtime). The hash argument avoids rehashing an
+// expression already held by a snapshot.
 func UsesFixedPricingByHash(expression, hash string) bool {
 	entry, err := compileEntryFromCacheByHash(expression, hash)
 	return err == nil && entry.fixedPricing

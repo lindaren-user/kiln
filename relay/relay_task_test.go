@@ -421,7 +421,7 @@ func TestSharedTaskBillingExpressionSelectionAndFrozenSettlement(t *testing.T) {
 	for _, tc := range []struct {
 		name, plugin, model, mapping, modelExpr, mode, wantExpr string
 		variants                                                map[string]string
-		wantPriceError, profiled                                bool
+		wantPriceError, profiled, fixedPrice                    bool
 	}{
 		{name: "executing plugin override", plugin: "billing-beta", model: "declared-model", modelExpr: baseExpr, mode: "tiered_expr", variants: map[string]string{"billing-alpha::declared-model": alphaExpr, "billing-beta::declared-model": betaExpr}, wantExpr: betaExpr},
 		{name: "override ignores model mode", plugin: "billing-beta", model: "declared-model", modelExpr: baseExpr, mode: "ratio", variants: map[string]string{"billing-beta::declared-model": betaExpr}, wantExpr: betaExpr},
@@ -430,7 +430,7 @@ func TestSharedTaskBillingExpressionSelectionAndFrozenSettlement(t *testing.T) {
 		{name: "mapped override precedes model fallback", plugin: "billing-beta", model: "alias-model", mapping: `{"alias-model":"declared-model"}`, modelExpr: baseExpr, mode: "tiered_expr", variants: map[string]string{"billing-beta::declared-model": betaExpr}, wantExpr: betaExpr},
 		{name: "unconfigured plugin cannot use another schema", plugin: "billing-beta", model: "declared-model", modelExpr: baseExpr, mode: "tiered_expr", wantPriceError: true},
 		{name: "missing usage in skipped branch remains incompatible", plugin: "billing-beta", model: "declared-model", modelExpr: `true ? tier("free", 0) : tier("missing", u("seconds"))`, mode: "tiered_expr", wantPriceError: true},
-		{name: "fixed pricing is still rejected", plugin: "billing-beta", model: "declared-model", variants: map[string]string{"billing-beta::declared-model": `tier("fixed", fixed(1))`}, wantPriceError: true},
+		{name: "fixed pricing bills the task per request", plugin: "billing-beta", model: "declared-model", variants: map[string]string{"billing-beta::declared-model": `tier("fixed", fixed(1))`}, wantExpr: `tier("fixed", fixed(1))`, fixedPrice: true},
 		{name: "endpoint mapping keeps the declared profile", plugin: "billing-beta", model: "declared-model", mapping: `{"declared-model":"ep-endpoint"}`, modelExpr: baseExpr, mode: "tiered_expr", variants: map[string]string{"billing-beta::declared-model": betaExpr}, wantExpr: betaExpr, profiled: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -489,7 +489,16 @@ func TestSharedTaskBillingExpressionSelectionAndFrozenSettlement(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, float64(4), usage[field])
 			assert.Equal(t, float64(2), info.TieredBillingSnapshot.UsageFacts[field])
-			assert.Equal(t, 2*info.TieredBillingSnapshot.EstimatedQuotaAfterGroup, result.ActualQuotaAfterGroup)
+			if tc.fixedPrice {
+				assert.Equal(t, billingexpr.BillingUnitRequest, info.TieredBillingSnapshot.EstimatedBillingUnit)
+				require.NotNil(t, info.TieredBillingSnapshot.EstimatedFixedPrice)
+				assert.Equal(t, 1.0, *info.TieredBillingSnapshot.EstimatedFixedPrice)
+				assert.Equal(t, common.QuotaPerUnit, info.TieredBillingSnapshot.EstimatedQuotaBeforeGroup)
+				// A fixed task price ignores the completion facts.
+				assert.Equal(t, info.TieredBillingSnapshot.EstimatedQuotaAfterGroup, result.ActualQuotaAfterGroup)
+			} else {
+				assert.Equal(t, 2*info.TieredBillingSnapshot.EstimatedQuotaAfterGroup, result.ActualQuotaAfterGroup)
+			}
 			assert.Equal(t, tc.wantExpr, info.TieredBillingSnapshot.ExprString)
 		})
 	}

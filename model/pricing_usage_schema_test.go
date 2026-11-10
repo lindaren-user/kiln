@@ -314,9 +314,9 @@ func TestPricingSharedPluginVariantsUseEachSchemaAndExpression(t *testing.T) {
 
 // Prices saved while a plugin fit stop fitting when it changes: a dropped model
 // leaves its provider price stale, and a new provider without the usage the
-// model expression reads cannot charge it. Unpriced models are listed too,
-// including those whose only expression prices ordinary channels. Only stale
-// prices count for a model no enabled channel serves under any spelling.
+// model expression reads cannot charge it. Unpriced models are listed too; a
+// fixed per-request expression counts as a valid task price. Only stale prices
+// count for a model no enabled channel serves under any spelling.
 func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 	require.NoError(t, DB.AutoMigrate(&Option{}))
@@ -347,7 +347,6 @@ func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
 		billing_setting.PluginBillingExprOption: `{"issue-alpha::issue-dropped":"u(\"seconds\") * 0.5"}`,
 	})
 	unpriced := ModelPricingIssue{ModelName: "issue-unpriced", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueUnconfigured}
-	ordinary := ModelPricingIssue{ModelName: "issue-ordinary", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueUnconfigured}
 	// Other tests leave their plugins in the shared registry.
 	ownIssues := func() []ModelPricingIssue {
 		issues, err := GetModelPricingIssues("")
@@ -370,7 +369,7 @@ func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
 	require.NoError(t, DB.Create(&Ability{Group: "default", Model: "issue-idle", ChannelId: 940, Enabled: false}).Error)
 	InitChannelCache()
 
-	assert.Equal(t, []ModelPricingIssue{ordinary, unpriced}, ownIssues())
+	assert.Equal(t, []ModelPricingIssue{unpriced}, ownIssues())
 
 	// Beta also declares the dropped model, which no channel serves: its
 	// unpriced variant is not an issue, while Alpha's stale price still is.
@@ -383,7 +382,6 @@ func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
 
 	assert.Equal(t, []ModelPricingIssue{
 		{ModelName: "issue-dropped", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueStale},
-		ordinary,
 		incompatible,
 		unpriced,
 	}, ownIssues())

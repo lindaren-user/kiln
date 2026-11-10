@@ -26,10 +26,14 @@ func TestSmokeTestTaskExprValidatesDeclaredUsageVectors(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name:          "fixed prices are not task usage prices",
-			schema:        videoSchema,
-			expression:    `true ? tier("normal", u("seconds") * 0.4) : tier("fixed", fixed(0.01))`,
-			expectedError: "fixed pricing is not supported for task usage expressions",
+			name:       "fixed branch prices a task per request",
+			schema:     videoSchema,
+			expression: `true ? tier("normal", u("seconds") * 0.4) : tier("fixed", fixed(0.01))`,
+		},
+		{
+			name:       "pure fixed task price needs no usage facts",
+			schema:     videoSchema,
+			expression: `tier("fixed", fixed(8.5))`,
 		},
 		{
 			name:       "declared numeric and enum facts",

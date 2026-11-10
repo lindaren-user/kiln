@@ -439,8 +439,7 @@ func GetModelPricingIssues(pluginKey string) ([]ModelPricingIssue, error) {
 				reason = ModelPricingIssueStale
 			case !served[entry.ModelName], variant.Compatible:
 				continue
-			// fixed() marks ordinary channel pricing: the provider has no task price.
-			case variant.Effective != "" && !billingexpr.UsesFixedPricing(variant.Effective):
+			case variant.Effective != "":
 				reason = ModelPricingIssueIncompatible
 			case perCall:
 				continue

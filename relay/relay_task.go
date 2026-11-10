@@ -263,9 +263,6 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	useTiered := exists || billing_setting.GetBillingMode(modelName) == billing_setting.BillingModeTieredExpr
 	if useTiered {
 		provider, supported := adaptor.(channel.TaskUsageFactsProvider)
-		if billingexpr.UsesFixedPricing(exprStr) {
-			return nil, service.TaskErrorWrapper(fmt.Errorf("fixed pricing is not supported for task usage expressions"), "model_price_error", http.StatusBadRequest, common.UpstreamAddresses(c)...)
-		}
 		if !exists || !supported {
 			return nil, service.TaskErrorWrapper(fmt.Errorf("task model %s has no usage expression or meter", modelName), "model_price_error", http.StatusBadRequest, common.UpstreamAddresses(c)...)
 		}
@@ -285,18 +282,40 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		} else {
 			facts = provider.ExtractUsageFacts(c, info)
 		}
-		cost, trace, runErr := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
-		if runErr != nil || cost < 0 {
+		groupRatioInfo := helper.HandleGroupRatio(c, info)
+		snapshot := &billingexpr.BillingSnapshot{
+			BillingMode:      billing_setting.BillingModeTieredExpr,
+			ModelName:        modelName,
+			ExprString:       exprStr,
+			ExprHash:         billingexpr.ExprHashString(exprStr),
+			GroupRatio:       groupRatioInfo.GroupRatio,
+			QuotaPerUnit:     common.QuotaPerUnit,
+			ExprVersion:      billingexpr.ExprVersion(exprStr),
+			TaskUsageBilling: true,
+			UsageFacts:       facts,
+		}
+		// The reservation and the completion settlement share one expression
+		// entry, so fixed and usage-priced leaves cannot drift apart.
+		result, runErr := billingexpr.ComputeTieredQuotaWithRequest(snapshot, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: facts})
+		if runErr != nil || result.ActualQuotaBeforeGroup < 0 {
 			if runErr == nil {
 				runErr = fmt.Errorf("negative task expression result")
 			}
 			return nil, service.TaskErrorWrapper(runErr, "model_price_error", http.StatusBadRequest, common.UpstreamAddresses(c)...)
 		}
-		groupRatioInfo := helper.HandleGroupRatio(c, info)
-		quota, clamp := common.QuotaRoundChecked(cost * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
-		noteTaskQuotaClamp(info, clamp)
-		priceData = types.PriceData{Quota: quota, QuotaToPreConsume: quota, GroupRatioInfo: groupRatioInfo}
-		info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: billing_setting.BillingModeTieredExpr, ModelName: modelName, ExprString: exprStr, ExprHash: billingexpr.ExprHashString(exprStr), GroupRatio: groupRatioInfo.GroupRatio, EstimatedQuotaBeforeGroup: cost * common.QuotaPerUnit, EstimatedQuotaAfterGroup: quota, EstimatedTier: trace.MatchedTier, QuotaPerUnit: common.QuotaPerUnit, ExprVersion: billingexpr.ExprVersion(exprStr), TaskUsageBilling: true, UsageFacts: facts}
+		snapshot.EstimatedImageCount = result.ImageCount
+		snapshot.EstimatedQuotaBeforeGroup = result.ActualQuotaBeforeGroup
+		snapshot.EstimatedQuotaAfterGroup = result.ActualQuotaAfterGroup
+		snapshot.EstimatedTier = result.MatchedTier
+		if result.BillingUnit == billingexpr.BillingUnitRequest {
+			// Billing-unit metadata describes request-priced leaves only; task
+			// usage expressions settle in USD and are not token-metered.
+			snapshot.EstimatedBillingUnit = result.BillingUnit
+			snapshot.EstimatedFixedPrice = result.FixedPrice
+		}
+		noteTaskQuotaClamp(info, result.Clamp)
+		priceData = types.PriceData{Quota: result.ActualQuotaAfterGroup, QuotaToPreConsume: result.ActualQuotaAfterGroup, GroupRatioInfo: groupRatioInfo}
+		info.TieredBillingSnapshot = snapshot
 	} else {
 		priceData, err = helper.ModelPriceHelperPerCall(c, info)
 		if err != nil {

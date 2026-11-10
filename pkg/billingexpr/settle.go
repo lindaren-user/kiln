@@ -1,22 +1,18 @@
 package billingexpr
 
 import (
-	"fmt"
-
 	"github.com/QuantumNous/new-api/common"
 )
 
-// quotaConversion converts raw expression output to quota based on the
-// expression version. This is the central dispatch point for future versions
-// that may use a different conversion formula.
-func quotaConversion(exprOutput float64, snap *BillingSnapshot) float64 {
-	if snap.TaskUsageBilling {
-		return exprOutput * snap.QuotaPerUnit
+// QuotaConversion converts raw expression output to quota before the group
+// ratio. Task usage expressions return USD directly, while fixed per-request
+// prices (and every non-task expression) carry the v1 ×1e6 scaling, so the
+// same fixed amount means the same money in both billing entrances.
+func QuotaConversion(exprOutput float64, trace TraceResult, taskUsageBilling bool, quotaPerUnit float64) float64 {
+	if taskUsageBilling && trace.BillingUnit != BillingUnitRequest {
+		return exprOutput * quotaPerUnit
 	}
-	switch snap.ExprVersion {
-	default: // v1: coefficients are $/1M tokens prices
-		return exprOutput / 1_000_000 * snap.QuotaPerUnit
-	}
+	return exprOutput / 1_000_000 * quotaPerUnit
 }
 
 // ComputeTieredQuota runs the Expr from a frozen BillingSnapshot against
@@ -26,15 +22,12 @@ func ComputeTieredQuota(snap *BillingSnapshot, params TokenParams) (TieredResult
 }
 
 func ComputeTieredQuotaWithRequest(snap *BillingSnapshot, params TokenParams, request RequestInput) (TieredResult, error) {
-	if snap.TaskUsageBilling && UsesFixedPricingByHash(snap.ExprString, snap.ExprHash) {
-		return TieredResult{}, fmt.Errorf("fixed pricing is not supported for task usage expressions")
-	}
 	cost, trace, err := RunExprByHashWithRequest(snap.ExprString, snap.ExprHash, params, request)
 	if err != nil {
 		return TieredResult{}, err
 	}
 
-	quotaBeforeGroup := quotaConversion(cost, snap)
+	quotaBeforeGroup := QuotaConversion(cost, trace, snap.TaskUsageBilling, snap.QuotaPerUnit)
 	afterGroup, clamp := common.QuotaRoundChecked(quotaBeforeGroup * snap.GroupRatio)
 	crossed := trace.MatchedTier != snap.EstimatedTier
 

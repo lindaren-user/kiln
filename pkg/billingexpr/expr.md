@@ -212,8 +212,9 @@ tier("base", p * 0.43 + c * 3.06 + img * 0.78 + ai * 3.81 + ao * 15.11)
 with a $0.01 base price for one successful HTTP/SSE request. Other leaves may
 still use token pricing. Group ratios and request multipliers continue to apply;
 existing tool surcharges are calculated separately and added as before. A stream
-does not incur a fixed fee per chunk. Realtime and task usage expressions reject
-`fixed()` before upstream submission or reservation.
+does not incur a fixed fee per chunk. Realtime expressions reject `fixed()`
+before upstream submission or reservation; task usage expressions accept it as a
+per-task price (see Task Usage Billing below).
 
 The amount must be a finite, non-negative numeric literal whose v1 scaled value
 is finite. Explicit `fixed(0)` is valid and stays free. Expressions using `fixed`
@@ -371,6 +372,17 @@ token quota = expression output in $/1M tokens / 1,000,000 * QuotaPerUnit * grou
 In other words, a task expression already returns the request's dollar cost.
 For example, `u("seconds") * 0.4` means $0.40 per second. Engine semantics do
 not divide task output by one million.
+
+The one exception is a fixed per-request leaf. `fixed(amount)` keeps its v1
+×1,000,000 scaling, so a task that settles on `tier("base", fixed(8.5))`
+charges the same $8.50 per task as an ordinary request would:
+
+```
+task fixed quota = amount * QuotaPerUnit * groupRatio
+```
+
+A conditional tree may mix fixed and usage-derived leaves; the leaf that
+actually runs decides which rule applies.
 
 The visual editor generates, and public pricing displays recognize, exactly
 these canonical task shapes. Expressions outside these shapes remain valid in
