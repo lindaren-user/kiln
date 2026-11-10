@@ -99,10 +99,11 @@ func GetStatus(c *gin.Context) {
 		"stripe_unit_price": setting.StripeUnitPrice,
 
 		// 面板启用开关
-		"api_info_enabled":      cs.ApiInfoEnabled,
-		"uptime_kuma_enabled":   cs.UptimeKumaEnabled,
-		"announcements_enabled": cs.AnnouncementsEnabled,
-		"faq_enabled":           cs.FAQEnabled,
+		"api_info_enabled":         cs.ApiInfoEnabled,
+		"uptime_kuma_enabled":      cs.UptimeKumaEnabled,
+		"announcements_enabled":    cs.AnnouncementsEnabled,
+		"faq_enabled":              cs.FAQEnabled,
+		"announcement_bar_enabled": cs.AnnouncementBarEnabled,
 
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
@@ -135,6 +136,9 @@ func GetStatus(c *gin.Context) {
 	}
 	if cs.AnnouncementsEnabled {
 		data["announcements"] = console_setting.GetAnnouncements()
+	}
+	if cs.AnnouncementBarEnabled {
+		data["announcement_bar_text"] = cs.AnnouncementBarText
 	}
 	if cs.FAQEnabled {
 		data["faq"] = console_setting.GetFAQ()

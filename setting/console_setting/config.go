@@ -11,18 +11,23 @@ type ConsoleSetting struct {
 	UptimeKumaEnabled    bool   `json:"uptime_kuma_enabled"`   // 是否启用 Uptime Kuma 面板
 	AnnouncementsEnabled bool   `json:"announcements_enabled"` // 是否启用系统公告面板
 	FAQEnabled           bool   `json:"faq_enabled"`           // 是否启用常见问答面板
+
+	AnnouncementBarEnabled bool   `json:"announcement_bar_enabled"` // 是否启用顶部滚动公告条
+	AnnouncementBarText    string `json:"announcement_bar_text"`    // 顶部滚动公告条文本
 }
 
 // 默认配置
 var defaultConsoleSetting = ConsoleSetting{
-	ApiInfo:              "",
-	UptimeKumaGroups:     "",
-	Announcements:        "",
-	FAQ:                  "",
-	ApiInfoEnabled:       true,
-	UptimeKumaEnabled:    true,
-	AnnouncementsEnabled: true,
-	FAQEnabled:           true,
+	ApiInfo:                "",
+	UptimeKumaGroups:       "",
+	Announcements:          "",
+	FAQ:                    "",
+	ApiInfoEnabled:         true,
+	UptimeKumaEnabled:      true,
+	AnnouncementsEnabled:   true,
+	FAQEnabled:             true,
+	AnnouncementBarEnabled: false,
+	AnnouncementBarText:    "",
 }
 
 // 全局实例

@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ContentSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
+import { AnnouncementBarSection } from './announcement-bar-section'
 import { AnnouncementsSection } from './announcements-section'
 import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
@@ -60,6 +61,16 @@ const CONTENT_SECTIONS = [
       <AnnouncementsSection
         enabled={settings['console_setting.announcements_enabled']}
         data={settings['console_setting.announcements']}
+      />
+    ),
+  },
+  {
+    id: 'announcement-bar',
+    titleKey: 'Announcement Bar',
+    build: (settings: ContentSettings) => (
+      <AnnouncementBarSection
+        enabled={settings['console_setting.announcement_bar_enabled']}
+        text={settings['console_setting.announcement_bar_text']}
       />
     ),
   },

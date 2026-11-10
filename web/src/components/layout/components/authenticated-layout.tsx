@@ -22,10 +22,12 @@ import { SkipToMain } from '@/components/skip-to-main'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LayoutProvider } from '@/context/layout-provider'
 import { SearchProvider } from '@/context/search-provider'
+import { useAnnouncementBar } from '@/hooks/use-announcement-bar'
 import { getCookie } from '@/lib/cookies'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { AnnouncementTicker } from './announcement-ticker'
 import { AppHeader } from './app-header'
 import { AppSidebar } from './app-sidebar'
 
@@ -36,23 +38,34 @@ type AuthenticatedLayoutProps = {
 export function AuthenticatedLayout(props: AuthenticatedLayoutProps) {
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   const signedIn = useAuthStore((s) => !!s.auth.user)
+  const announcementBarText = useAnnouncementBar()
   // Unmount pages on sign-out, otherwise their queries refetch and toast "Session expired!" / "invalid access token"
   if (!signedIn) return null
 
   return (
     <LayoutProvider>
       <SearchProvider>
-        <SidebarProvider defaultOpen={defaultOpen} className='flex-col'>
+        <SidebarProvider
+          defaultOpen={defaultOpen}
+          className={cn(
+            'flex-col',
+            announcementBarText && 'console-with-announcement-bar'
+          )}
+        >
           <SkipToMain />
           <AppHeader />
+          <AnnouncementTicker
+            text={announcementBarText}
+            className='shrink-0'
+          />
           <div className='flex min-h-0 w-full flex-1'>
             <AppSidebar />
             <SidebarInset
               className={cn(
                 '@container/content',
-                'h-[calc(100svh-var(--app-header-height,0px))]',
+                'h-[calc(100svh-var(--app-content-offset,0px))]',
                 'min-h-0 overflow-hidden',
-                'peer-data-[variant=inset]:h-[calc(100svh-var(--app-header-height,0px)-(var(--spacing)*4))]'
+                'peer-data-[variant=inset]:h-[calc(100svh-var(--app-content-offset,0px)-(var(--spacing)*4))]'
               )}
             >
               {props.children ?? <AnimatedOutlet />}

@@ -440,8 +440,33 @@ For commercial licensing, please contact support@quantumnous.com
 
   /* Pause animation on hover */
   .scroll-container:hover .animate-scroll-up,
-  .scroll-container:hover .animate-scroll-down {
+  .scroll-container:hover .animate-scroll-down,
+  .announcement-ticker-track:hover {
     animation-play-state: paused;
+  }
+
+  /* Horizontal loop for the announcement bar; each half repeats the text
+     until it covers the viewport. */
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  .animate-marquee {
+    animation: marquee 20s linear infinite;
+    will-change: transform;
+  }
+
+  /* The console header plus the announcement bar pinned under it. */
+  .console-with-announcement-bar {
+    --announcement-bar-height: 2rem;
+    --app-content-offset: calc(
+      var(--app-header-height) + var(--announcement-bar-height)
+    );
   }
 }
 
@@ -450,6 +475,7 @@ For commercial licensing, please contact support@quantumnous.com
   .animate-appear-zoom,
   .animate-scroll-up,
   .animate-scroll-down,
+  .animate-marquee,
   [data-slot='table'] tbody tr {
     animation: none !important;
     opacity: 1;

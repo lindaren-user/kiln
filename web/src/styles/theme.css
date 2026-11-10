@@ -97,6 +97,8 @@ For commercial licensing, please contact support@quantumnous.com
 :root {
   --radius: 1rem;
   --app-header-height: 3rem;
+  /* Header plus any bar pinned under it; content starts below this. */
+  --app-content-offset: var(--app-header-height);
   /* Static build-channel fallback consumed when JS hasn't booted yet. */
   --app-rev: '2k6e8r7p';
   /* Auto starts with the browser font, including before JS applies the

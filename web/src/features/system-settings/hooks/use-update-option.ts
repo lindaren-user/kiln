@@ -26,7 +26,8 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 import { updatePasskeyDomains, updateSystemOption } from '../api'
 import type { UpdateOptionRequest, UpdatePasskeyDomainsRequest } from '../types'
 
-// Configuration keys that require status refresh
+// Configuration keys that require status refresh. Every `console_setting.*`
+// key is covered by the prefix check at the call site.
 const STATUS_RELATED_KEYS = new Set([
   'HeaderNavModules',
   'SidebarModulesAdmin',
@@ -63,7 +64,10 @@ export function useUpdateOption() {
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
 
         // If updating frontend-display-related config, also refresh status
-        if (STATUS_RELATED_KEYS.has(variables.key)) {
+        if (
+          variables.key.startsWith('console_setting.') ||
+          STATUS_RELATED_KEYS.has(variables.key)
+        ) {
           queryClient.invalidateQueries({ queryKey: ['status'] })
           try {
             window.localStorage.removeItem('status')
