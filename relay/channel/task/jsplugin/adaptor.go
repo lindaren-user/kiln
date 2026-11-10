@@ -579,6 +579,10 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, bod
 		defer func() { c.Request.Method = originalMethod }()
 	}
 	resp, err := channel.DoTaskApiRequest(a, c, info, body)
+	if resp != nil && resp.StatusCode >= http.StatusBadRequest {
+		logger.LogWarn(c, "task_plugin subsystem=adaptor event=submit_rejected plugin=%q status=%d origin_model=%q upstream_model=%q params=%s",
+			a.plugin.Meta.Key, resp.StatusCode, info.OriginModelName, info.UpstreamModelName, describeSubmitParams(a.submit))
+	}
 	if release != nil {
 		if err != nil || resp == nil {
 			release()
@@ -587,6 +591,51 @@ func (a *TaskAdaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, bod
 		}
 	}
 	return resp, err
+}
+
+// describeSubmitParams summarizes the fields that decide upstream model
+// validation so a rejected submission can be diagnosed from the log. It never
+// includes the prompt, material URLs, callback URLs or credentials.
+func describeSubmitParams(descriptor *requestDescriptor) string {
+	if descriptor == nil {
+		return ""
+	}
+	payload := descriptor.Body
+	if payload == nil && len(descriptor.BodyText) > 0 {
+		if err := common.Unmarshal(descriptor.BodyText, &payload); err != nil {
+			return ""
+		}
+	}
+	body, ok := payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+	summary := make(map[string]any, 10)
+	for _, key := range []string{"model", "seconds", "duration", "aspect_ratio", "ratio", "resolution", "size", "mode"} {
+		if value, present := body[key]; present {
+			summary[key] = value
+		}
+	}
+	for _, key := range []string{"images", "videos", "audios"} {
+		if value, present := body[key]; present {
+			if list, isList := value.([]any); isList {
+				summary[key+"_count"] = len(list)
+			}
+		}
+	}
+	for _, key := range []string{"first_frame", "last_frame"} {
+		if _, present := body[key]; present {
+			summary[key] = true
+		}
+	}
+	if len(summary) == 0 {
+		return ""
+	}
+	encoded, err := common.Marshal(summary)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 // deadlineBody releases the deadline of a relayed submission's upstream

@@ -2959,3 +2959,32 @@ export function buildContentRequest(ctx) {
 		})
 	}
 }
+
+func TestDescribeSubmitParamsKeepsValidationFieldsOnly(t *testing.T) {
+	descriptor := &requestDescriptor{Body: map[string]any{
+		"model":             "vimo-tier",
+		"prompt":            "a private prompt",
+		"seconds":           5,
+		"aspect_ratio":      "16:9",
+		"resolution":        "720P",
+		"mode":              "reference",
+		"images":            []any{"https://cdn.example/a.png", "https://cdn.example/b.png"},
+		"first_frame":       "https://cdn.example/first.png",
+		"callback_url":      "https://gateway.example/callback",
+		"client_request_id": "task_public",
+	}}
+
+	summary := describeSubmitParams(descriptor)
+	assert.JSONEq(t, `{"model":"vimo-tier","seconds":5,"aspect_ratio":"16:9","resolution":"720P","mode":"reference","images_count":2,"first_frame":true}`, summary)
+	assert.NotContains(t, summary, "private prompt")
+	assert.NotContains(t, summary, "cdn.example")
+	assert.NotContains(t, summary, "task_public")
+}
+
+func TestDescribeSubmitParamsReadsBodyText(t *testing.T) {
+	descriptor := &requestDescriptor{BodyText: json.RawMessage(`{"model":"m","prompt":"p","seconds":10}`)}
+
+	assert.JSONEq(t, `{"model":"m","seconds":10}`, describeSubmitParams(descriptor))
+	assert.Empty(t, describeSubmitParams(nil))
+	assert.Empty(t, describeSubmitParams(&requestDescriptor{Body: "plain text"}))
+}
