@@ -39,6 +39,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStatus } from '@/hooks/use-status'
+import { resolvePublicOrigin } from '@/lib/public-origin'
 
 import {
   buildRateLimits,
@@ -449,16 +450,14 @@ function CodeSamplesSection(props: {
   const { status } = useStatus()
 
   const baseUrl = useMemo(() => {
+    const root = status as Record<string, unknown> | null
+    const nested = status?.data as Record<string, unknown> | undefined
     const candidate =
-      (status as Record<string, unknown> | null)?.server_address ??
-      (status as Record<string, unknown> | null)?.serverAddress ??
-      (status?.data as Record<string, unknown> | undefined)?.server_address ??
-      (status?.data as Record<string, unknown> | undefined)?.serverAddress
-    if (candidate && typeof candidate === 'string') {
-      return candidate.replace(/\/$/, '')
-    }
-    if (typeof window !== 'undefined') return window.location.origin
-    return 'https://api.example.com'
+      root?.server_address ??
+      root?.serverAddress ??
+      nested?.server_address ??
+      nested?.serverAddress
+    return resolvePublicOrigin(candidate)
   }, [status])
 
   const endpoints = useMemo(() => {

@@ -24,6 +24,7 @@ import { CopyButton } from '@/components/copy-button'
 import { PublicLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
+import { resolvePublicOrigin } from '@/lib/public-origin'
 
 import {
   DOCS_ENDPOINTS,
@@ -236,11 +237,7 @@ export function DocsPage() {
   const { t } = useTranslation()
   const { status } = useStatus()
 
-  const origin =
-    (typeof status?.server_address === 'string' && status.server_address) ||
-    (typeof window !== 'undefined'
-      ? window.location.origin
-      : 'https://example.com')
+  const origin = resolvePublicOrigin(status?.server_address)
   const siteOrigin = String(origin).replace(/\/$/, '')
   const baseUrl = `${siteOrigin}/v1`
 
