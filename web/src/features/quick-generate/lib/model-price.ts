@@ -123,6 +123,11 @@ export function generationUsageFacts(
   if (schema.image_count && count !== undefined && count !== '') {
     usage.image_count = Number(count)
   }
+  // A video request always makes one video and the composer has no count
+  // field, but the expression still reads u("count") for its unit price.
+  if (schema.count && usage.count === undefined) {
+    usage.count = count !== undefined && count !== '' ? Number(count) : 1
+  }
   return Object.keys(usage).length > 0 ? usage : undefined
 }
 
