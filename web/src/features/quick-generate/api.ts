@@ -67,6 +67,12 @@ type QuickGenerateUploadResponse = {
   data?: QuickGenerateUploadGrant
 }
 
+type QuickGenerateURLResponse = {
+  success: boolean
+  message?: string
+  data?: { url?: string }
+}
+
 type QuickGenerateUploadStatusResponse = {
   success: boolean
   data?: { enabled: boolean; multipart_enabled?: boolean }
@@ -138,6 +144,39 @@ async function prepareQuickGenerateUpload(
   return grant.url
 }
 
+const QUICK_GENERATE_DIGEST = /^[0-9a-f]{64}$/
+
+function isLocalReferenceURL(url: string): boolean {
+  return url.startsWith('blob:') || url.startsWith('data:')
+}
+
+/**
+ * Re-signs an object URL this gateway issued. A reference stored with a
+ * running task outlives its signature, so every submission asks for a fresh
+ * URL; a URL that is not one of ours passes through unchanged.
+ */
+async function refreshQuickGenerateReferenceURL(
+  referenceURL: string
+): Promise<string> {
+  let digest = ''
+  try {
+    digest = new URL(referenceURL).pathname.split('/').pop() ?? ''
+  } catch {
+    return referenceURL
+  }
+  if (!QUICK_GENERATE_DIGEST.test(digest)) return referenceURL
+  try {
+    const response = await api.post<QuickGenerateURLResponse>(
+      '/api/quick-generate/upload/sign',
+      { url: referenceURL }
+    )
+    const signedURL = response.data.data?.url
+    return response.data.success && signedURL ? signedURL : referenceURL
+  } catch {
+    return referenceURL
+  }
+}
+
 /** Sends one part, retrying a few times since a slice costs little to resend. */
 async function putQuickGeneratePart(url: string, chunk: Blob): Promise<string> {
   let lastError: unknown
@@ -206,21 +245,20 @@ async function uploadQuickGenerateMultipart(
     )
   )
 
-  const complete = await api.post<{
-    success: boolean
-    message?: string
-    data?: { url: string }
-  }>('/api/quick-generate/upload/multipart/complete', {
-    key: grant.key,
-    upload_id: grant.upload_id,
-    content_type: blob.type || mediaType,
-    size: blob.size,
-    sha256: digest,
-    parts: parts.map((part) => ({
-      part_number: part.part_number,
-      etag: etags.get(part.part_number),
-    })),
-  })
+  const complete = await api.post<QuickGenerateURLResponse>(
+    '/api/quick-generate/upload/multipart/complete',
+    {
+      key: grant.key,
+      upload_id: grant.upload_id,
+      content_type: blob.type || mediaType,
+      size: blob.size,
+      sha256: digest,
+      parts: parts.map((part) => ({
+        part_number: part.part_number,
+        etag: etags.get(part.part_number),
+      })),
+    }
+  )
   if (!complete.data.success || !complete.data.data?.url) {
     throw createServerError(complete.data, t('Generation failed'))
   }
@@ -231,7 +269,9 @@ async function uploadQuickGenerateMultipart(
 /**
  * Moves local attachments into temporary object storage. Objects are keyed by
  * content digest, so identical files share one upload and one stored object.
- * `onProgress` reports uploaded bytes so the composer can show a spinner.
+ * Stored references are re-signed so a URL from an earlier submission cannot
+ * reach the vendor already expired. `onProgress` reports uploaded bytes so the
+ * composer can show a spinner.
  */
 export async function uploadQuickGenerateReferences(
   references: ReferenceAttachment[],
@@ -247,11 +287,9 @@ export async function uploadQuickGenerateReferences(
   }
   const multipartAllowed = Boolean(statusResponse.data.data.multipart_enabled)
 
-  const localReferences = references.filter(
-    (reference) =>
-      reference.url.startsWith('blob:') || reference.url.startsWith('data:')
-  )
-  const total = localReferences.length
+  const total = references.filter((reference) =>
+    isLocalReferenceURL(reference.url)
+  ).length
   let done = 0
   const report = () => {
     done += 1
@@ -260,11 +298,11 @@ export async function uploadQuickGenerateReferences(
   const urlsByDigest = new Map<string, string>()
   const uploadedReferences: ReferenceAttachment[] = []
   for (const reference of references) {
-    if (
-      !reference.url.startsWith('blob:') &&
-      !reference.url.startsWith('data:')
-    ) {
-      uploadedReferences.push(reference)
+    if (!isLocalReferenceURL(reference.url)) {
+      uploadedReferences.push({
+        ...reference,
+        url: await refreshQuickGenerateReferenceURL(reference.url),
+      })
       continue
     }
     const response = await fetch(reference.url)

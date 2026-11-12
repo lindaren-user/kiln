@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ var ErrQuickGenerateUploadDisabled = errors.New("quick generate upload storage i
 var ErrQuickGenerateStorageUnavailable = errors.New("Temporary file storage is unavailable")
 var errQuickGenerateUploadMismatch = errors.New("Stored file does not match this upload")
 var errQuickGenerateInvalidDigest = errors.New("Invalid file digest")
+var errQuickGenerateInvalidUploadURL = errors.New("Invalid upload URL")
 
 const (
 	quickGenerateUploadPutTTLSeconds = 600
@@ -45,6 +47,12 @@ type QuickGenerateUploadRequest struct {
 	SHA256      string `json:"sha256"`
 	ContentType string `json:"content_type"`
 	Size        int64  `json:"size"`
+}
+
+// QuickGenerateUploadSignRequest asks for a fresh read URL; the URL identifies
+// an object this gateway already stores.
+type QuickGenerateUploadSignRequest struct {
+	URL string `json:"url"`
 }
 
 type QuickGenerateUploadGrant struct {
@@ -73,13 +81,23 @@ func newQuickGenerateUploadStorage(config system_setting.QuickGenerateUploadConf
 	}
 }
 
-func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRequest) (*QuickGenerateUploadGrant, error) {
+// loadQuickGenerateUploadConfig reports configured storage as disabled when
+// only part of the endpoint settings is present.
+func loadQuickGenerateUploadConfig() (system_setting.QuickGenerateUploadConfig, error) {
 	config, err := system_setting.LoadQuickGenerateUploadConfig()
 	if err != nil {
-		return nil, err
+		return config, err
 	}
 	if config.Endpoint == "" {
-		return nil, ErrQuickGenerateUploadDisabled
+		return config, ErrQuickGenerateUploadDisabled
+	}
+	return config, nil
+}
+
+func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRequest) (*QuickGenerateUploadGrant, error) {
+	config, err := loadQuickGenerateUploadConfig()
+	if err != nil {
+		return nil, err
 	}
 	if err := validateQuickGenerateUploadRequest(input); err != nil {
 		return nil, err
@@ -101,11 +119,27 @@ func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRe
 	return storage.grantNewObject(ctx, objectURL, input)
 }
 
-func validateQuickGenerateUploadRequest(input QuickGenerateUploadRequest) error {
-	if len(input.SHA256) != sha256.Size*2 || strings.ToLower(input.SHA256) != input.SHA256 {
-		return errQuickGenerateInvalidDigest
+// RefreshQuickGenerateUploadURL re-signs a read URL this gateway issued. A
+// stored reference URL can expire while a task waits or after a page reload,
+// so the console exchanges it for a fresh signature before resubmitting.
+func RefreshQuickGenerateUploadURL(rawURL string) (string, error) {
+	config, err := loadQuickGenerateUploadConfig()
+	if err != nil {
+		return "", err
 	}
-	if _, err := hex.DecodeString(input.SHA256); err != nil {
+	objectURL, err := quickGenerateObjectURLFromReference(config, rawURL)
+	if err != nil {
+		return "", err
+	}
+	grant, err := newQuickGenerateUploadStorage(config).grantExistingObject(objectURL)
+	if err != nil {
+		return "", err
+	}
+	return grant.URL, nil
+}
+
+func validateQuickGenerateUploadRequest(input QuickGenerateUploadRequest) error {
+	if !quickGenerateDigestValid(input.SHA256) {
 		return errQuickGenerateInvalidDigest
 	}
 	if input.Size <= 0 || input.Size > system_setting.QuickGenerateUploadMaxBytes {
@@ -142,6 +176,38 @@ func quickGenerateObjectURL(config system_setting.QuickGenerateUploadConfig, key
 	objectURL.Path = strings.TrimRight(endpoint.Path, "/") + "/" + config.Bucket + "/" + key
 	objectURL.RawPath = ""
 	return objectURL.String(), nil
+}
+
+func quickGenerateDigestValid(digest string) bool {
+	if len(digest) != sha256.Size*2 || strings.ToLower(digest) != digest {
+		return false
+	}
+	_, err := hex.DecodeString(digest)
+	return err == nil
+}
+
+// quickGenerateObjectURLFromReference accepts only a read URL this gateway
+// issued and returns the object URL it addresses, so a refresh can never sign
+// an arbitrary host or key. Rebuilding the object URL with the same helpers
+// that mint it keeps the layout in one place.
+func quickGenerateObjectURLFromReference(config system_setting.QuickGenerateUploadConfig, rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", errQuickGenerateInvalidUploadURL
+	}
+	digest := path.Base(parsed.Path)
+	if !quickGenerateDigestValid(digest) {
+		return "", errQuickGenerateInvalidUploadURL
+	}
+	objectURL, err := quickGenerateObjectURL(config, quickGenerateObjectKey(config.Prefix, digest))
+	if err != nil {
+		return "", errQuickGenerateInvalidUploadURL
+	}
+	expected, err := url.Parse(objectURL)
+	if err != nil || parsed.Scheme != expected.Scheme || parsed.Host != expected.Host || parsed.Path != expected.Path {
+		return "", errQuickGenerateInvalidUploadURL
+	}
+	return objectURL, nil
 }
 
 // findObject reports whether the object is already stored, using a short-lived

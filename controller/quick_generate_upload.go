@@ -42,6 +42,22 @@ func PrepareQuickGenerateUpload(c *gin.Context) {
 	common.ApiSuccess(c, grant)
 }
 
+func RefreshQuickGenerateUploadURL(c *gin.Context) {
+	var request service.QuickGenerateUploadSignRequest
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiErrorStatus(c, http.StatusBadRequest, common.NewMessage("Invalid parameters"))
+		return
+	}
+	signedURL, err := service.RefreshQuickGenerateUploadURL(request.URL)
+	c.Header("Cache-Control", "private, no-store")
+	if err != nil {
+		status, message := quickGenerateUploadErrorStatus(c, err)
+		common.ApiErrorStatus(c, status, common.NewMessage(message))
+		return
+	}
+	common.ApiSuccess(c, gin.H{"url": signedURL})
+}
+
 func BeginQuickGenerateMultipartUpload(c *gin.Context) {
 	var request service.QuickGenerateMultipartBeginRequest
 	if err := common.DecodeJson(c.Request.Body, &request); err != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,13 +32,7 @@ func TestPrepareQuickGenerateUploadSignsNewObjectAndReusesExistingObject(t *test
 	previousClient := quickGenerateUploadHTTPClient
 	quickGenerateUploadHTTPClient = server.Client()
 	t.Cleanup(func() { quickGenerateUploadHTTPClient = previousClient })
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_ENDPOINT", server.URL)
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_BUCKET", "quick-generate")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_REGION", "auto")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_ACCESS_KEY", "access")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_SECRET_KEY", "secret")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_PREFIX", "quick-generate")
-	t.Setenv("QUICK_GENERATE_UPLOAD_URL_TTL_SECONDS", "3600")
+	setQuickGenerateUploadTestEnv(t, server.URL)
 
 	digest := sha256.Sum256([]byte("reference image"))
 	grant, err := PrepareQuickGenerateUpload(t.Context(), QuickGenerateUploadRequest{
@@ -114,13 +109,7 @@ func TestPrepareQuickGenerateUploadPreservesR2StatusForServerDiagnostics(t *test
 	previousClient := quickGenerateUploadHTTPClient
 	quickGenerateUploadHTTPClient = server.Client()
 	t.Cleanup(func() { quickGenerateUploadHTTPClient = previousClient })
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_ENDPOINT", server.URL)
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_BUCKET", "quick-generate")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_REGION", "auto")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_ACCESS_KEY", "access")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_SECRET_KEY", "secret")
-	t.Setenv("QUICK_GENERATE_UPLOAD_S3_PREFIX", "quick-generate")
-	t.Setenv("QUICK_GENERATE_UPLOAD_URL_TTL_SECONDS", "3600")
+	setQuickGenerateUploadTestEnv(t, server.URL)
 
 	digest := sha256.Sum256([]byte("quick-generate R2 error diagnostics"))
 	_, err := PrepareQuickGenerateUpload(t.Context(), QuickGenerateUploadRequest{
@@ -130,4 +119,56 @@ func TestPrepareQuickGenerateUploadPreservesR2StatusForServerDiagnostics(t *test
 	assert.Contains(t, err.Error(), "HEAD returned status 403")
 	assert.Contains(t, err.Error(), "R2 request_id=\"r2-request\"")
 	assert.Contains(t, err.Error(), "cf_ray=\"cf-ray-id\"")
+}
+
+func TestRefreshQuickGenerateUploadURLSignsOnlyStoredObjectURLs(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		t.Fatalf("refresh must not call the store, got %s %s", request.Method, request.URL.Path)
+	}))
+	defer server.Close()
+	setQuickGenerateUploadTestEnv(t, server.URL)
+
+	digest := sha256.Sum256([]byte("reference image"))
+	digestHex := hex.EncodeToString(digest[:])
+	stored := server.URL + "/kiln-prod/quick-generate/" + digestHex + "?X-Amz-Signature=old"
+
+	signed, err := RefreshQuickGenerateUploadURL(stored)
+	require.NoError(t, err)
+	parsed, err := url.Parse(signed)
+	require.NoError(t, err)
+	require.Equal(t, "/kiln-prod/quick-generate/"+digestHex, parsed.Path)
+	require.Equal(t, "3600", parsed.Query().Get("X-Amz-Expires"))
+	require.NotEmpty(t, parsed.Query().Get("X-Amz-Signature"))
+	require.NotEqual(t, "old", parsed.Query().Get("X-Amz-Signature"))
+
+	for _, rejected := range []string{
+		"https://other.example/kiln-prod/quick-generate/" + digestHex,
+		server.URL + "/other-bucket/quick-generate/" + digestHex,
+		server.URL + "/kiln-prod/quick-generate/not-a-digest",
+		server.URL + "/kiln-prod/quick-generate/" + digestHex + "/extra",
+	} {
+		_, err := RefreshQuickGenerateUploadURL(rejected)
+		require.ErrorIs(t, err, errQuickGenerateInvalidUploadURL, rejected)
+	}
+}
+
+func TestRefreshQuickGenerateUploadURLRequiresConfiguredStorage(t *testing.T) {
+	t.Setenv(system_setting.QuickGenerateUploadEndpointEnv, "")
+	t.Setenv(system_setting.QuickGenerateUploadBucketEnv, "")
+	t.Setenv(system_setting.QuickGenerateUploadAccessKeyEnv, "")
+	t.Setenv(system_setting.QuickGenerateUploadSecretKeyEnv, "")
+	_, err := RefreshQuickGenerateUploadURL("https://example.test/kiln-prod/quick-generate/" + strings.Repeat("a", 64))
+	require.ErrorIs(t, err, ErrQuickGenerateUploadDisabled)
+}
+
+// setQuickGenerateUploadTestEnv points upload storage at endpoint with a
+// complete configuration.
+func setQuickGenerateUploadTestEnv(t *testing.T, endpoint string) {
+	t.Setenv(system_setting.QuickGenerateUploadEndpointEnv, endpoint)
+	t.Setenv(system_setting.QuickGenerateUploadBucketEnv, "kiln-prod")
+	t.Setenv(system_setting.QuickGenerateUploadRegionEnv, "auto")
+	t.Setenv(system_setting.QuickGenerateUploadAccessKeyEnv, "access")
+	t.Setenv(system_setting.QuickGenerateUploadSecretKeyEnv, "secret")
+	t.Setenv(system_setting.QuickGenerateUploadPrefixEnv, "quick-generate")
+	t.Setenv(system_setting.QuickGenerateUploadURLTTLSecondsEnv, "3600")
 }
