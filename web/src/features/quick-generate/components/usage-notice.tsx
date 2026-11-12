@@ -57,9 +57,7 @@ export function UsageNotice() {
           aria-hidden='true'
         />
         <span className='min-w-0 flex-1 font-medium'>
-          {t(
-            'For testing only. Using this as a workbench is not recommended.'
-          )}
+          {t('For testing only. Using this as a workbench is not recommended.')}
         </span>
         <ChevronDown
           className={cn(
@@ -75,7 +73,7 @@ export function UsageNotice() {
         <ul className='list-disc space-y-1 pr-3 pb-2 pl-9 text-xs leading-5'>
           <li>
             {t(
-              'Images are not saved: an image still generating is lost when you leave or reload this page. Download what you want to keep first.'
+              'Results are not saved: an image still generating is lost when you leave or reload this page, and a finished video must be downloaded as soon as it is ready.'
             )}
           </li>
           <li>
