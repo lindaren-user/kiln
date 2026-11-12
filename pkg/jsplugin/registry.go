@@ -84,30 +84,35 @@ func (t *LocalizedText) UnmarshalJSON(data []byte) error {
 }
 
 type Meta struct {
-	RequiredCapabilities []string                    `json:"requiredCapabilities,omitempty"`
-	SubmitResponseTypes  []string                    `json:"submitResponseTypes,omitempty"`
-	SortPriority         int                         `json:"sortPriority,omitempty"`
-	Website              string                      `json:"website,omitempty"`
-	APIVersion           int                         `json:"apiVersion"`
-	Key                  string                      `json:"key"`
-	Name                 string                      `json:"name"`
-	Icon                 string                      `json:"icon,omitempty"`
-	Description          LocalizedText               `json:"description,omitempty"`
-	Version              string                      `json:"version"`
-	Author               AuthorMeta                  `json:"author"`
-	BaseURL              string                      `json:"baseUrl,omitempty"`
-	ChannelTypes         []int                       `json:"channelTypes,omitempty"`
-	Models               []string                    `json:"models"`
-	FetchMode            string                      `json:"fetchMode"`
-	AllowedHosts         []string                    `json:"allowedHosts"`
-	Upstreams            []string                    `json:"upstreams,omitempty"`
-	Routes               []Route                     `json:"routes"`
-	Protocols            []ProtocolClaim             `json:"protocols"`
-	UsageSchema          map[string]UsageFieldSchema `json:"usageSchema,omitempty"`
-	UsageExamples        []UsageExample              `json:"usageExamples,omitempty"`
-	UsageProfiles        []UsageProfile              `json:"usageProfiles,omitempty"`
-	GenerationProfiles   []GenerationProfile         `json:"generationProfiles,omitempty"`
-	Auth                 AuthMeta                    `json:"auth"`
+	RequiredCapabilities []string      `json:"requiredCapabilities,omitempty"`
+	SubmitResponseTypes  []string      `json:"submitResponseTypes,omitempty"`
+	SortPriority         int           `json:"sortPriority,omitempty"`
+	Website              string        `json:"website,omitempty"`
+	APIVersion           int           `json:"apiVersion"`
+	Key                  string        `json:"key"`
+	Name                 string        `json:"name"`
+	Icon                 string        `json:"icon,omitempty"`
+	Description          LocalizedText `json:"description,omitempty"`
+	Version              string        `json:"version"`
+	Author               AuthorMeta    `json:"author"`
+	BaseURL              string        `json:"baseUrl,omitempty"`
+	ChannelTypes         []int         `json:"channelTypes,omitempty"`
+	Models               []string      `json:"models"`
+	// ModelUpstreamNames maps a declared model to the vendor's own id when the
+	// two differ, so the vendor's model list can be lined up with the channel's
+	// declared models. Keys are declared models; values are the ids the plugin
+	// sends.
+	ModelUpstreamNames map[string]string           `json:"modelUpstreamNames,omitempty"`
+	FetchMode          string                      `json:"fetchMode"`
+	AllowedHosts       []string                    `json:"allowedHosts"`
+	Upstreams          []string                    `json:"upstreams,omitempty"`
+	Routes             []Route                     `json:"routes"`
+	Protocols          []ProtocolClaim             `json:"protocols"`
+	UsageSchema        map[string]UsageFieldSchema `json:"usageSchema,omitempty"`
+	UsageExamples      []UsageExample              `json:"usageExamples,omitempty"`
+	UsageProfiles      []UsageProfile              `json:"usageProfiles,omitempty"`
+	GenerationProfiles []GenerationProfile         `json:"generationProfiles,omitempty"`
+	Auth               AuthMeta                    `json:"auth"`
 }
 
 // Upstream kinds a plugin driver can address. Every driver speaks to its
@@ -891,6 +896,7 @@ func cloneMeta(meta Meta) Meta {
 	meta.RequiredCapabilities = slices.Clone(meta.RequiredCapabilities)
 	meta.ChannelTypes = append([]int(nil), meta.ChannelTypes...)
 	meta.Models = append([]string(nil), meta.Models...)
+	meta.ModelUpstreamNames = maps.Clone(meta.ModelUpstreamNames)
 	meta.AllowedHosts = append([]string(nil), meta.AllowedHosts...)
 	meta.Upstreams = slices.Clone(meta.Upstreams)
 	meta.Routes = append([]Route(nil), meta.Routes...)
@@ -1034,7 +1040,7 @@ func decodeMeta(value any) (Meta, error) {
 	}
 	for field := range object {
 		switch field {
-		case "generationProfiles", "requiredCapabilities", "submitResponseTypes", "sortPriority", "website", "apiVersion", "key", "name", "icon", "description", "version", "author", "baseUrl", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "upstreams", "routes", "protocols", "usageSchema", "usageExamples", "usageProfiles", "auth", "endpoints", "submitPaths", "actions":
+		case "generationProfiles", "modelUpstreamNames", "requiredCapabilities", "submitResponseTypes", "sortPriority", "website", "apiVersion", "key", "name", "icon", "description", "version", "author", "baseUrl", "channelTypes", "channelType", "compatibleChannelTypes", "models", "fetchMode", "allowedHosts", "upstreams", "routes", "protocols", "usageSchema", "usageExamples", "usageProfiles", "auth", "endpoints", "submitPaths", "actions":
 		default:
 			return Meta{}, &UnknownMetaFieldError{Field: field}
 		}
@@ -1131,6 +1137,20 @@ func decodeMeta(value any) (Meta, error) {
 	meta.Models, err = strictStringSlice(object, "models")
 	if err != nil {
 		return Meta{}, err
+	}
+	if rawNames, present := object["modelUpstreamNames"]; present {
+		names, ok := rawNames.(map[string]any)
+		if !ok {
+			return Meta{}, fmt.Errorf("plugin meta modelUpstreamNames must be an object")
+		}
+		meta.ModelUpstreamNames = make(map[string]string, len(names))
+		for model, value := range names {
+			upstream, isString := value.(string)
+			if !isString {
+				return Meta{}, fmt.Errorf("plugin meta modelUpstreamNames value for %q must be a string", model)
+			}
+			meta.ModelUpstreamNames[model] = upstream
+		}
 	}
 	meta.AllowedHosts, err = strictStringSlice(object, "allowedHosts")
 	if err != nil {
@@ -1363,6 +1383,15 @@ func normalizeV1Meta(meta *Meta) error {
 		}
 		seenFold[folded] = struct{}{}
 		models[model] = struct{}{}
+	}
+	for model, upstream := range meta.ModelUpstreamNames {
+		if _, declared := seenFold[asciiFold(model)]; !declared {
+			return fmt.Errorf("plugin meta modelUpstreamNames key %q is not declared in plugin meta models", model)
+		}
+		trimmed := strings.TrimSpace(upstream)
+		if trimmed == "" || trimmed != upstream {
+			return fmt.Errorf("plugin meta modelUpstreamNames values must be non-empty canonical names")
+		}
 	}
 	hosts := make(map[string]struct{}, len(meta.AllowedHosts))
 	for index, host := range meta.AllowedHosts {

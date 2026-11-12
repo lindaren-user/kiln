@@ -466,6 +466,105 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 	return normalizeModelNames(ids), nil
 }
 
+// errTaskPluginModelProbeMissing marks a task plugin that publishes no model
+// list interface, so callers can tell it apart from a failed request.
+var errTaskPluginModelProbeMissing = errors.New("task plugin has no model list interface")
+
+// taskPluginModelCatalog reads the models a task plugin's upstream publishes
+// right now. The plugin's buildProbeRequest names a read-only catalog address,
+// and every shipped video plugin answers with the OpenAI-compatible model list.
+// Vendor ids are reported as the declared model name when the two differ, and
+// ids the plugin does not declare are kept as-is so the console still shows
+// models the vendor added before the plugin caught up.
+func taskPluginModelCatalog(ctx context.Context, channel *model.Channel, plugin *jsplugin.LoadedPlugin) ([]string, error) {
+	if !plugin.Engine.HasExport("buildProbeRequest") {
+		return nil, errTaskPluginModelProbeMissing
+	}
+	status, body, err := executeTaskPluginProbe(ctx, channel, plugin, false)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("model list request returned status %d", status)
+	}
+	ids, err := parseOpenAIModelIDs(body)
+	if err != nil {
+		return nil, err
+	}
+	declared := make(map[string]string, len(plugin.Meta.Models))
+	for _, name := range plugin.Meta.Models {
+		declared[strings.ToLower(name)] = name
+	}
+	upstreamNames := make(map[string]string, len(plugin.Meta.ModelUpstreamNames))
+	for name, upstream := range plugin.Meta.ModelUpstreamNames {
+		upstreamNames[strings.ToLower(upstream)] = name
+	}
+	models := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		folded := strings.ToLower(id)
+		name, ok := upstreamNames[folded]
+		if !ok {
+			name, ok = declared[folded]
+		}
+		if !ok {
+			name = id
+		}
+		if _, duplicate := seen[strings.ToLower(name)]; duplicate {
+			continue
+		}
+		seen[strings.ToLower(name)] = struct{}{}
+		models = append(models, name)
+	}
+	return models, nil
+}
+
+// channelModelSync is a channel's upstream model list and whether it is
+// current. Which of the channel's own models the vendor still serves is the
+// console's call, because it compares against the model list in the form.
+type channelModelSync struct {
+	Models    []string
+	Supported bool
+	Synced    bool
+	Message   string
+}
+
+// channelModelSyncPayload is the wire form the console reads beside `data`.
+func channelModelSyncPayload(sync channelModelSync) gin.H {
+	return gin.H{
+		"supported": sync.Supported,
+		"synced":    sync.Synced,
+		"message":   sync.Message,
+	}
+}
+
+// fetchChannelModelSync returns the models the channel's upstream publishes. A
+// task plugin without a probe, or one whose probe request fails, reports that
+// instead of pretending the list is current.
+func fetchChannelModelSync(ctx context.Context, channel *model.Channel) (channelModelSync, error) {
+	if channel.Type != constant.ChannelTypeTaskPlugin {
+		models, err := fetchChannelUpstreamModelIDs(channel)
+		if err != nil {
+			return channelModelSync{}, err
+		}
+		return channelModelSync{Models: models, Supported: true, Synced: true}, nil
+	}
+
+	pluginKey := channel.GetSetting().TaskPluginKey
+	plugin, ok := jsplugin.DefaultRegistry.Get(pluginKey)
+	if !ok {
+		return channelModelSync{}, fmt.Errorf("task plugin %q is not registered", pluginKey)
+	}
+	catalog, err := taskPluginModelCatalog(ctx, channel, plugin)
+	if errors.Is(err, errTaskPluginModelProbeMissing) {
+		return channelModelSync{}, nil
+	}
+	if err != nil {
+		return channelModelSync{Supported: true, Message: err.Error()}, nil
+	}
+	return channelModelSync{Models: catalog, Supported: true, Synced: true}, nil
+}
+
 func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string) ([]string, error) {
 	key, _, apiErr := channel.GetNextEnabledKey()
 	if apiErr != nil {

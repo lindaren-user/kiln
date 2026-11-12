@@ -71,6 +71,84 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
+// errTaskPluginProbeFailed marks failures a channel test should report as a
+// generic probe failure; the remaining errors are specific enough to surface.
+var errTaskPluginProbeFailed = errors.New("task plugin probe failed")
+
+// executeTaskPluginProbe resolves the request a plugin's buildProbeRequest
+// names and sends it, returning the reply status and body. Both the channel
+// test and the console's model-list sync reuse the same read-only request, so
+// the validation, timeout, proxy and redirect policy live here once. Callers
+// decide what a non-2xx status means.
+func executeTaskPluginProbe(ctx context.Context, channel *model.Channel, plugin *pluginruntime.LoadedPlugin, allowHead bool) (int, []byte, error) {
+	apiKey, _, keyErr := channel.GetNextEnabledKey()
+	if keyErr != nil {
+		return 0, nil, keyErr
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return 0, nil, errors.New("channel key is required")
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(channel.GetBaseURL()), "/")
+	if baseURL == "" {
+		return 0, nil, errors.New("base URL is required")
+	}
+	var descriptor struct {
+		URL     string            `json:"url"`
+		Method  string            `json:"method"`
+		Headers map[string]string `json:"headers"`
+	}
+	err := plugin.Engine.CallInto(ctx, &descriptor, "buildProbeRequest", map[string]any{
+		"baseUrl":    baseURL,
+		"apiKey":     apiKey,
+		"authHeader": "Bearer " + apiKey,
+	})
+	if err != nil {
+		return 0, nil, fmt.Errorf("%w: %v", errTaskPluginProbeFailed, sanitizeFetchModelsError(err, apiKey))
+	}
+	if err = pluginruntime.ValidateRequestURL(descriptor.URL, baseURL, plugin.Meta.AllowedHosts); err != nil {
+		return 0, nil, err
+	}
+	if err = pluginruntime.ValidateRequestHeaders(descriptor.Headers); err != nil {
+		return 0, nil, err
+	}
+	method := strings.ToUpper(strings.TrimSpace(descriptor.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+	if method != http.MethodGet && !(allowHead && method == http.MethodHead) {
+		return 0, nil, fmt.Errorf("probe method %s is not allowed", method)
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, method, descriptor.URL, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("%w: %v", errTaskPluginProbeFailed, err)
+	}
+	for name, headerValue := range descriptor.Headers {
+		request.Header.Set(name, headerValue)
+	}
+	settings := channel.GetSetting()
+	client, err := service.GetHttpClientWithProxySettings(settings.Proxy, settings)
+	if err != nil {
+		return 0, nil, err
+	}
+	probeClient := *client
+	probeClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	response, err := probeClient.Do(request)
+	if err != nil {
+		return 0, nil, fmt.Errorf("%w: %v", errTaskPluginProbeFailed, sanitizeFetchModelsError(err, apiKey))
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return response.StatusCode, nil, err
+	}
+	return response.StatusCode, body, nil
+}
+
 // probeTaskPluginChannel checks a task-plugin channel when the plugin exports
 // buildProbeRequest. The probe is a read-only request, so it does not create a
 // task or consume quota. Plugins without the hook stay untested.
@@ -80,77 +158,15 @@ func probeTaskPluginChannel(ctx context.Context, channel *model.Channel) (bool, 
 	if !ok || !plugin.Engine.HasExport("buildProbeRequest") {
 		return false, nil
 	}
-	apiKey, _, keyErr := channel.GetNextEnabledKey()
-	if keyErr != nil {
-		return true, keyErr
-	}
-	apiKey = strings.TrimSpace(apiKey)
-	if apiKey == "" {
-		return true, errors.New("channel key is required")
-	}
-	baseURL := strings.TrimRight(strings.TrimSpace(channel.GetBaseURL()), "/")
-	if baseURL == "" {
-		return true, errors.New("base URL is required")
-	}
-	value, err := plugin.Engine.Call(ctx, "buildProbeRequest", map[string]any{
-		"baseUrl":    baseURL,
-		"apiKey":     apiKey,
-		"authHeader": "Bearer " + apiKey,
-	})
+	status, _, err := executeTaskPluginProbe(ctx, channel, plugin, true)
 	if err != nil {
-		return true, fmt.Errorf("channel probe failed")
-	}
-	encoded, err := common.Marshal(value)
-	if err != nil {
-		return true, fmt.Errorf("channel probe failed")
-	}
-	var descriptor struct {
-		URL     string            `json:"url"`
-		Method  string            `json:"method"`
-		Headers map[string]string `json:"headers"`
-	}
-	if err = common.Unmarshal(encoded, &descriptor); err != nil {
-		return true, fmt.Errorf("channel probe failed")
-	}
-	if err = pluginruntime.ValidateRequestURL(descriptor.URL, baseURL, plugin.Meta.AllowedHosts); err != nil {
+		if errors.Is(err, errTaskPluginProbeFailed) {
+			return true, errors.New("channel probe failed")
+		}
 		return true, err
 	}
-	if err = pluginruntime.ValidateRequestHeaders(descriptor.Headers); err != nil {
-		return true, err
-	}
-	method := strings.ToUpper(strings.TrimSpace(descriptor.Method))
-	if method == "" {
-		method = http.MethodGet
-	}
-	if method != http.MethodGet && method != http.MethodHead {
-		return true, fmt.Errorf("channel probe method %s is not allowed", method)
-	}
-	requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, method, descriptor.URL, nil)
-	if err != nil {
-		return true, fmt.Errorf("channel probe failed")
-	}
-	for name, headerValue := range descriptor.Headers {
-		request.Header.Set(name, headerValue)
-	}
-	settings := channel.GetSetting()
-	client, err := service.GetHttpClientWithProxySettings(settings.Proxy, settings)
-	if err != nil {
-		return true, err
-	}
-	probeClient := *client
-	probeClient.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	response, err := probeClient.Do(request)
-	if err != nil {
-		return true, fmt.Errorf("channel probe failed")
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return true, fmt.Errorf("upstream probe returned status %d", response.StatusCode)
+	if status < 200 || status >= 300 {
+		return true, fmt.Errorf("upstream probe returned status %d", status)
 	}
 	return true, nil
 }

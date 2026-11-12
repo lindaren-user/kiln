@@ -529,6 +529,15 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   CHANNEL_TYPE_SGLANG,
 ])
 
+// Task plugins publish their own model list interface, so they take part in
+// model discovery without being in `MODEL_FETCHABLE_TYPES`.
+export function supportsModelDiscovery(channelType: number): boolean {
+  return (
+    MODEL_FETCHABLE_TYPES.has(channelType) ||
+    channelType === CHANNEL_TYPE_TASK_PLUGIN
+  )
+}
+
 export const FIELD_PASSTHROUGH_TYPES = new Set([
   1,
   14,

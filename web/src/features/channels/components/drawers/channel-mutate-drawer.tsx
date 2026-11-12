@@ -153,6 +153,7 @@ import {
   FIELD_PLACEHOLDERS,
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
+  supportsModelDiscovery,
 } from '../../constants'
 import { useChannelKeyDisclosure } from '../../hooks/use-channel-key-disclosure'
 import {
@@ -197,6 +198,7 @@ import {
   supportsNewAPIUpstream,
 } from '../../lib/channel-plugin-extensions'
 import { getChannelTypeConfig } from '../../lib/channel-type-config'
+import { compareChannelModels } from '../../lib/model-sync'
 import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
@@ -232,6 +234,7 @@ import {
   type ModelMappingDraftRequest,
 } from '../model-mapping-editor'
 import { ModelRedirectPanel } from '../model-redirect-panel'
+import { ModelSyncStatus } from '../model-sync-status'
 import { ResponsesWebSocketSetting } from '../responses-websocket-setting'
 import { UpstreamModelSelection } from '../upstream-model-selection'
 import {
@@ -1202,6 +1205,7 @@ export function ChannelMutateDrawer({
     !isEditing ||
     (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive)
   const canDiscoverModels = previewModels ? canEditSensitive : canOperateChannel
+  const discoverySupported = supportsModelDiscovery(currentType)
   const previewKey = isEditing ? undefined : currentKey
   const previewRequest = useMemo<ChannelModelDiscoveryRequest>(
     () => ({
@@ -1210,6 +1214,10 @@ export function ChannelMutateDrawer({
         type: currentType,
         key: previewKey,
         channel_id: isEditing ? channelId || undefined : undefined,
+        task_plugin_key:
+          currentType === CHANNEL_TYPE_TASK_PLUGIN
+            ? currentTaskPluginKey
+            : undefined,
         base_url: currentBaseUrl || '',
         advanced_custom: currentAdvancedCustom,
         header_override: currentHeaderOverride,
@@ -1221,6 +1229,7 @@ export function ChannelMutateDrawer({
       previewKey,
       isEditing,
       channelId,
+      currentTaskPluginKey,
       currentBaseUrl,
       currentAdvancedCustom,
       currentHeaderOverride,
@@ -1235,12 +1244,39 @@ export function ChannelMutateDrawer({
     enabled:
       open &&
       canDiscoverModels &&
-      MODEL_FETCHABLE_TYPES.has(currentType) &&
+      discoverySupported &&
       (!isEditing || Boolean(channelData?.data)),
     request: previewModels ? previewRequest : savedRequest,
   })
   const upstreamModelList =
     discovery.status === 'success' ? discovery.models : NO_UPSTREAM_MODELS
+  // Only plugins are compared against the upstream catalog: their upstream is a
+  // single model catalog, while other channel types may serve names their
+  // `/models` reply never mentions.
+  const syncedCatalog = useMemo(
+    () =>
+      currentType === CHANNEL_TYPE_TASK_PLUGIN &&
+      discovery.status === 'success' &&
+      discovery.sync?.synced
+        ? discovery.models
+        : null,
+    [currentType, discovery.status, discovery.sync, discovery.models]
+  )
+  // Models the channel still serves that the upstream no longer lists, and the
+  // upstream models it does not list yet. Both come from one comparison.
+  const modelComparison = useMemo(
+    () =>
+      syncedCatalog
+        ? compareChannelModels(
+            currentModelsArray,
+            syncedCatalog,
+            currentModelMapping || ''
+          )
+        : null,
+    [syncedCatalog, currentModelsArray, currentModelMapping]
+  )
+  const unlistedModels = modelComparison?.missing ?? NO_UPSTREAM_MODELS
+  const addedUpstreamModels = modelComparison?.added ?? NO_UPSTREAM_MODELS
   const batchMappingSource: ModelMappingBatchSource =
     upstreamModelList.length > 0 ? 'upstream' : 'channel'
   const canBatchMap =
@@ -1248,7 +1284,7 @@ export function ChannelMutateDrawer({
   const fetchDiscoveredModels = discovery.fetch
   const handleFetchModels = useCallback(async () => {
     const type = form.getValues('type')
-    if (!MODEL_FETCHABLE_TYPES.has(type)) {
+    if (!supportsModelDiscovery(type)) {
       toast.error(t('This channel type does not support fetching models'))
       return
     }
@@ -1271,6 +1307,36 @@ export function ChannelMutateDrawer({
     }
     await fetchDiscoveredModels()
   }, [isEditing, canDiscoverModels, form, t, fetchDiscoveredModels])
+
+  // A saved task plugin channel is checked once each time the drawer opens, so
+  // its model list status is visible without an extra click.
+  const autoSyncedChannel = useRef<number | null>(null)
+  useEffect(() => {
+    if (!open) {
+      autoSyncedChannel.current = null
+      return
+    }
+    if (
+      currentType !== CHANNEL_TYPE_TASK_PLUGIN ||
+      !isEditing ||
+      !channelId ||
+      !canDiscoverModels ||
+      !channelData?.data ||
+      autoSyncedChannel.current === channelId
+    ) {
+      return
+    }
+    autoSyncedChannel.current = channelId
+    void fetchDiscoveredModels()
+  }, [
+    open,
+    currentType,
+    isEditing,
+    channelId,
+    canDiscoverModels,
+    channelData?.data,
+    fetchDiscoveredModels,
+  ])
 
   // Handle model operations
   const handleFillRelatedModels = useCallback(() => {
@@ -3273,8 +3339,22 @@ export function ChannelMutateDrawer({
                       createLabel='Add custom model "{{value}}"'
                       maxVisibleChips={8}
                       copyChipOnClick
+                      invalidValues={unlistedModels}
+                      addedValues={addedUpstreamModels}
                     />
                   </FormControl>
+                  {/* Ordinary channels already show loading and errors in the
+                      discovery block; only their successful sync needs a line. */}
+                  {(!MODEL_FETCHABLE_TYPES.has(currentType) ||
+                    discovery.status === 'success') && (
+                    <ModelSyncStatus
+                      status={discovery.status}
+                      sync={discovery.sync}
+                      error={discovery.error}
+                      missing={unlistedModels}
+                      added={addedUpstreamModels}
+                    />
+                  )}
                   <div className='text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs'>
                     <Route className='size-3.5 shrink-0' aria-hidden='true' />
                     {mappingCount > 0 && (
@@ -3527,7 +3607,7 @@ export function ChannelMutateDrawer({
                   <FileText className='mr-2 h-4 w-4' aria-hidden='true' />
                   {t('Fill Related Models')}
                 </Button>
-                {MODEL_FETCHABLE_TYPES.has(currentType) && (
+                {discoverySupported && (
                   <>
                     <Button
                       type='button'

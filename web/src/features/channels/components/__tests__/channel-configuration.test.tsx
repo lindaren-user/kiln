@@ -2018,15 +2018,17 @@ test('model configuration keeps unchecked candidates searchable and supports cat
   expect(trigger).toBeDisabled()
 })
 
-test('model configuration is available for a plugin channel without upstream discovery and is disabled when its model list is empty', async () => {
+test('model configuration is available for a plugin channel with upstream discovery and is disabled when its model list is empty', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
   await user.click(await screen.findByRole('option', { name: /Video A/ }))
   const trigger = screen.getByRole('button', { name: 'Configure Models' })
   expect(trigger).toBeEnabled()
+  // Task plugins answer their own model list interface, so the fetch action is
+  // offered here just like for built-in providers.
   expect(
-    screen.queryByRole('button', { name: 'Fetch from Upstream' })
-  ).not.toBeInTheDocument()
+    screen.getByRole('button', { name: 'Fetch from Upstream' })
+  ).toBeInTheDocument()
   await user.click(trigger)
   const dialog = within(
     screen.getByRole('dialog', { name: 'Configure Models' })

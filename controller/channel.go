@@ -331,7 +331,7 @@ func FetchUpstreamModels(c *gin.Context) {
 		return
 	}
 
-	ids, err := fetchChannelUpstreamModelIDs(channel)
+	sync, err := fetchChannelModelSync(c.Request.Context(), channel)
 	if err != nil {
 		common.ApiErrorT(c, "Failed to fetch models: {{error}}", map[string]any{"error": err.Error()})
 		return
@@ -340,7 +340,8 @@ func FetchUpstreamModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    ids,
+		"data":    sync.Models,
+		"sync":    channelModelSyncPayload(sync),
 	})
 }
 
@@ -1384,6 +1385,7 @@ type fetchModelsRequest struct {
 	BaseURL        *string `json:"base_url"`
 	Type           int     `json:"type"`
 	Key            string  `json:"key"`
+	TaskPluginKey  string  `json:"task_plugin_key"`
 	AdvancedCustom *string `json:"advanced_custom"`
 	HeaderOverride *string `json:"header_override"`
 	Proxy          *string `json:"proxy"`
@@ -1494,9 +1496,12 @@ func FetchModels(c *gin.Context) {
 			Key:     key,
 			BaseURL: &baseURL,
 		}
+		if req.Type == constant.ChannelTypeTaskPlugin {
+			channel.SetSetting(dto.ChannelSettings{TaskPluginKey: strings.TrimSpace(req.TaskPluginKey)})
+		}
 	}
 
-	models, err := fetchChannelUpstreamModelIDs(channel)
+	sync, err := fetchChannelModelSync(c.Request.Context(), channel)
 	if err != nil {
 		common.ApiErrorT(c, "Failed to fetch models: {{error}}", map[string]any{"error": err.Error()})
 		return
@@ -1504,7 +1509,8 @@ func FetchModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    models,
+		"data":    sync.Models,
+		"sync":    channelModelSyncPayload(sync),
 	})
 }
 

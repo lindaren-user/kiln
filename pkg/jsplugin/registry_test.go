@@ -1311,3 +1311,23 @@ export function parseSubmitEventDelta(){return {changes:[],state:null,done:true}
 		})
 	}
 }
+
+func TestValidateV1MetaChecksModelUpstreamNames(t *testing.T) {
+	meta := Meta{
+		APIVersion:         1,
+		Key:                "upstream-names",
+		Name:               "Test",
+		Version:            "1.0.0",
+		Author:             AuthorMeta{Name: "Test"},
+		Models:             []string{"public-model"},
+		FetchMode:          "per_task",
+		ModelUpstreamNames: map[string]string{"public-model": "vendor-model"},
+	}
+	require.NoError(t, ValidateV1Meta(meta))
+
+	meta.ModelUpstreamNames = map[string]string{"other-model": "vendor-model"}
+	require.ErrorContains(t, ValidateV1Meta(meta), "is not declared in plugin meta models")
+
+	meta.ModelUpstreamNames = map[string]string{"public-model": " "}
+	require.ErrorContains(t, ValidateV1Meta(meta), "must be non-empty canonical names")
+}

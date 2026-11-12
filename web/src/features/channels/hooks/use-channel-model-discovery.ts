@@ -21,10 +21,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createServerError } from '@/lib/server-error-message'
 
 import { fetchModels, fetchUpstreamModels } from '../api'
+import type { ModelSyncInfo } from '../types'
 
 type DiscoveryState = {
   status: 'idle' | 'loading' | 'success' | 'error' | 'stale'
   models: string[]
+  sync?: ModelSyncInfo
   error?: unknown
 }
 
@@ -69,7 +71,11 @@ export function useChannelModelDiscovery(props: ChannelModelDiscoveryProps) {
       if (!response.success) {
         throw createServerError(response, 'Failed to fetch models')
       }
-      setState({ status: 'success', models: response.data ?? [] })
+      setState({
+        status: 'success',
+        models: response.data ?? [],
+        sync: response.sync,
+      })
     } catch (error) {
       if (requestSequence !== sequence.current) return
       setState((previous) => ({
