@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
@@ -12,6 +12,12 @@ vi.mock('@/lib/api', () => ({
 }))
 
 const apiMock = vi.mocked(api)
+
+beforeEach(() => {
+  apiMock.get.mockResolvedValue({
+    data: { success: true, data: { enabled: true } },
+  } as never)
+})
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -27,9 +33,6 @@ describe('uploadQuickGenerateReferences', () => {
       .mockResolvedValueOnce({ ok: true, blob: async () => blob })
       .mockResolvedValueOnce({ ok: true })
     vi.stubGlobal('fetch', fetchMock)
-    apiMock.get.mockResolvedValue({
-      data: { success: true, data: { enabled: true } },
-    } as never)
     apiMock.post.mockResolvedValue({
       data: {
         success: true,
@@ -73,9 +76,6 @@ describe('uploadQuickGenerateReferences', () => {
       .mockResolvedValueOnce({ ok: true, blob: async () => blob })
       .mockResolvedValueOnce({ ok: true })
     vi.stubGlobal('fetch', fetchMock)
-    apiMock.get.mockResolvedValue({
-      data: { success: true, data: { enabled: true } },
-    } as never)
     apiMock.post.mockResolvedValue({
       data: {
         success: true,
@@ -115,9 +115,6 @@ describe('uploadQuickGenerateReferences', () => {
       blob: async () => new Blob(['same image'], { type: 'image/png' }),
     })
     vi.stubGlobal('fetch', fetchMock)
-    apiMock.get.mockResolvedValue({
-      data: { success: true, data: { enabled: true } },
-    } as never)
     apiMock.post.mockResolvedValue({
       data: {
         success: true,
@@ -251,9 +248,6 @@ describe('uploadQuickGenerateReferences', () => {
         .mockResolvedValueOnce({ ok: true, blob: async () => blob })
         .mockResolvedValueOnce({ ok: true })
     )
-    apiMock.get.mockResolvedValue({
-      data: { success: true, data: { enabled: true } },
-    } as never)
     apiMock.post.mockResolvedValue({
       data: {
         success: true,
@@ -272,5 +266,43 @@ describe('uploadQuickGenerateReferences', () => {
 
     expect(onProgress).toHaveBeenLastCalledWith(1, 1)
     URL.revokeObjectURL(blobURL)
+  })
+
+  it('re-signs a stored object URL before it is submitted again', async () => {
+    const digest = 'a'.repeat(64)
+    const stored = `https://bucket.r2.example/quick-generate/${digest}?X-Amz-Signature=old`
+    const fresh = `https://bucket.r2.example/quick-generate/${digest}?X-Amz-Signature=new`
+    apiMock.post.mockResolvedValue({
+      data: { success: true, data: { url: fresh } },
+    } as never)
+
+    await expect(
+      uploadQuickGenerateReferences([{ url: stored, mediaType: 'image/png' }])
+    ).resolves.toEqual([{ url: fresh, mediaType: 'image/png' }])
+    expect(apiMock.post).toHaveBeenCalledWith(
+      '/api/quick-generate/upload/sign',
+      { url: stored }
+    )
+  })
+
+  it('passes through a reference that is not stored by this gateway', async () => {
+    await expect(
+      uploadQuickGenerateReferences([
+        { url: 'https://cdn.example/photo.png', mediaType: 'image/png' },
+      ])
+    ).resolves.toEqual([
+      { url: 'https://cdn.example/photo.png', mediaType: 'image/png' },
+    ])
+    expect(apiMock.post).not.toHaveBeenCalled()
+  })
+
+  it('keeps the stored URL when re-signing fails', async () => {
+    const digest = 'b'.repeat(64)
+    const stored = `https://bucket.r2.example/quick-generate/${digest}?X-Amz-Signature=old`
+    apiMock.post.mockRejectedValue(new Error('storage unavailable'))
+
+    await expect(
+      uploadQuickGenerateReferences([{ url: stored, mediaType: 'image/png' }])
+    ).resolves.toEqual([{ url: stored, mediaType: 'image/png' }])
   })
 })

@@ -59,6 +59,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/verify":                                   accessTokenAnyRule,
 	"GET /api/quick-generate/upload/status":              accessTokenAnyRule,
 	"POST /api/quick-generate/upload":                    accessTokenAnyRule,
+	"POST /api/quick-generate/upload/sign":               accessTokenAnyRule,
 	"POST /api/quick-generate/upload/multipart":          accessTokenAnyRule,
 	"POST /api/quick-generate/upload/multipart/complete": accessTokenAnyRule,
 

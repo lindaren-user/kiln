@@ -389,6 +389,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			quickGenerateRoute.GET("/upload/status", controller.QuickGenerateUploadEnabled)
 			quickGenerateRoute.POST("/upload", controller.PrepareQuickGenerateUpload)
+			quickGenerateRoute.POST("/upload/sign", controller.RefreshQuickGenerateUploadURL)
 			quickGenerateRoute.POST("/upload/multipart", controller.BeginQuickGenerateMultipartUpload)
 			quickGenerateRoute.POST("/upload/multipart/complete", controller.CompleteQuickGenerateMultipartUpload)
 		}
