@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var expectedKeys = []string{"alibaba", "asdada", "doubao", "google", "hailuo", "ip233", "jimeng", "kling", "sora", "sunoapi", "top-image", "vertex-ai", "vidu", "vimo", "xai"}
+var expectedKeys = []string{"alibaba", "asdada", "doubao", "google", "hailuo", "ip233", "jimeng", "jojolife", "kling", "sora", "sunoapi", "top-image", "vertex-ai", "vidu", "vimo", "xai"}
 
 func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing.T) {
 	generation := jsplugin.DefaultRegistry.Generation()
