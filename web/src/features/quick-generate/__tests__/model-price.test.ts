@@ -181,6 +181,56 @@ describe('generation model price', () => {
     expect(generationRunPrice(source, { seconds: 4, usage })).toBe('$1.3')
   })
 
+  it('prices a video run whose expression bills by the run count', () => {
+    const capability: ModelCapability = {
+      kind: 'video',
+      fields: [
+        {
+          key: 'seconds',
+          labelKey: 'Duration',
+          type: 'number',
+          valueType: 'number',
+          requestPath: ['duration'],
+          defaultValue: 4,
+        },
+        {
+          key: 'resolution',
+          labelKey: 'Resolution',
+          type: 'select',
+          requestPath: ['metadata', 'resolution'],
+          defaultValue: '480p',
+          options: [
+            { value: '480p', label: '480p' },
+            { value: '720p', label: '720p' },
+          ],
+        },
+      ],
+      referenceImages: null,
+      mediaNotice: false,
+    }
+    const source = model({
+      billing_mode: 'tiered_expr',
+      billing_expr:
+        'u("resolution") == "480p" ? tier("480p", u("count") * 10) : tier("720p", u("count") * 13)',
+      billing_usage_schema: {
+        count: { type: 'number', unit: 'count' },
+        resolution: { enum: ['480p', '720p'] },
+      },
+    })
+    // The composer has no count field for video, so the run is one video.
+    const usage = generationUsageFacts(
+      source.billing_usage_schema,
+      capability,
+      {
+        seconds: '4',
+        resolution: '480p',
+      }
+    )
+
+    expect(usage).toEqual({ resolution: '480p', count: 1 })
+    expect(generationRunPrice(source, { seconds: 4, usage })).toBe('$10')
+  })
+
   it('prices one image run from the requested count', () => {
     expect(
       generationRunPrice(model({ quota_type: 1, model_price: 0.05 }), {
