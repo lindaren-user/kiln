@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "此第三方账户已被绑定。",
     "This FAQ entry will be removed from the list.": "此 FAQ 条目将从列表中移除。",
     "This feature is experimental. Configuration format and behavior may change.": "此功能为实验性功能。配置格式和行为可能会发生变化。",
+    "This feature is under active development...": "功能还在加急开发中...",
     "This feature requires signing in to the dashboard": "此功能需要登录面板后使用",
     "This field does not support wildcards or regular expressions.": "这里不支持通配符或正则表达式。",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "该条历史记录缺少审计字段。当前版本已支持记录服务器 IP、回调 IP、支付方式与系统版本等审计信息；这些字段仅会写入后续新产生的记录，历史记录无法自动补齐。",

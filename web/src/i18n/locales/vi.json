@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "Tài khoản bên ngoài này đã được liên kết.",
     "This FAQ entry will be removed from the list.": "Mục FAQ này sẽ bị xóa khỏi danh sách.",
     "This feature is experimental. Configuration format and behavior may change.": "Tính năng này đang ở giai đoạn thử nghiệm. Định dạng cấu hình và hành vi có thể thay đổi.",
+    "This feature is under active development...": "Tính năng này đang được gấp rút phát triển...",
     "This feature requires signing in to the dashboard": "Tính năng này yêu cầu đăng nhập bảng điều khiển",
     "This field does not support wildcards or regular expressions.": "Trường này không hỗ trợ ký tự đại diện hoặc biểu thức chính quy.",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "Bản ghi lịch sử này được tạo trước khi tính năng thông tin kiểm toán ra đời nên thiếu dữ liệu kiểm toán. Phiên bản hiện tại đã hỗ trợ ghi lại IP máy chủ, IP gọi lại, phương thức thanh toán và phiên bản hệ thống, nhưng các trường này chỉ được ghi cho các bản ghi mới về sau — không thể bổ sung hồi tố cho bản ghi cũ.",

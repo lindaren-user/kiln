@@ -32,6 +32,7 @@ import {
   waitFor,
 } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { checkIsActive } from '@/components/layout/lib/url-utils'
@@ -51,6 +52,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useSidebarConfig } from '../use-sidebar-config'
 import { useSidebarData } from '../use-sidebar-data'
 import { useSidebarView } from '../use-sidebar-view'
+
+vi.mock('sonner', () => ({ toast: { info: vi.fn() } }))
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', {
@@ -150,6 +153,25 @@ describe('create sidebar section', () => {
     expect(titles).toContain('Quick generate')
     expect(titles).not.toContain('Canvas')
     expect(titles).not.toContain('Playground')
+  })
+
+  it('offers Infinite Canvas under Quick generate and explains it is in development', () => {
+    const { result } = sidebarFor()
+    const createGroup = result.current.find((group) => group.id === 'create')
+    expect(createGroup?.items.map((item) => item.title)).toEqual([
+      'Quick generate',
+      'Infinite Canvas',
+    ])
+
+    const canvas = createGroup?.items[1]
+    if (!canvas || !('onClick' in canvas)) {
+      throw new Error('Infinite Canvas must be a command entry')
+    }
+    expect('url' in canvas).toBe(false)
+    canvas.onClick()
+    expect(toast.info).toHaveBeenCalledWith(
+      'This feature is under active development...'
+    )
   })
 
   it('drops a saved Playground module from the admin form', () => {

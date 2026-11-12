@@ -49,6 +49,7 @@ import {
 
 import { checkIsActive } from '../lib/url-utils'
 import type {
+  NavAction,
   NavCollapsible,
   NavLink,
   NavGroup as NavGroupProps,
@@ -71,8 +72,11 @@ export function NavGroup({ title, items }: NavGroupProps) {
         {items.map((item) => {
           const key = `${item.title}-${item.url ?? ''}`
 
-          // If no sub-items, render regular link
+          // If no sub-items, render a link, or a button for command entries
           if (!item.items) {
+            if ('onClick' in item) {
+              return <SidebarMenuAction key={key} item={item as NavAction} />
+            }
             return (
               <SidebarMenuLink key={key} item={item as NavLink} href={href} />
             )
@@ -127,6 +131,29 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
             onClick={() => setOpenMobile(false)}
           />
         }
+      >
+        {item.icon && <item.icon className='shrink-0' />}
+        <span className='min-w-0 flex-1 truncate'>{item.title}</span>
+        {item.badge && <NavBadge>{item.badge}</NavBadge>}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
+/**
+ * Sidebar command item - runs an action instead of navigating
+ */
+function SidebarMenuAction({ item }: { item: NavAction }) {
+  const { setOpenMobile } = useSidebar()
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        type='button'
+        tooltip={item.title}
+        onClick={() => {
+          setOpenMobile(false)
+          item.onClick()
+        }}
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>

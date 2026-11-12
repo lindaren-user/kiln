@@ -32,12 +32,14 @@ import {
   ServerCog,
   Settings,
   ShieldCheck,
+  Sparkles,
   Ticket,
   User,
   Users,
   Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import type { SidebarBadges, SidebarData } from '@/components/layout/types'
 import { ROLE } from '@/lib/roles'
@@ -60,7 +62,15 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
           {
             title: t('Quick generate'),
             url: '/quick-generate',
+            icon: Sparkles,
+          },
+          // The canvas will live on its own domain, so this stays a command
+          // entry until the external link is ready.
+          {
+            title: t('Infinite Canvas'),
             icon: Frame,
+            onClick: () =>
+              toast.info(t('This feature is under active development...')),
           },
         ],
       },

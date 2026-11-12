@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "此第三方帳戶已被綁定。",
     "This FAQ entry will be removed from the list.": "此 FAQ 條目將從列表中移除。",
     "This feature is experimental. Configuration format and behavior may change.": "此功能為實驗性功能。設定格式和行為可能會發生變化。",
+    "This feature is under active development...": "功能還在加急開發中...",
     "This feature requires signing in to the dashboard": "此功能需要登入面板後使用",
     "This field does not support wildcards or regular expressions.": "這裡不支援萬用字元或正則表達式。",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "該條歷史記錄缺少審計欄位。目前版本已支援記錄伺服器 IP、Callback IP、支付方式與系統版本等審計資訊；這些欄位僅會寫入後續新產生的記錄，歷史記錄無法自動補齊。",

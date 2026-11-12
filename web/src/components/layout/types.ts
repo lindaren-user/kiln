@@ -53,9 +53,18 @@ export type NavCollapsible = BaseNavItem & {
 }
 
 /**
+ * Navigation action type - an entry that runs a command instead of navigating
+ */
+export type NavAction = BaseNavItem & {
+  onClick: () => void
+  url?: never
+  items?: never
+}
+
+/**
  * Navigation item union type
  */
-export type NavItem = NavCollapsible | NavLink
+export type NavItem = NavCollapsible | NavLink | NavAction
 
 /**
  * Navigation group type - a group of navigation items in sidebar
