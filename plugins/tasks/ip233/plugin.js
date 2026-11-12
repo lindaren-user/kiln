@@ -112,6 +112,14 @@ export const meta = {
   website: "https://new.ip233.com",
   baseUrl: "https://api-new.ip233.com",
   models: VIDEO_MODEL_NAMES,
+  // The console compares a channel's model list with the vendor's /models
+  // reply, so a declared name that the plugin sends under a different id has
+  // to say which id that is.
+  modelUpstreamNames: Object.fromEntries(
+    Object.entries(VIDEO_MODELS)
+      .filter(([, spec]) => spec.upstream)
+      .map(([name, spec]) => [name, spec.upstream])
+  ),
   fetchMode: "per_task",
   // Union of both profiles, used for an alias that resolves to several models.
   // Examples are per-profile below; a plugin-level vector would have to cover

@@ -215,10 +215,18 @@ export interface ChannelBalanceResponse {
   raw_response?: string
 }
 
+/** Where a channel's model list came from, as reported beside `data`. */
+export interface ModelSyncInfo {
+  supported: boolean
+  synced: boolean
+  message?: string
+}
+
 export interface FetchModelsResponse {
   success: boolean
   message?: string
   data?: string[]
+  sync?: ModelSyncInfo
 }
 
 export interface CopyChannelResponse {

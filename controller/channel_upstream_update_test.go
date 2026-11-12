@@ -392,7 +392,7 @@ func TestFetchModelsUsesSharedChannelFetchBehavior(t *testing.T) {
 	FetchModels(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, `{"success":true,"message":"","data":["claude-sonnet"]}`, recorder.Body.String())
+	require.JSONEq(t, `{"success":true,"message":"","data":["claude-sonnet"],"sync":{"supported":true,"synced":true,"message":""}}`, recorder.Body.String())
 }
 
 func TestFetchNewAPIModelsUsesOpenAIContract(t *testing.T) {
@@ -610,4 +610,23 @@ func TestDetectAllChannelUpstreamModelUpdatesRejectsExistingActiveTask(t *testin
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "A model update task is already running or queued")
+}
+
+func TestChannelModelSyncPayloadReportsWhetherTheListIsCurrent(t *testing.T) {
+	synced := channelModelSyncPayload(channelModelSync{
+		Models:    []string{"a"},
+		Supported: true,
+		Synced:    true,
+	})
+	require.Equal(t, true, synced["synced"])
+	require.Equal(t, true, synced["supported"])
+	require.Equal(t, "", synced["message"])
+
+	failed := channelModelSyncPayload(channelModelSync{
+		Supported: true,
+		Message:   "upstream returned status 500",
+	})
+	require.Equal(t, false, failed["synced"])
+	require.Equal(t, true, failed["supported"])
+	require.Equal(t, "upstream returned status 500", failed["message"])
 }

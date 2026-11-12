@@ -88,6 +88,16 @@ interface MultiSelectProps {
    * instead of being inert. The remove (×) button keeps its own behaviour.
    */
   copyChipOnClick?: boolean
+  /**
+   * Values whose chips are drawn in the destructive tone, e.g. models the
+   * upstream no longer lists. Matching is case-insensitive.
+   */
+  invalidValues?: string[]
+  /**
+   * Values the user does not have yet, e.g. models the upstream added. They are
+   * drawn as extra chips after the selection and join it when clicked.
+   */
+  addedValues?: string[]
 }
 
 const COMMA_REGEX = /[,，\n]/
@@ -165,6 +175,12 @@ export function MultiSelect(props: MultiSelectProps) {
     }
     return map
   }, [props.options])
+
+  const invalidSet = React.useMemo(
+    () =>
+      new Set((props.invalidValues ?? []).map((value) => value.toLowerCase())),
+    [props.invalidValues]
+  )
 
   const trimmedInput = inputValue.trim()
   const inputMatchesExisting =
@@ -330,8 +346,15 @@ export function MultiSelect(props: MultiSelectProps) {
                   const label = labelMap.get(value) ?? value
                   const hint = hintMap.get(value)
                   const icon = iconMap.get(value)
+                  const invalid = invalidSet.has(value.toLowerCase())
                   return (
-                    <ComboboxChip key={value}>
+                    <ComboboxChip
+                      key={value}
+                      className={cn(
+                        invalid &&
+                          'bg-destructive/10 text-destructive dark:bg-destructive/20'
+                      )}
+                    >
                       {icon && (
                         <span
                           aria-hidden='true'
@@ -399,6 +422,39 @@ export function MultiSelect(props: MultiSelectProps) {
                       {t('Collapse')}
                     </button>
                   )}
+                {(props.addedValues ?? []).map((value) => (
+                  <span
+                    key={`added:${value}`}
+                    className='flex h-[calc(--spacing(5.25))] w-fit items-center justify-center gap-0.5 rounded-sm border border-dashed border-amber-500/60 bg-amber-500/10 px-1.5 text-xs font-medium whitespace-nowrap text-amber-700 dark:text-amber-400'
+                  >
+                    <button
+                      type='button'
+                      title={t('Click to copy')}
+                      onClick={(event) => handleCopyChip(event, value, value)}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className='max-w-[16rem] cursor-pointer truncate rounded-sm hover:underline'
+                    >
+                      {value}
+                    </button>
+                    <button
+                      type='button'
+                      aria-label={t('Add this model to the list')}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        addValues([value])
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      className='hover:bg-destructive/10 dark:hover:bg-destructive/20 -mr-1 inline-flex size-4 cursor-pointer items-center justify-center rounded-sm opacity-70 transition-[background-color,opacity] hover:opacity-100'
+                    >
+                      <HugeiconsIcon
+                        icon={Add01Icon}
+                        strokeWidth={2}
+                        className='size-3'
+                      />
+                    </button>
+                  </span>
+                ))}
               </>
             )
           }}
