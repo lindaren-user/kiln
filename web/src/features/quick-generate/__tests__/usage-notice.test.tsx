@@ -24,8 +24,8 @@ import { UsageNotice } from '../components/usage-notice'
 const STORAGE_KEY = 'kiln:quick-generate:notice-collapsed:v1'
 const SUMMARY =
   'For testing only. Using this as a workbench is not recommended.'
-const IMAGE_CAVEAT =
-  'Images are not saved: an image still generating is lost when you leave or reload this page. Download what you want to keep first.'
+const RESULT_CAVEAT =
+  'Results are not saved: an image still generating is lost when you leave or reload this page, and a finished video must be downloaded as soon as it is ready.'
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -36,7 +36,7 @@ describe('quick generate usage notice', () => {
     render(<UsageNotice />)
 
     expect(screen.getByText(SUMMARY)).toBeInTheDocument()
-    const caveat = screen.getByText(IMAGE_CAVEAT)
+    const caveat = screen.getByText(RESULT_CAVEAT)
     expect(caveat).toBeInTheDocument()
     // The panel height slides; a panel that merely mounts would reflow the
     // result area below in one frame. The class carries the keyframes and
@@ -54,7 +54,7 @@ describe('quick generate usage notice', () => {
 
     fireEvent.click(screen.getByRole('button', { name: new RegExp(SUMMARY) }))
 
-    expect(screen.queryByText(IMAGE_CAVEAT)).not.toBeInTheDocument()
+    expect(screen.queryByText(RESULT_CAVEAT)).not.toBeInTheDocument()
     expect(screen.getByText(SUMMARY)).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: new RegExp(SUMMARY) })
@@ -70,7 +70,7 @@ describe('quick generate usage notice', () => {
     render(<UsageNotice />)
 
     expect(screen.getByText(SUMMARY)).toBeInTheDocument()
-    expect(screen.queryByText(IMAGE_CAVEAT)).not.toBeInTheDocument()
+    expect(screen.queryByText(RESULT_CAVEAT)).not.toBeInTheDocument()
   })
 
   it('expands again and stores that the caveats are shown', () => {
@@ -79,7 +79,7 @@ describe('quick generate usage notice', () => {
 
     fireEvent.click(screen.getByRole('button', { name: new RegExp(SUMMARY) }))
 
-    expect(screen.getByText(IMAGE_CAVEAT)).toBeInTheDocument()
+    expect(screen.getByText(RESULT_CAVEAT)).toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null')).toBe(
       false
     )

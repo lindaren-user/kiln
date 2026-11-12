@@ -3280,7 +3280,7 @@
     "Image Tokens": "Token hình ảnh",
     "Images": "Số hình ảnh",
     "images and video?": "hình ảnh và video?",
-    "Images are not saved: an image still generating is lost when you leave or reload this page. Download what you want to keep first.": "Ảnh không được lưu: ảnh còn đang tạo sẽ mất khi bạn rời trang hoặc tải lại trang. Hãy tải những gì muốn giữ trước.",
+    "Results are not saved: an image still generating is lost when you leave or reload this page, and a finished video must be downloaded as soon as it is ready.": "Kết quả không được lưu trên máy chủ: ảnh đang tạo sẽ mất khi bạn rời hoặc tải lại trang, còn video đã xong cần được tải xuống ngay khi sẵn sàng.",
     "Imagine the pricing table has three groups: default (ratio 1.0), premium (ratio 0.5), and vip (ratio 0.8). Users whose account is in the vip group get user-level perks, and premium is a cheaper channel pool that users can pick for their tokens.": "Giả sử bảng định giá có ba nhóm: default (hệ số 1.0), premium (hệ số 0.5) và vip (hệ số 0.8). Người dùng có tài khoản thuộc nhóm vip nhận ưu đãi cấp người dùng, còn premium là một nhóm kênh rẻ hơn mà người dùng có thể chọn cho token của mình.",
     "Import from URL": "Nhập từ URL",
     "Import to CC Switch": "Nhập vào CC Switch",
