@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "Этот внешний аккаунт уже привязан.",
     "This FAQ entry will be removed from the list.": "Эта запись FAQ будет удалена из списка.",
     "This feature is experimental. Configuration format and behavior may change.": "Эта функция является экспериментальной. Формат конфигурации и поведение могут измениться.",
+    "This feature is under active development...": "Эта функция находится в активной разработке...",
     "This feature requires signing in to the dashboard": "Для этой функции нужно войти в панель",
     "This field does not support wildcards or regular expressions.": "Это поле не поддерживает подстановочные знаки или регулярные выражения.",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "Эта историческая запись была создана до появления функции аудита и не содержит данных аудита. Текущая версия уже поддерживает запись IP-адреса сервера, IP обратного вызова, способа оплаты и версии системы, но эти поля будут заполняться только в новых записях — восполнить их в старых записях задним числом невозможно.",

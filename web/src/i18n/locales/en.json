@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "This external account is already bound.",
     "This FAQ entry will be removed from the list.": "This FAQ entry will be removed from the list.",
     "This feature is experimental. Configuration format and behavior may change.": "This feature is experimental. Configuration format and behavior may change.",
+    "This feature is under active development...": "This feature is under active development...",
     "This feature requires signing in to the dashboard": "This feature requires signing in to the dashboard",
     "This field does not support wildcards or regular expressions.": "This field does not support wildcards or regular expressions.",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.",

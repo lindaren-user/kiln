@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "Ce compte externe est déjà lié.",
     "This FAQ entry will be removed from the list.": "Cette entrée de FAQ sera retirée de la liste.",
     "This feature is experimental. Configuration format and behavior may change.": "Cette fonctionnalité est expérimentale. Le format de configuration et le comportement peuvent changer.",
+    "This feature is under active development...": "Cette fonctionnalité est en cours de développement...",
     "This feature requires signing in to the dashboard": "Cette fonctionnalité nécessite une connexion au tableau de bord",
     "This field does not support wildcards or regular expressions.": "Ce champ ne prend pas en charge les jokers ni les expressions régulières.",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "Cet enregistrement historique date d'avant le suivi des informations d'audit et ne peut pas être complété rétroactivement. La version actuelle enregistre déjà l'IP du serveur, l'IP de rappel, le mode de paiement et la version du système pour les nouveaux paiements à venir.",

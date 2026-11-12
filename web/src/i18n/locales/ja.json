@@ -6568,6 +6568,7 @@
     "This external account is already bound.": "この外部アカウントはすでに連携されています。",
     "This FAQ entry will be removed from the list.": "この FAQ 項目はリストから削除されます。",
     "This feature is experimental. Configuration format and behavior may change.": "この機能は実験的です。設定フォーマットや動作は変更される可能性があります。",
+    "This feature is under active development...": "この機能は現在急ピッチで開発中です...",
     "This feature requires signing in to the dashboard": "この機能を使うにはダッシュボードへのログインが必要です",
     "This field does not support wildcards or regular expressions.": "このフィールドではワイルドカードや正規表現は使えません。",
     "This historical record predates audit-info tracking and cannot be backfilled. The current instance already records server IP, callback IP, payment method, and system version for new top-ups going forward.": "このレコードは監査情報の記録に対応する前の履歴データのため、監査情報がありません。現在のバージョンではサーバーIP、コールバックIP、支払い方法、システムバージョンなどの監査情報を記録できますが、これらは今後新しく作成されるレコードにのみ適用され、過去のレコードを遡って補完することはできません。",
