@@ -87,11 +87,6 @@ export const DOCS_ENDPOINT_GROUPS: DocsEndpointGroup[] = [
         path: '/videos/{task_id}/content',
         descriptionKey: 'Download video content (Range supported)',
       },
-      {
-        method: 'HEAD',
-        path: '/videos/{task_id}/content',
-        descriptionKey: 'Probe video content headers (Range supported)',
-      },
     ],
   },
 ]
