@@ -25,7 +25,7 @@ export interface FetchRequest {url: string; method?: "GET" | "HEAD"; headers?: R
 /** headers holds the first value of each header under its canonical name; body is parsed JSON when the response parses, otherwise text, and "" for HEAD; with responseType "bytes" it is an ArrayBuffer of the response bytes. */
 export interface FetchResponse {status: number; headers: Record<string, string>; body: JSONValue | string | ArrayBuffer}
 declare global {const utils: HostUtils;}
-export type FileReference = Readonly<{ref: string; field: string; filename: string; mimeType: string; size: number}>;
+export type FileReference = Readonly<{ref: string; field: string; filename: string; mimeType: string; size: number; /** Signed public read URL, present when the gateway's object storage is configured. */ url?: string}>;
 export type FilePlaceholder = Readonly<{__fileRef: string; encoding: "base64" | "dataUrl"; mimeType?: string; maxBytes?: number}>;
 export type DecodedBody =
   | Readonly<{kind: "json"; value: JSONValue}>

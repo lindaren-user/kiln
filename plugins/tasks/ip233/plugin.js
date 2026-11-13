@@ -7,9 +7,10 @@
 // The vendor rejects parameters a model does not list, so every value is
 // validated here before the vendor can charge for a request it will refuse.
 //
-// TODO: Reference material is URL-only. IP233's /v1/media/uploads upload token
-// is not used, and seedance's structured `references` (image/video/audio
-// roles) is not sent; only the flat reference_* arrays are.
+// Reference material is URL-only. Uploaded files arrive as signed read URLs the
+// host publishes to its object storage; IP233's own /v1/media/uploads token is
+// not used. Seedance's structured `references` (image/video/audio roles) is not
+// sent; only the flat reference_* arrays are.
 
 // Per-second billing models; every other video model bills once per task.
 const PER_SECOND_VIDEO_MODELS = [
@@ -158,8 +159,9 @@ function plainObject(value) {
 }
 
 // A request body as a flat object: the JSON body itself, or the form fields of
-// a multipart body. Every uploaded file is refused: IP233 takes reference
-// material as http or https URLs only.
+// a multipart body. IP233 takes reference material as http or https URLs only,
+// so an uploaded file counts only once the host has published it and attached
+// its read URL.
 function flatBody(ctx) {
   const body = (ctx && ctx.body) || {};
   if (body.kind === "json") {
@@ -168,12 +170,21 @@ function flatBody(ctx) {
     return value;
   }
   if (body.kind !== "multipart" && body.kind !== "form") throw new Error("JSON or multipart body required");
-  if ((body.files || []).length) throw new Error("IP233 accepts reference media as http or https URLs, not uploaded files");
   const fields = {};
   for (const name of Object.keys(body.fields || {})) {
     const values = body.fields[name] || [];
     if (values.length > 1) throw new Error(name + " must be provided once");
     fields[name] = values[0];
+  }
+  // `image[]` and `image` name the same reference list upstream.
+  for (const file of body.files || []) {
+    const name = trimmed(file && file.field).replace(/\[\]$/, "");
+    const url = trimmed(file && file.url);
+    if (!name) throw new Error("reference media field is missing");
+    if (!/^https?:\/\//i.test(url)) throw new Error("IP233 accepts reference media as http or https URLs, not uploaded files");
+    if (fields[name] === undefined) fields[name] = [];
+    else if (!Array.isArray(fields[name])) fields[name] = [fields[name]];
+    fields[name].push(url);
   }
   // A multipart client sends metadata as a JSON string; the video driver reads
   // the members of that object, so parse it once here.
