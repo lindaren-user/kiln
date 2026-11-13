@@ -249,6 +249,13 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 	models := service.GetGroupsEnabledModels(ownerGroups)
+	// The public model catalog (模型广场) decides what this gateway offers;
+	// models hidden from the catalog must not be listed to API clients.
+	if visibleModels, err := model.FilterCatalogVisibleModels(models); err != nil {
+		common.SysLog(common.LogText("failed to resolve catalog visibility: %s", err.Error()))
+	} else {
+		models = visibleModels
+	}
 	for _, modelName := range models {
 		if modelLimitEnable {
 			matchingName := ratio_setting.RoutingMatchModelName(modelName)

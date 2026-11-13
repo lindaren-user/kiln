@@ -321,6 +321,45 @@ func TestListModelsIncludesTieredBillingModel(t *testing.T) {
 	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
+func TestListModelsOnlyIncludesCatalogModels(t *testing.T) {
+	withSelfUseModeEnabled(t)
+	db := setupModelListControllerTestDB(t)
+
+	require.NoError(t, db.Create(&model.User{
+		Id:       1004,
+		Username: "catalog-filter-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "default", Model: "zz-catalog-visible-model", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "zz-catalog-hidden-model", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "zz-catalog-unlisted-model", ChannelId: 1, Enabled: true},
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Model{
+		{ModelName: "zz-catalog-visible-model", Status: 1},
+		{ModelName: "zz-catalog-hidden-model", Status: 1},
+	}).Error)
+	// The status column defaults to 1, so hide the model with an explicit update.
+	require.NoError(t, db.Model(&model.Model{}).
+		Where("model_name = ?", "zz-catalog-hidden-model").
+		Update("status", 0).Error)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	ctx.Set("id", 1004)
+
+	ListModels(ctx, constant.ChannelTypeOpenAI)
+
+	ids := decodeListModelsResponse(t, recorder)
+	require.Contains(t, ids, "zz-catalog-visible-model")
+	// A model without catalog metadata is still shown by the catalog.
+	require.Contains(t, ids, "zz-catalog-unlisted-model")
+	require.NotContains(t, ids, "zz-catalog-hidden-model")
+}
+
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {
 	withSelfUseModeEnabled(t)
 	db := setupModelListControllerTestDB(t)
