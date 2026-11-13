@@ -80,6 +80,10 @@ const videoResponse = `# POST /video/generations
   "created_at": 1735689600
 }`
 
+const assetResponse = `{
+  "id": "assets://e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}`
+
 const videoPollResponse = `# GET /video/generations/task_01J8Z9Q2X7 (in progress)
 {
   "code": "success",
@@ -260,11 +264,17 @@ export function DocsPage() {
   const imageSyncNote = t(
     'Image generate and edit are synchronous: the response already contains the result. Save the image from the response; there is no image poll or later retrieve path. If waiting exceeds the gateway timeout, the HTTP call fails with 504, but a submitted upstream task may keep running—check task logs before retrying.'
   )
+  const imageEditNote = t(
+    'Image edit accepts two request shapes: multipart with the file in image=@file, or JSON with images as objects that each carry image_url. Only the JSON shape resolves assets:// IDs; a multipart upload sends the file bytes themselves.'
+  )
   const videoFlowNote = t(
     'Video is asynchronous: create a task, poll until it reaches a terminal status (success or failure), then download content with GET /videos/{task_id}/content. Poll at a reasonable interval and stop after a terminal status.'
   )
   const referenceMediaNote = t(
-    'Reference media must be publicly reachable URLs: the gateway forwards them to the vendor, which fetches them itself. Each model accepts its own number of images, videos and audios; the model list shows the limit.'
+    'Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.'
+  )
+  const assetNote = t(
+    'Uploading the same file twice returns the same asset ID.'
   )
   const cancelNote = t(
     'After upstream has accepted a generation, closing the client or cancelling the HTTP request does not stop it. Check task logs before retrying.'
@@ -272,7 +282,13 @@ export function DocsPage() {
   const furtherHelp = t(
     'If the above does not solve your issue, please contact the administrator.'
   )
-  const endpointNotes = [imageSyncNote, videoFlowNote, cancelNote]
+  const notes = [
+    assetNote,
+    imageSyncNote,
+    imageEditNote,
+    videoFlowNote,
+    cancelNote,
+  ]
 
   const sdkExample = `from openai import OpenAI
 
@@ -306,11 +322,26 @@ print(image.data[0].url or image.data[0].b64_json)`
     "size": "1024x1024"
   }'`
 
-  const imageEditExample = `curl ${baseUrl}/images/edits \\
+  const imageEditExample = `# Multipart: send the file itself
+curl ${baseUrl}/images/edits \\
   -H "Authorization: Bearer sk-your-key" \\
   -F model=gpt-image-2 \\
   -F prompt="Make the kiln warmer at dusk" \\
-  -F image=@input.png`
+  -F image=@/path/to/input.png
+
+# JSON: reference images are objects carrying image_url
+curl ${baseUrl}/images/edits \\
+  -H "Authorization: Bearer sk-your-key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "Make the kiln warmer at dusk",
+    "images": [{"image_url": "https://cdn.example/kiln.png"}]
+  }'`
+
+  const assetExample = `curl ${baseUrl}/assets \\
+  -H "Authorization: Bearer sk-your-key" \\
+  -F file=@reference.png`
 
   const videoExample = `curl ${baseUrl}/video/generations \\
   -H "Authorization: Bearer sk-your-key" \\
@@ -341,7 +372,7 @@ curl ${baseUrl}/videos \\
     "prompt": "the same character, now walking through snow",
     "seconds": 6,
     "aspect_ratio": "16:9",
-    "images": ["https://cdn.example/character.png"],
+    "images": ["assets://e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
     "reference_videos": ["https://cdn.example/camera-move.mp4"],
     "reference_audios": ["https://cdn.example/voice.mp3"]
   }'`
@@ -374,6 +405,11 @@ curl ${baseUrl}/videos/task_xxx/content \\
       title: t('Image edit'),
       request: imageEditExample,
       response: imageResponse,
+    },
+    {
+      title: t('Upload a reference file'),
+      request: assetExample,
+      response: assetResponse,
     },
     {
       title: t('Video generation'),
@@ -413,8 +449,11 @@ curl ${baseUrl}/videos/task_xxx/content \\
           t(endpoint.descriptionKey),
         ])
       ),
-      image: t('Image'),
-      video: t('Video'),
+      groupTitles: Object.fromEntries(
+        DOCS_ENDPOINT_GROUPS.flatMap((group) =>
+          group.titleKey ? [[group.titleKey, t(group.titleKey)]] : []
+        )
+      ),
       videoParameters: t('Video parameters'),
       field: t('Field'),
       type: t('Type'),
@@ -427,9 +466,7 @@ curl ${baseUrl}/videos/task_xxx/content \\
         ])
       ),
       referenceMediaNote,
-      imageSyncNote,
-      videoFlowNote,
-      cancelNote,
+      notes,
       examples: t('Examples'),
       response: t('Response'),
       furtherHelp,
@@ -487,7 +524,7 @@ curl ${baseUrl}/videos/task_xxx/content \\
 
         <Section id='endpoints' title={t('Endpoints')}>
           <EndpointGroups />
-          {endpointNotes.map((note) => (
+          {notes.map((note) => (
             <p key={note} className='text-muted-foreground text-sm'>
               {note}
             </p>

@@ -61,6 +61,9 @@
       "name": "Realtime"
     },
     {
+      "name": "素材库"
+    },
+    {
       "name": "未实现"
     },
     {
@@ -2289,6 +2292,108 @@
         "responses": {
           "501": {
             "description": "未实现",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {}
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/assets": {
+      "post": {
+        "summary": "上传素材",
+        "deprecated": false,
+        "description": "上传图片、视频或音频文件到对象存储，返回素材 ID（assets://<sha256>）。相同内容的文件只存储一份，重复上传返回同一个 ID。之后在图片生成或视频生成请求的 URL 字段中传入该 ID，网关会在转发前把它解析成签名公网地址；这个过程不写数据库，ID 与地址的映射只存在于内存缓存和对象存储中，签名地址不会返回给调用方。",
+        "operationId": "uploadAsset",
+        "tags": [
+          "素材库"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "素材文件，支持 image/*、video/*、audio/*，大小不超过系统配置的上传上限"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "上传成功，返回素材 ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "素材 ID，格式为 assets://<文件内容的 sha256>；签名地址只由网关内部解析，不对外返回",
+                      "example": "assets://e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    }
+                  }
+                },
+                "example": "{\n    \"id\": \"assets://e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n}"
+              }
+            },
+            "headers": {}
+          },
+          "400": {
+            "description": "缺少 file 字段、文件类型不支持或文件不可读",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {}
+          },
+          "413": {
+            "description": "文件超过上传大小上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {}
+          },
+          "502": {
+            "description": "对象存储操作失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "headers": {}
+          },
+          "503": {
+            "description": "对象存储未配置或暂时不可用",
             "content": {
               "application/json": {
                 "schema": {

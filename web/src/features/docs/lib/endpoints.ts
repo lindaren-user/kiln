@@ -45,6 +45,17 @@ export const DOCS_ENDPOINT_GROUPS: DocsEndpointGroup[] = [
     ],
   },
   {
+    titleKey: 'Assets',
+    endpoints: [
+      {
+        method: 'POST',
+        path: '/assets',
+        descriptionKey:
+          'Upload a reference file once and get an asset ID to reuse',
+      },
+    ],
+  },
+  {
     titleKey: 'Image',
     endpoints: [
       {
@@ -107,8 +118,8 @@ export type DocsVideoParameter = {
 
 /**
  * The video creation body both video endpoints take. Reference media is a
- * list of URLs on the vendor's side too, so every entry has to be reachable
- * from the public internet rather than uploaded to this gateway.
+ * list of URLs on the vendor's side, so every entry is either a public URL or
+ * an assets:// ID the gateway resolves to a signed URL before forwarding.
  */
 export const DOCS_VIDEO_PARAMETERS: DocsVideoParameter[] = [
   {
@@ -141,18 +152,18 @@ export const DOCS_VIDEO_PARAMETERS: DocsVideoParameter[] = [
     field: 'images',
     type: 'string[]',
     required: false,
-    descriptionKey: 'Reference images: public image URLs.',
+    descriptionKey: 'Reference images: public URLs or assets:// IDs.',
   },
   {
     field: 'reference_videos',
     type: 'string[]',
     required: false,
-    descriptionKey: 'Reference videos: public video URLs.',
+    descriptionKey: 'Reference videos: public URLs or assets:// IDs.',
   },
   {
     field: 'reference_audios',
     type: 'string[]',
     required: false,
-    descriptionKey: 'Reference audios: public audio URLs.',
+    descriptionKey: 'Reference audios: public URLs or assets:// IDs.',
   },
 ]

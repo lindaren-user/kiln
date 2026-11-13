@@ -34,8 +34,7 @@ export type DocsMarkdownLabels = {
   path: string
   description: string
   endpointDescriptions: Record<string, string>
-  image: string
-  video: string
+  groupTitles: Record<string, string>
   videoParameters: string
   field: string
   type: string
@@ -43,9 +42,8 @@ export type DocsMarkdownLabels = {
   optional: string
   videoParameterDescriptions: Record<string, string>
   referenceMediaNote: string
-  imageSyncNote: string
-  videoFlowNote: string
-  cancelNote: string
+  /** Notes for the endpoints section, in the order they are shown. */
+  notes: string[]
   examples: string
   response: string
   furtherHelp: string
@@ -72,10 +70,6 @@ function fence(code: string) {
 export function buildDocsMarkdown(input: DocsMarkdownInput): string {
   const { labels, baseUrl, siteOrigin } = input
   const origin = siteOrigin.replace(/\/$/, '')
-  const groupTitles: Record<string, string> = {
-    Image: labels.image,
-    Video: labels.video,
-  }
   const lines = [
     `# ${labels.title}`,
     '',
@@ -105,7 +99,10 @@ export function buildDocsMarkdown(input: DocsMarkdownInput): string {
 
   for (const group of DOCS_ENDPOINT_GROUPS) {
     if (group.titleKey) {
-      lines.push(`### ${groupTitles[group.titleKey] ?? group.titleKey}`, '')
+      lines.push(
+        `### ${labels.groupTitles[group.titleKey] ?? group.titleKey}`,
+        ''
+      )
     }
     lines.push(
       `| ${labels.method} | ${labels.path} | ${labels.description} |`,
@@ -138,11 +135,7 @@ export function buildDocsMarkdown(input: DocsMarkdownInput): string {
   }
   lines.push('', labels.referenceMediaNote, '')
 
-  for (const note of [
-    labels.imageSyncNote,
-    labels.videoFlowNote,
-    labels.cancelNote,
-  ]) {
+  for (const note of labels.notes) {
     lines.push(note, '')
   }
   lines.push(`## ${labels.examples}`, '')

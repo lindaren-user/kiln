@@ -38,8 +38,7 @@ function labels() {
     path: 'Path (relative to Base URL)',
     description: 'Description',
     endpointDescriptions: {},
-    image: 'Image',
-    video: 'Video',
+    groupTitles: { Assets: 'Assets', Image: 'Image', Video: 'Video' },
     videoParameters: 'Video parameters',
     field: 'Field',
     type: 'Type',
@@ -47,9 +46,13 @@ function labels() {
     optional: 'Optional',
     videoParameterDescriptions: {},
     referenceMediaNote: 'reference media note',
-    imageSyncNote: 'image note',
-    videoFlowNote: 'video note',
-    cancelNote: 'cancel note',
+    notes: [
+      'asset note',
+      'image note',
+      'image edit note',
+      'video note',
+      'cancel note',
+    ],
     examples: 'Examples',
     response: 'Response',
     furtherHelp: 'help',
@@ -72,6 +75,13 @@ describe('docs markdown', () => {
       // The base URL already ends in /v1, so a path must not repeat it.
       expect(endpoint.path.startsWith('/v1')).toBe(false)
     }
+  })
+
+  it('documents the reference upload that produces an asset ID', () => {
+    const markdown = buildDocsMarkdown(input)
+
+    expect(markdown).toContain('### Assets')
+    expect(markdown).toContain('`/assets`')
   })
 
   it('shows each response under the request it answers', () => {
@@ -102,6 +112,8 @@ describe('docs markdown', () => {
     expect(markdown).toContain('`reference_videos`')
     expect(markdown).toContain('`reference_audios`')
     expect(markdown).toContain('reference media note')
+    // Reference lists accept asset IDs, not only public URLs.
+    expect(markdown).toContain('public URLs or assets:// IDs.')
   })
 
   it('keeps the reference media example beside the plain one', () => {
