@@ -32,7 +32,7 @@ type ImageGenerationPayload = {
   data?: { url?: string; b64_json?: string }[]
 }
 
-/** Enabled API keys, newest first, for the generation key picker. */
+/** Enabled API keys, newest first, for callers that resolve one by name. */
 export async function listEnabledApiKeys(): Promise<ApiKey[]> {
   const response = requireServerSuccess(await getApiKeys({ p: 1, size: 100 }))
   return (response.data?.items ?? []).filter(

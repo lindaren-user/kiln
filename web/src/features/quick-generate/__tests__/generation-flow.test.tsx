@@ -17,11 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { StrictMode, type ReactNode } from 'react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
-import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
 import type { ApiKey } from '@/features/keys/types'
 import type { GenerationSchema } from '@/features/pricing/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
@@ -30,35 +29,23 @@ import { QuickGenerate } from '..'
 import { submitVideo, uploadQuickGenerateReferences } from '../api'
 import { useGenerationModels } from '../hooks/use-generation-models'
 import { capabilityFor } from '../lib/capabilities'
-import { saveComposerDraft } from '../lib/draft-storage'
 import { downloadMedia } from '../lib/download-media'
+import { saveComposerDraft } from '../lib/draft-storage'
 import { pollVideoTask } from '../lib/poll-video'
+import { resolveQuickGenerateKey } from '../lib/quick-generate-key'
 import {
   loadRunningVideoTask,
   saveRunningVideoTask,
   type RunningVideoTask,
 } from '../lib/video-task-storage'
 
-vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
-  return {
-    ...actual,
-    // A plain anchor keeps the destination visible to the assertions without
-    // needing a mounted router.
-    Link: (props: { to?: string; children?: ReactNode }) => (
-      <a href={props.to}>{props.children}</a>
-    ),
-  }
-})
-
 vi.mock('@/features/image-generation/api', () => ({
   generateImages: vi.fn(),
-  listEnabledApiKeys: vi.fn(),
   resolveApiKey: vi.fn(),
 }))
 
-vi.mock('@/features/image-generation/hooks/use-image-api-keys', () => ({
-  useImageApiKeys: vi.fn(),
+vi.mock('../lib/quick-generate-key', () => ({
+  resolveQuickGenerateKey: vi.fn(),
 }))
 
 vi.mock('../hooks/use-generation-models', () => ({
@@ -97,7 +84,7 @@ const pollVideoTaskMock = vi.mocked(pollVideoTask)
 const guardMock = vi.mocked(FormNavigationGuard)
 const resolveApiKeyMock = vi.mocked(resolveApiKey)
 const useGenerationModelsMock = vi.mocked(useGenerationModels)
-const useImageApiKeysMock = vi.mocked(useImageApiKeys)
+const resolveQuickGenerateKeyMock = vi.mocked(resolveQuickGenerateKey)
 const downloadMediaMock = vi.mocked(downloadMedia)
 
 const API_KEY: ApiKey = {
@@ -159,17 +146,30 @@ beforeEach(() => {
       kind: 'image',
       schema: {
         fields: [
-          { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select', defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
-          { key: 'count', labelKey: 'Count', type: 'select', defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'], valueType: 'number' },
+          {
+            key: 'ratio',
+            labelKey: 'Aspect Ratio',
+            type: 'select',
+            defaultValue: '1:1',
+            options: [{ value: '1:1', label: '1:1' }],
+            requestPath: ['size'],
+          },
+          {
+            key: 'count',
+            labelKey: 'Count',
+            type: 'select',
+            defaultValue: '1',
+            options: [{ value: '1', label: '1' }],
+            requestPath: ['n'],
+            valueType: 'number',
+          },
         ],
       },
     },
   ])
-  useImageApiKeysMock.mockReturnValue({
-    keys: [API_KEY],
-    selectedKeyId: API_KEY.id,
-    selectKey: vi.fn(),
-    isLoading: false,
+  resolveQuickGenerateKeyMock.mockResolvedValue({
+    id: API_KEY.id,
+    apiKey: 'sk-abc123',
   })
   resolveApiKeyMock.mockResolvedValue('sk-abc123')
   uploadReferencesMock.mockImplementation(async (references) => references)
@@ -177,7 +177,9 @@ beforeEach(() => {
 })
 
 /** A video task the previous visit left running, with every field it needs. */
-function runningTask(overrides: Partial<RunningVideoTask> = {}): RunningVideoTask {
+function runningTask(
+  overrides: Partial<RunningVideoTask> = {}
+): RunningVideoTask {
   return {
     id: 'run-1',
     taskId: 'task-1',
@@ -231,8 +233,24 @@ describe('quick generate', () => {
         kind: 'video',
         schema: {
           fields: [
-            { key: 'size', labelKey: 'Size', type: 'select', defaultValue: '1280x720', options: [{ value: '1280x720', label: '1280x720' }], requestPath: ['size'] },
-            { key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 5, min: 1, max: 60, requestPath: ['duration'], valueType: 'number' },
+            {
+              key: 'size',
+              labelKey: 'Size',
+              type: 'select',
+              defaultValue: '1280x720',
+              options: [{ value: '1280x720', label: '1280x720' }],
+              requestPath: ['size'],
+            },
+            {
+              key: 'seconds',
+              labelKey: 'Duration',
+              type: 'number',
+              defaultValue: 5,
+              min: 1,
+              max: 60,
+              requestPath: ['duration'],
+              valueType: 'number',
+            },
           ],
         },
       },
@@ -296,10 +314,12 @@ describe('quick generate', () => {
       reference_videos: ['https://r2.example/reference-0'],
       reference_audios: ['https://r2.example/reference-1'],
       metadata: {
-        input: { media: [
-          { type: 'reference_video', url: 'https://r2.example/reference-0' },
-          { type: 'reference_audio', url: 'https://r2.example/reference-1' },
-        ] },
+        input: {
+          media: [
+            { type: 'reference_video', url: 'https://r2.example/reference-0' },
+            { type: 'reference_audio', url: 'https://r2.example/reference-1' },
+          ],
+        },
       },
     })
   })
@@ -433,7 +453,7 @@ describe('quick generate', () => {
     await waitFor(() => expect(guardMock.mock.lastCall?.[0].when).toBe(false))
   })
 
-  it('keeps the model, ratio, count and key in the composer', () => {
+  it('keeps the model, ratio and count in the composer', () => {
     render(<QuickGenerate />)
 
     expect(screen.queryByText('No result yet')).toBeNull()
@@ -441,13 +461,43 @@ describe('quick generate', () => {
     expect(screen.getByLabelText('Aspect Ratio')).toHaveTextContent('1:1')
     expect(screen.queryByLabelText('Resolution')).toBeNull()
     expect(screen.getByLabelText('Count')).toBeInTheDocument()
-    expect(screen.getByLabelText('API key')).toHaveTextContent('Quick key')
+    // The key is obtained on demand, so the page never asks the user to pick one.
+    expect(screen.queryByLabelText('API key')).toBeNull()
+  })
+
+  it('generates without asking the user to create a key', async () => {
+    generateImagesMock.mockResolvedValue(['https://cdn.example.com/one.png'])
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+
+    await waitFor(() => expect(generateImagesMock).toHaveBeenCalled())
+    // One resolution for the visit; the request then carries its credential.
+    expect(resolveQuickGenerateKeyMock).toHaveBeenCalledTimes(1)
+    expect(generateImagesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: expect.any(String) })
+    )
   })
 
   it('shows the size list declared by a channel for its public image model', () => {
-    mockModels([{ name: 'renamed-image', kind: 'image', schema: {
-      fields: [{ key: 'size', labelKey: 'Size', type: 'select', defaultValue: 'auto', options: [{ value: 'auto', label: 'Auto' }], requestPath: ['size'] }],
-    } }])
+    mockModels([
+      {
+        name: 'renamed-image',
+        kind: 'image',
+        schema: {
+          fields: [
+            {
+              key: 'size',
+              labelKey: 'Size',
+              type: 'select',
+              defaultValue: 'auto',
+              options: [{ value: 'auto', label: 'Auto' }],
+              requestPath: ['size'],
+            },
+          ],
+        },
+      },
+    ])
 
     render(<QuickGenerate />)
 
@@ -458,9 +508,25 @@ describe('quick generate', () => {
   })
 
   it('shows the duration bounds declared by the channel', () => {
-    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
-      fields: [{ key: 'seconds', labelKey: 'Duration', type: 'number', defaultValue: 4, min: 4, max: 15, requestPath: ['duration'] }],
-    } }])
+    mockModels([
+      {
+        name: 'minimax-h3',
+        kind: 'video',
+        schema: {
+          fields: [
+            {
+              key: 'seconds',
+              labelKey: 'Duration',
+              type: 'number',
+              defaultValue: 4,
+              min: 4,
+              max: 15,
+              requestPath: ['duration'],
+            },
+          ],
+        },
+      },
+    ])
 
     render(<QuickGenerate />)
 
@@ -483,9 +549,24 @@ describe('quick generate', () => {
   })
 
   it('shows resolution when the channel explicitly declares it', () => {
-    mockModels([{ name: 'minimax-h3', kind: 'video', schema: {
-      fields: [{ key: 'resolution', labelKey: 'Resolution', type: 'select', defaultValue: '768p', options: [{ value: '768p', label: '768p' }], requestPath: ['metadata', 'resolution'] }],
-    } }])
+    mockModels([
+      {
+        name: 'minimax-h3',
+        kind: 'video',
+        schema: {
+          fields: [
+            {
+              key: 'resolution',
+              labelKey: 'Resolution',
+              type: 'select',
+              defaultValue: '768p',
+              options: [{ value: '768p', label: '768p' }],
+              requestPath: ['metadata', 'resolution'],
+            },
+          ],
+        },
+      },
+    ])
 
     render(<QuickGenerate />)
 

@@ -20,8 +20,6 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ApiKey } from '@/features/keys/types'
-
 import { GenerateComposer } from '../components/generate-composer'
 import { capabilityFor, defaultValues } from '../lib/capabilities'
 
@@ -46,26 +44,6 @@ const imageSchema = {
   ],
 }
 
-const API_KEY: ApiKey = {
-  id: 7,
-  name: 'Quick key',
-  key: 'abc**********xyz',
-  status: 1,
-  remain_quota: 0,
-  used_quota: 0,
-  unlimited_quota: true,
-  expired_time: -1,
-  created_time: 0,
-  accessed_time: 0,
-  group: '',
-  auto_groups: null,
-  cross_group_retry: false,
-  model_limits_enabled: false,
-  model_limits: '',
-  allow_ips: '',
-  allow_user_quota_query: false,
-}
-
 /** The page owns the prompt; the harness stands in for it. */
 function Composer(props: {
   model: string
@@ -84,9 +62,6 @@ function Composer(props: {
       onPromptChange={setPrompt}
       values={defaultValues(props.capability)}
       onValueChange={vi.fn()}
-      keys={[API_KEY]}
-      selectedKeyId={API_KEY.id}
-      onKeyChange={vi.fn()}
       onSubmit={() => true}
       busy={false}
       disabled={false}
@@ -116,7 +91,6 @@ describe('composer footer layout', () => {
       screen.getByLabelText('Aspect Ratio'),
       screen.getByLabelText('Count'),
       screen.getByLabelText('Model'),
-      screen.getByLabelText('API key'),
     ]
 
     const tools = commonAncestor(controls)
@@ -142,27 +116,23 @@ describe('composer footer layout', () => {
     )
   })
 
-  it('puts the model and the key first', () => {
+  it('puts the model before its parameters', () => {
     renderComposer()
     const model = screen.getByLabelText('Model')
-    const key = screen.getByLabelText('API key')
     const ratio = screen.getByLabelText('Aspect Ratio')
-    // Throws unless the three share the wrapping row.
-    commonAncestor([model, key, ratio])
+    // Throws unless the two share the wrapping row.
+    commonAncestor([model, ratio])
 
     expect(
-      model.compareDocumentPosition(key) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy()
-    expect(
-      key.compareDocumentPosition(ratio) & Node.DOCUMENT_POSITION_FOLLOWING
+      model.compareDocumentPosition(ratio) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
   })
 
   it('keeps the send button outside the row, at the bottom-right', () => {
     renderComposer()
     const tools = commonAncestor([
+      screen.getByLabelText('Model'),
       screen.getByLabelText('Aspect Ratio'),
-      screen.getByLabelText('API key'),
     ])
     const submit = screen.getByRole('button', { name: 'Generate' })
 
