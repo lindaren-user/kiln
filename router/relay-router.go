@@ -43,6 +43,18 @@ func SetRelayRouter(router *gin.Engine) {
 		})
 	}
 
+	// Reference files a client uploads once and mentions later as
+	// assets://<digest> in generation requests.
+	assetRouter := router.Group("/v1/assets")
+	assetRouter.Use(middleware.RouteTag("relay"))
+	assetRouter.Use(middleware.SystemPerformanceCheck())
+	assetRouter.Use(middleware.TokenAuth())
+	assetRouter.Use(middleware.UserCriticalRateLimit("asset-upload"))
+	assetRouter.Use(middleware.DisableCache())
+	{
+		assetRouter.POST("", controller.UploadAsset)
+	}
+
 	geminiRouter := router.Group("/v1beta/models")
 	geminiRouter.Use(middleware.RouteTag("relay"))
 	geminiRouter.Use(middleware.TokenAuth())
