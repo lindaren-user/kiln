@@ -20,7 +20,6 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ApiKey } from '@/features/keys/types'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import type { GenerationSchema, PricingModel } from '@/features/pricing/types'
 
@@ -33,26 +32,6 @@ vi.mock('@/features/pricing/hooks/use-pricing-data', () => ({
 }))
 
 const usePricingDataMock = vi.mocked(usePricingData)
-
-const API_KEY: ApiKey = {
-  id: 7,
-  name: 'Quick key',
-  key: 'abc**********xyz',
-  status: 1,
-  remain_quota: 0,
-  used_quota: 0,
-  unlimited_quota: true,
-  expired_time: -1,
-  created_time: 0,
-  accessed_time: 0,
-  group: '',
-  auto_groups: null,
-  cross_group_retry: false,
-  model_limits_enabled: false,
-  model_limits: '',
-  allow_ips: '',
-  allow_user_quota_query: false,
-}
 
 function imageModel(
   modelName: string,
@@ -90,9 +69,6 @@ function MenuHarness() {
       onPromptChange={vi.fn()}
       values={defaultValues(capability)}
       onValueChange={vi.fn()}
-      keys={[API_KEY]}
-      selectedKeyId={API_KEY.id}
-      onKeyChange={vi.fn()}
       onSubmit={() => true}
       busy={false}
       disabled={false}

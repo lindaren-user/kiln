@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
 import { Download } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,7 +26,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
-import { useImageApiKeys } from '@/features/image-generation/hooks/use-image-api-keys'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { submitVideo, uploadQuickGenerateReferences } from './api'
@@ -42,13 +40,11 @@ import {
   capabilityFor,
   compatibleValues,
 } from './lib/capabilities'
-import {
-  loadComposerDraft,
-  saveComposerDraft,
-} from './lib/draft-storage'
 import { downloadMedia, mediaFilename } from './lib/download-media'
+import { loadComposerDraft, saveComposerDraft } from './lib/draft-storage'
 import { referenceKind } from './lib/file-mention'
 import { pollVideoTask } from './lib/poll-video'
+import { resolveQuickGenerateKey } from './lib/quick-generate-key'
 import {
   clearRunningVideoTask,
   loadRunningVideoTask,
@@ -76,12 +72,6 @@ export function QuickGenerate() {
     priceForRun,
     isLoading: modelsLoading,
   } = useGenerationModels()
-  const {
-    keys,
-    selectedKeyId,
-    selectKey,
-    isLoading: keysLoading,
-  } = useImageApiKeys()
 
   // TODO: list the recent generations under the result. The page already
   // tracks every run by id (including the polled video tasks), so the list
@@ -108,6 +98,18 @@ export function QuickGenerate() {
   // Identifies the generation that may still write to state; a newer one, or
   // leaving the page, cancels the video poll of an older one.
   const activeRunRef = useRef('')
+  // The key is resolved once per visit. A failed resolution clears the cache,
+  // so the next run asks again instead of repeating the same error.
+  const keyPromise = useRef<Promise<{ id: number; apiKey: string }> | null>(
+    null
+  )
+  const resolveKey = useCallback(() => {
+    keyPromise.current ??= resolveQuickGenerateKey().catch((error: unknown) => {
+      keyPromise.current = null
+      throw error
+    })
+    return keyPromise.current
+  }, [])
   // Reference media is uploaded before the vendor call; the composer shows a
   // spinner instead of a success message, and only blocks submitting again.
   const [uploadingReferences, setUploadingReferences] = useState(false)
@@ -174,11 +176,14 @@ export function QuickGenerate() {
   const noModels = !modelsLoading && models.length === 0
 
   /** Writes a patch into the run with this id; a replaced run is left alone. */
-  const applyRunPatch = useCallback((id: string, patch: Partial<Generation>) => {
-    setGeneration((current) =>
-      current?.id === id ? { ...current, ...patch } : current
-    )
-  }, [])
+  const applyRunPatch = useCallback(
+    (id: string, patch: Partial<Generation>) => {
+      setGeneration((current) =>
+        current?.id === id ? { ...current, ...patch } : current
+      )
+    },
+    []
+  )
 
   /**
    * Polls a submitted task and writes its outcome into the result panel. The
@@ -187,7 +192,8 @@ export function QuickGenerate() {
    */
   const followVideoTask = useCallback(
     async (task: RunningVideoTask, apiKey: string) => {
-      const isCancelled = () => !mounted.current || activeRunRef.current !== task.id
+      const isCancelled = () =>
+        !mounted.current || activeRunRef.current !== task.id
       let storedProgress = task.progress
       const url = await pollVideoTask({
         apiKey,
@@ -219,10 +225,10 @@ export function QuickGenerate() {
    * submission and the task restored after a reload both enter here.
    */
   const runVideoTask = useCallback(
-    async (task: RunningVideoTask) => {
+    async (task: RunningVideoTask, submittedWith?: string) => {
       const isCancelled = () => activeRunRef.current !== task.id
       try {
-        const apiKey = await resolveApiKey(task.keyId)
+        const apiKey = submittedWith ?? (await resolveApiKey(task.keyId))
         if (isCancelled()) return
         await followVideoTask(task, apiKey)
       } catch (error) {
@@ -240,7 +246,7 @@ export function QuickGenerate() {
 
   const runGeneration = useCallback(
     async (params: GenerationParams, prompt: string) => {
-      if (!params.model || selectedKeyId === null) return
+      if (!params.model) return
 
       const id = nanoid()
       activeRunRef.current = id
@@ -263,11 +269,14 @@ export function QuickGenerate() {
       const isCancelled = () => !mounted.current || activeRunRef.current !== id
 
       try {
-        const apiKey = await resolveApiKey(selectedKeyId)
+        // Created on the first run, reused afterwards; the page never asks the
+        // user to pick or make a key. The references upload does not wait on
+        // the key, so the two travel together.
         setUploadingReferences(params.references.length > 0)
-        const uploadedReferences = await uploadQuickGenerateReferences(
-          params.references
-        )
+        const [{ id: keyId, apiKey }, uploadedReferences] = await Promise.all([
+          resolveKey(),
+          uploadQuickGenerateReferences(params.references),
+        ])
         setUploadingReferences(false)
         if (isCancelled()) return
         const imageReferences = uploadedReferences
@@ -293,10 +302,10 @@ export function QuickGenerate() {
             ...run,
             references: uploadedReferences,
             taskId,
-            keyId: selectedKeyId,
+            keyId,
           }
           saveRunningVideoTask(task)
-          await runVideoTask(task)
+          await runVideoTask(task, apiKey)
           return
         }
 
@@ -310,7 +319,9 @@ export function QuickGenerate() {
           model: params.model,
           prompt,
           parameters: request,
-          operation: params.capability.referenceImages?.edit ? 'edit' : 'generate',
+          operation: params.capability.referenceImages?.edit
+            ? 'edit'
+            : 'generate',
         })
         if (isCancelled()) return
         applyRunPatch(id, {
@@ -327,7 +338,7 @@ export function QuickGenerate() {
         })
       }
     },
-    [applyRunPatch, runVideoTask, selectedKeyId, t]
+    [applyRunPatch, resolveKey, runVideoTask, t]
   )
 
   // Rejoin the video task the previous visit left running. The guard keeps a
@@ -500,18 +511,6 @@ export function QuickGenerate() {
           </Alert>
         )}
 
-        {!keysLoading && keys.length === 0 && (
-          <Alert>
-            <AlertTitle>{t('Select an API key before generating')}</AlertTitle>
-            <AlertDescription className='flex items-center gap-3'>
-              {t('Create a key first, then come back to generate.')}
-              <Button size='sm' variant='outline' render={<Link to='/keys' />}>
-                {t('Create an API key')}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-
         <GenerateComposer
           modelItems={modelItems}
           model={model}
@@ -524,13 +523,10 @@ export function QuickGenerate() {
           onValueChange={(key, value) =>
             setValues((current) => ({ ...current, [key]: value }))
           }
-          keys={keys}
-          selectedKeyId={selectedKeyId}
-          onKeyChange={selectKey}
           onSubmit={submit}
           busy={busy}
           uploading={uploadingReferences}
-          disabled={noModels || keys.length === 0}
+          disabled={noModels}
         />
       </div>
 

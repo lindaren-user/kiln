@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 import { Plus } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -39,7 +39,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { ApiKey } from '@/features/keys/types'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { resolveLocalizedText } from '@/lib/localized-text'
@@ -77,9 +76,6 @@ type GenerateComposerProps = {
   capability: ModelCapability
   values: GenerationValues
   onValueChange: (key: string, value: string) => void
-  keys: ApiKey[]
-  selectedKeyId: number | null
-  onKeyChange: (id: number) => void
   /** The draft text, owned by the page so it survives a reload with it. */
   prompt: string
   onPromptChange: (value: string) => void
@@ -404,22 +400,15 @@ function ParamFieldControl(props: {
 }
 
 /**
- * Prompt bar for the generation feed: the prompt on top, the model, its
- * parameters and the API key underneath, send on the right.
+ * Prompt bar for the generation feed: the prompt on top, the model and its
+ * parameters underneath, send on the right.
  */
 export function GenerateComposer(props: GenerateComposerProps) {
   const { t } = useTranslation()
 
   const fields = props.capability.fields
-  const keyItems = useMemo(
-    () => props.keys.map((key) => ({ value: String(key.id), label: key.name })),
-    [props.keys]
-  )
   const ready =
-    !props.disabled &&
-    props.model !== '' &&
-    props.selectedKeyId !== null &&
-    props.prompt.trim() !== ''
+    !props.disabled && props.model !== '' && props.prompt.trim() !== ''
 
   const referenceImages = props.capability.referenceImages
   const acceptsReferences =
@@ -493,17 +482,6 @@ export function GenerateComposer(props: GenerateComposerProps) {
             onValueChange={props.onModelChange}
             disabled={props.disabled}
             placeholder={t('Select a model')}
-            className='max-w-52 min-w-0'
-          />
-          <ParamSelect
-            label={t('API key')}
-            items={keyItems}
-            value={
-              props.selectedKeyId === null ? '' : String(props.selectedKeyId)
-            }
-            onValueChange={(value) => props.onKeyChange(Number(value))}
-            disabled={props.disabled || props.keys.length === 0}
-            placeholder={t('Select an API key')}
             className='max-w-52 min-w-0'
           />
           {fields.map((field) => (
