@@ -35,6 +35,10 @@ const (
 	MsgDistributorNoAvailableChannelTaskPlugin = "distributor.no_available_channel_task_plugin"
 	MsgDistributorInvalidParseModel            = "distributor.invalid_request_parse_model"
 
+	MsgAssetInvalidReference   = "asset.invalid_reference"
+	MsgAssetNotFound           = "asset.not_found"
+	MsgAssetStorageUnavailable = "asset.storage_unavailable"
+
 	MsgQuotaUserInsufficient             = "quota.user_insufficient"
 	MsgQuotaPreConsumeInsufficient       = "quota.pre_consume_insufficient"
 	MsgQuotaSubscriptionInsufficient     = "quota.subscription_insufficient"

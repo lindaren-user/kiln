@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -31,6 +33,10 @@ const (
 )
 
 var quickGenerateUploadHTTPClient = &http.Client{Timeout: 8 * time.Second}
+
+// quickGenerateUploadPutClient carries file bytes the gateway uploads itself;
+// the probe client's 8 seconds is too short for a reference video.
+var quickGenerateUploadPutClient = &http.Client{Timeout: 2 * time.Minute}
 
 var quickGenerateUploadObjects = struct {
 	sync.Mutex
@@ -99,11 +105,15 @@ func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRe
 	if err != nil {
 		return nil, err
 	}
+	return prepareQuickGenerateUpload(ctx, config, input)
+}
+
+func prepareQuickGenerateUpload(ctx context.Context, config system_setting.QuickGenerateUploadConfig, input QuickGenerateUploadRequest) (*QuickGenerateUploadGrant, error) {
 	if err := validateQuickGenerateUploadRequest(input); err != nil {
 		return nil, err
 	}
 
-	objectURL, err := quickGenerateObjectURL(config, quickGenerateObjectKey(config.Prefix, input.SHA256))
+	objectURL, err := quickGenerateDigestObjectURL(config, input.SHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +129,68 @@ func PrepareQuickGenerateUpload(ctx context.Context, input QuickGenerateUploadRe
 	return storage.grantNewObject(ctx, objectURL, input)
 }
 
+// QuickGenerateUploadConfigured reports whether the object storage that holds
+// uploaded reference media is configured.
+func QuickGenerateUploadConfigured() bool {
+	_, err := loadQuickGenerateUploadConfig()
+	return err == nil
+}
+
+// StoreQuickGenerateObject uploads bytes the gateway already holds and returns
+// a signed read URL that any client can fetch without credentials. Repeated
+// content reuses the stored object.
+func StoreQuickGenerateObject(ctx context.Context, contentType string, data []byte) (string, error) {
+	_, url, _, err := storeQuickGenerateObject(ctx, contentType, data)
+	return url, err
+}
+
+// storeQuickGenerateObject is the one object-write path: it returns the
+// content digest, the signed read URL, and the config that signed it, so
+// callers that also key on the digest share the upload semantics.
+func storeQuickGenerateObject(ctx context.Context, contentType string, data []byte) (string, string, system_setting.QuickGenerateUploadConfig, error) {
+	config, err := loadQuickGenerateUploadConfig()
+	if err != nil {
+		return "", "", config, err
+	}
+	digest := sha256.Sum256(data)
+	hexDigest := hex.EncodeToString(digest[:])
+	grant, err := prepareQuickGenerateUpload(ctx, config, QuickGenerateUploadRequest{
+		SHA256:      hexDigest,
+		ContentType: contentType,
+		Size:        int64(len(data)),
+	})
+	if err != nil {
+		return "", "", config, err
+	}
+	if !grant.Exists {
+		if err := putQuickGenerateObject(ctx, grant, data); err != nil {
+			return "", "", config, err
+		}
+	}
+	return hexDigest, grant.URL, config, nil
+}
+
+// putQuickGenerateObject sends the bytes a grant reserved a slot for.
+func putQuickGenerateObject(ctx context.Context, grant *QuickGenerateUploadGrant, data []byte) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, grant.PutURL, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	for name, value := range grant.Headers {
+		request.Header.Set(name, value)
+	}
+	response, err := quickGenerateUploadPutClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("%w: upload failed: %v", ErrQuickGenerateStorageUnavailable, quickGenerateStorageRequestCause(err))
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return quickGenerateStorageResponseError(http.MethodPut, response)
+	}
+	return nil
+}
+
 // RefreshQuickGenerateUploadURL re-signs a read URL this gateway issued. A
 // stored reference URL can expire while a task waits or after a page reload,
 // so the console exchanges it for a fresh signature before resubmitting.
@@ -131,6 +203,12 @@ func RefreshQuickGenerateUploadURL(rawURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return signStoredObjectURL(config, objectURL)
+}
+
+// signStoredObjectURL signs a read URL for an object the gateway already
+// stores, so upload, refresh and asset resolution share one signing path.
+func signStoredObjectURL(config system_setting.QuickGenerateUploadConfig, objectURL string) (string, error) {
 	grant, err := newQuickGenerateUploadStorage(config).grantExistingObject(objectURL)
 	if err != nil {
 		return "", err
@@ -178,6 +256,12 @@ func quickGenerateObjectURL(config system_setting.QuickGenerateUploadConfig, key
 	return objectURL.String(), nil
 }
 
+// quickGenerateDigestObjectURL addresses the object a content digest names, so
+// every reader that only knows the digest builds the URL the same way.
+func quickGenerateDigestObjectURL(config system_setting.QuickGenerateUploadConfig, digest string) (string, error) {
+	return quickGenerateObjectURL(config, quickGenerateObjectKey(config.Prefix, digest))
+}
+
 func quickGenerateDigestValid(digest string) bool {
 	if len(digest) != sha256.Size*2 || strings.ToLower(digest) != digest {
 		return false
@@ -199,7 +283,7 @@ func quickGenerateObjectURLFromReference(config system_setting.QuickGenerateUplo
 	if !quickGenerateDigestValid(digest) {
 		return "", errQuickGenerateInvalidUploadURL
 	}
-	objectURL, err := quickGenerateObjectURL(config, quickGenerateObjectKey(config.Prefix, digest))
+	objectURL, err := quickGenerateDigestObjectURL(config, digest)
 	if err != nil {
 		return "", errQuickGenerateInvalidUploadURL
 	}
@@ -210,21 +294,30 @@ func quickGenerateObjectURLFromReference(config system_setting.QuickGenerateUplo
 	return objectURL, nil
 }
 
+// stagedObjectMatchesInput reports whether the size and media type storage
+// reports for an object are the ones the request declared.
+func stagedObjectMatchesInput(size int64, mediaType string, input QuickGenerateUploadRequest) bool {
+	return size == input.Size && mediaType == input.ContentType
+}
+
 // findObject reports whether the object is already stored, using a short-lived
 // cache so a repeated reference does not cost a HEAD request.
 func (s quickGenerateUploadStorage) findObject(ctx context.Context, objectURL string, input QuickGenerateUploadRequest) (bool, error) {
 	if cached, ok := quickGenerateUploadCacheLookup(objectURL); ok {
-		if cached.size != input.Size || cached.mediaType != input.ContentType {
+		if !stagedObjectMatchesInput(cached.size, cached.mediaType, input) {
 			return false, errQuickGenerateUploadMismatch
 		}
 		return true, nil
 	}
-	exists, err := s.objectExists(ctx, objectURL, input.Size, input.ContentType)
+	size, mediaType, exists, err := s.objectStored(ctx, objectURL)
 	if err != nil {
 		if errors.Is(err, ErrQuickGenerateStorageUnavailable) {
 			return false, fmt.Errorf("check existing object: %w", err)
 		}
 		return false, err
+	}
+	if exists && !stagedObjectMatchesInput(size, mediaType, input) {
+		return false, errQuickGenerateUploadMismatch
 	}
 	if exists {
 		quickGenerateUploadCacheStore(objectURL, input)
@@ -275,29 +368,28 @@ func (s quickGenerateUploadStorage) grantNewObject(ctx context.Context, objectUR
 	return &QuickGenerateUploadGrant{URL: readURL, PutURL: putURL, Headers: headers}, nil
 }
 
-func (s quickGenerateUploadStorage) objectExists(ctx context.Context, objectURL string, expectedSize int64, expectedType string) (bool, error) {
+// objectStored reports whether the object exists and, when it does, the size
+// and media type storage reports for it.
+func (s quickGenerateUploadStorage) objectStored(ctx context.Context, objectURL string) (int64, string, bool, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodHead, objectURL, nil)
 	if err != nil {
-		return false, fmt.Errorf("%w: create object HEAD request: %v", ErrQuickGenerateStorageUnavailable, err)
+		return 0, "", false, fmt.Errorf("%w: create object HEAD request: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	if err = s.sign(ctx, request); err != nil {
-		return false, fmt.Errorf("%w: sign object HEAD request: %v", ErrQuickGenerateStorageUnavailable, err)
+		return 0, "", false, fmt.Errorf("%w: sign object HEAD request: %v", ErrQuickGenerateStorageUnavailable, err)
 	}
 	response, err := quickGenerateUploadHTTPClient.Do(request)
 	if err != nil {
-		return false, fmt.Errorf("%w: object HEAD request failed: %v", ErrQuickGenerateStorageUnavailable, quickGenerateStorageRequestCause(err))
+		return 0, "", false, fmt.Errorf("%w: object HEAD request failed: %v", ErrQuickGenerateStorageUnavailable, quickGenerateStorageRequestCause(err))
 	}
 	response.Body.Close()
 	switch response.StatusCode {
 	case http.StatusOK:
-		if response.ContentLength != expectedSize || response.Header.Get("Content-Type") != expectedType {
-			return false, errQuickGenerateUploadMismatch
-		}
-		return true, nil
+		return response.ContentLength, response.Header.Get("Content-Type"), true, nil
 	case http.StatusNotFound:
-		return false, nil
+		return 0, "", false, nil
 	default:
-		return false, quickGenerateStorageResponseError(http.MethodHead, response)
+		return 0, "", false, quickGenerateStorageResponseError(http.MethodHead, response)
 	}
 }
 

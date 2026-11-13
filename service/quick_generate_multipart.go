@@ -159,11 +159,11 @@ func CompleteQuickGenerateMultipartUpload(ctx context.Context, input QuickGenera
 	if err := storage.completeMultipart(ctx, objectURL, input.UploadID, input.Parts); err != nil {
 		return nil, err
 	}
-	exists, err := storage.objectExists(ctx, objectURL, input.Size, input.ContentType)
+	size, mediaType, exists, err := storage.objectStored(ctx, objectURL)
 	if err != nil {
 		return nil, err
 	}
-	if !exists {
+	if !exists || !stagedObjectMatchesInput(size, mediaType, request) {
 		return nil, errQuickGenerateUploadMismatch
 	}
 	quickGenerateUploadCacheStore(objectURL, request)

@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1213,10 +1214,61 @@ func buildTaskPluginRouteRequest(c *gin.Context) (pluginruntime.RouteRequestCont
 		}
 		requestContext.Files = files
 		requestContext.Body = map[string]any{"kind": string(pluginruntime.BodyMultipart), "fields": textFields, "files": files}
+		publishTaskPluginFileURLs(c, form, files)
 	default:
 		return requestContext, fmt.Errorf("%w %q", errTaskPluginUnsupportedMediaType, mediaType)
 	}
 	return requestContext, nil
+}
+
+// publishTaskPluginFileURLs stores every uploaded file in the gateway's object
+// storage and adds the signed read URL to its file entry, so any plugin can
+// forward reference media as an http(s) URL. It is best effort: when the
+// storage is not configured or a file cannot be stored, the files keep their
+// opaque references and the plugin decides what to do without a URL.
+func publishTaskPluginFileURLs(c *gin.Context, form *multipart.Form, files []map[string]any) {
+	if !service.QuickGenerateUploadConfigured() {
+		return
+	}
+	// A client may send the same bytes under several field spellings; store
+	// each distinct content once.
+	stored := make(map[string]string)
+	for _, file := range files {
+		field, _ := file["field"].(string)
+		ref, _ := file["ref"].(string)
+		_, index, ok := pluginruntime.ParseFileReference(ref)
+		headers := form.File[field]
+		if !ok || index >= len(headers) {
+			continue
+		}
+		opened, err := headers[index].Open()
+		if err != nil {
+			logger.LogWarn(c, "task_plugin subsystem=route event=file_publish reason=open_failed err="+err.Error())
+			return
+		}
+		data, err := io.ReadAll(opened)
+		opened.Close()
+		if err != nil {
+			logger.LogWarn(c, "task_plugin subsystem=route event=file_publish reason=read_failed err="+err.Error())
+			return
+		}
+		digest := fmt.Sprintf("%x", sha256.Sum256(data))
+		if readURL, ok := stored[digest]; ok {
+			file["url"] = readURL
+			continue
+		}
+		mediaType, _, mediaErr := mime.ParseMediaType(fmt.Sprint(file["mimeType"]))
+		if mediaErr != nil || mediaType == "" {
+			mediaType = "application/octet-stream"
+		}
+		readURL, err := service.StoreQuickGenerateObject(c.Request.Context(), mediaType, data)
+		if err != nil {
+			logger.LogWarn(c, "task_plugin subsystem=route event=file_publish reason=storage_unavailable err="+err.Error())
+			return
+		}
+		stored[digest] = readURL
+		file["url"] = readURL
+	}
 }
 
 func validateTaskPluginFields(fields url.Values) error {
