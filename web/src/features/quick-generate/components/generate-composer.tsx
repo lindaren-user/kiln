@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { TFunction } from 'i18next'
 import { Plus } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -39,6 +40,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { ApiKey } from '@/features/keys/types'
+import { toIntlLocale } from '@/i18n/languages'
+import { formatNumber } from '@/lib/format'
 import { resolveLocalizedText } from '@/lib/localized-text'
 import { cn } from '@/lib/utils'
 
@@ -189,6 +192,8 @@ function ParamNumber(props: ParamNumberProps) {
 const REFERENCE_IMAGE_TYPES = 'image/*'
 const REFERENCE_VIDEO_AUDIO_TYPES = 'video/*,audio/*'
 const MAX_REFERENCE_MEDIA_BYTES = 100 * 1024 * 1024
+/** Longest prompt the composer sends; the counter shows how much is used. */
+const PROMPT_MAX_CHARS = 6000
 
 /**
  * How a prompt refers to a reference: the kind and its number within that
@@ -200,6 +205,62 @@ const MENTION_LABEL_KEYS: Record<ReferenceKind, string> = {
   audio: 'Audio {{index}}',
   video: 'Video {{index}}',
   file: 'File {{index}}',
+}
+
+/** The prompt as sent: mentions become their kind and number ("图片1"). */
+function composePrompt(
+  text: string,
+  files: ReferenceAttachment[],
+  t: TFunction
+): string {
+  return numberMentionTokens(
+    text.trim(),
+    files.filter((file) => Boolean(file.url)),
+    t('Image'),
+    (kind, index) => t(MENTION_LABEL_KEYS[kind], { index })
+  )
+}
+
+/** Code points, so an emoji is one character rather than two. */
+function promptCharCount(text: string): number {
+  return [...text].length
+}
+
+/**
+ * The character counter and the send button. They live inside PromptInput
+ * because the sent prompt — with mentions replaced by kind and number — needs
+ * the attachment list.
+ */
+function PromptFooterActions(props: {
+  prompt: string
+  ready: boolean
+  busy: boolean
+  uploading?: boolean
+}) {
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const attachments = usePromptInputAttachments()
+  const chars = promptCharCount(
+    composePrompt(props.prompt, attachments.files, t)
+  )
+  const tooLong = chars > PROMPT_MAX_CHARS
+  return (
+    <div className='ml-auto flex shrink-0 items-center gap-2'>
+      <span
+        className={cn(
+          'text-muted-foreground text-xs tabular-nums',
+          tooLong && 'text-destructive font-medium'
+        )}
+      >
+        {`${formatNumber(chars, locale)} / ${formatNumber(PROMPT_MAX_CHARS, locale)}`}
+      </span>
+      <PromptInputSubmit
+        status={props.busy || props.uploading ? 'submitted' : undefined}
+        disabled={!props.ready || Boolean(props.uploading) || tooLong}
+        aria-label={t('Generate')}
+      />
+    </div>
+  )
 }
 
 /** Opens the image picker. Dragging onto the prompt does the same. */
@@ -313,7 +374,11 @@ function ParamFieldControl(props: {
   // the clip-length translation rather than showing the wrong one.
   const label = props.field.label
     ? resolveLocalizedText(props.field.label, i18n.language)
-    : t(props.field.labelKey === 'Duration' ? 'Video duration' : props.field.labelKey)
+    : t(
+        props.field.labelKey === 'Duration'
+          ? 'Video duration'
+          : props.field.labelKey
+      )
   if (props.field.type === 'select') {
     return (
       <ParamSelect
@@ -379,16 +444,8 @@ export function GenerateComposer(props: GenerateComposerProps) {
   )
   const handleSubmit = (message: PromptInputMessage) => {
     const files = (message.files ?? []).filter((file) => Boolean(file.url))
-    // The chip keeps the file name for editing, but the request refers to the
-    // references by kind and number: "图片1" for the first image, "音频1" for
-    // the first audio, and so on.
-    const prompt = numberMentionTokens(
-      message.text?.trim() ?? '',
-      files,
-      t('Image'),
-      (kind, index) => t(MENTION_LABEL_KEYS[kind], { index })
-    )
-    if (!prompt || !ready) return
+    const prompt = composePrompt(message.text ?? '', files, t)
+    if (!prompt || !ready || promptCharCount(prompt) > PROMPT_MAX_CHARS) return
     const references = files.map((file) => ({
       url: file.url,
       mediaType: file.mediaType ?? 'application/octet-stream',
@@ -460,11 +517,11 @@ export function GenerateComposer(props: GenerateComposerProps) {
           ))}
         </PromptInputTools>
 
-        <PromptInputSubmit
-          className='ml-auto shrink-0 self-end'
-          status={props.busy || props.uploading ? 'submitted' : undefined}
-          disabled={!ready || Boolean(props.uploading)}
-          aria-label={t('Generate')}
+        <PromptFooterActions
+          prompt={props.prompt}
+          ready={ready}
+          busy={props.busy}
+          uploading={props.uploading}
         />
       </PromptInputFooter>
     </PromptInput>

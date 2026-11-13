@@ -27,8 +27,22 @@ import { capabilityFor, defaultValues } from '../lib/capabilities'
 
 const imageSchema = {
   fields: [
-    { key: 'ratio', labelKey: 'Aspect Ratio', type: 'select' as const, defaultValue: '1:1', options: [{ value: '1:1', label: '1:1' }], requestPath: ['size'] },
-    { key: 'count', labelKey: 'Count', type: 'select' as const, defaultValue: '1', options: [{ value: '1', label: '1' }], requestPath: ['n'] },
+    {
+      key: 'ratio',
+      labelKey: 'Aspect Ratio',
+      type: 'select' as const,
+      defaultValue: '1:1',
+      options: [{ value: '1:1', label: '1:1' }],
+      requestPath: ['size'],
+    },
+    {
+      key: 'count',
+      labelKey: 'Count',
+      type: 'select' as const,
+      defaultValue: '1',
+      options: [{ value: '1', label: '1' }],
+      requestPath: ['n'],
+    },
   ],
 }
 
@@ -56,8 +70,9 @@ const API_KEY: ApiKey = {
 function Composer(props: {
   model: string
   capability: ReturnType<typeof capabilityFor>
+  prompt?: string
 }) {
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(props.prompt ?? '')
   return (
     <GenerateComposer
       modelItems={[{ value: props.model, label: props.model }]}
@@ -79,9 +94,9 @@ function Composer(props: {
   )
 }
 
-function renderComposer() {
+function renderComposer(prompt?: string) {
   const capability = capabilityFor('image', imageSchema)
-  render(<Composer model='z-image' capability={capability} />)
+  render(<Composer model='z-image' capability={capability} prompt={prompt} />)
 }
 
 function commonAncestor(elements: HTMLElement[]): HTMLElement {
@@ -155,7 +170,29 @@ describe('composer footer layout', () => {
     expect(
       tools.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-    expect(submit).toHaveClass('self-end')
+    expect(submit.parentElement).toHaveClass('ml-auto', 'items-center')
     expect(tools.parentElement).toHaveClass('items-end')
+  })
+})
+
+describe('prompt character counter', () => {
+  it('shows how much of the 6000 character limit the prompt uses', () => {
+    renderComposer('hello')
+
+    expect(screen.getByText('5 / 6,000')).toBeInTheDocument()
+  })
+
+  it('keeps generating available at the limit', () => {
+    renderComposer('x'.repeat(6000))
+
+    expect(screen.getByText('6,000 / 6,000')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled()
+  })
+
+  it('blocks generating past the limit', () => {
+    renderComposer('x'.repeat(6001))
+
+    expect(screen.getByText('6,001 / 6,000')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
   })
 })

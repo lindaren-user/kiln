@@ -143,8 +143,8 @@ function SubmitHarness(props: {
 }
 
 describe('submitting mentions', () => {
-  it('refers to the references by kind and number', async () => {
-    const onSubmit = vi.fn()
+  /** Uploads an image and an audio file, then walks a mention of each. */
+  async function renderMentionedPrompt(onSubmit = vi.fn()) {
     render(<SubmitHarness onSubmit={onSubmit} />)
     await waitFor(() => expect(loadReferenceFilesMock).toHaveBeenCalled())
 
@@ -160,6 +160,11 @@ describe('submitting mentions', () => {
     const editor = screen.getByRole('textbox', { name: 'Prompt' })
     editor.textContent = 'animate @cat.png with @voice.mp3'
     fireEvent.input(editor)
+    return onSubmit
+  }
+
+  it('refers to the references by kind and number', async () => {
+    const onSubmit = await renderMentionedPrompt()
     fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
@@ -170,11 +175,22 @@ describe('submitting mentions', () => {
       )
     ).toEqual(['cat.png', 'voice.mp3'])
   })
+
+  it('counts the mentions as the labels that are sent', async () => {
+    await renderMentionedPrompt()
+
+    // File names are replaced by "Image 1" and "Audio 1" before sending.
+    expect(await screen.findByText('28 / 6,000')).toBeInTheDocument()
+  })
 })
 
 describe('reference persistence', () => {
   const IMAGE_REFERENCE = {
-    referenceImages: { max: 1, field: 'images' as const, encoding: 'dataUrl' as const },
+    referenceImages: {
+      max: 1,
+      field: 'images' as const,
+      encoding: 'dataUrl' as const,
+    },
   }
 
   it('puts back the references of the previous visit', async () => {
