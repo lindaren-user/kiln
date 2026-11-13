@@ -23,14 +23,62 @@ import {
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
   type DynamicPriceEntry,
+  type DynamicPriceOptions,
 } from '@/features/pricing/lib/dynamic-price'
 import { isTokenBasedModel } from '@/features/pricing/lib/model-helpers'
+import { withFirstPricedVariant } from '@/features/pricing/lib/plugin-pricing'
 import { formatPrice, formatRequestPrice } from '@/features/pricing/lib/price'
+import {
+  evaluateTaskUsageExamples,
+  getTaskEnumFields,
+} from '@/features/pricing/lib/task-expr'
 import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
 import type { BillingUsageSchema, PricingModel } from '@/features/pricing/types'
 
 import type { GenerationValues } from '../types'
 import type { ModelCapability } from './capabilities'
+
+/**
+ * The duration a task plugin's usage examples describe. Token consumption grows
+ * linearly with duration, so the estimate for a run is the matching example
+ * scaled to the duration the composer would send.
+ */
+const USAGE_EXAMPLE_SECONDS = 5
+
+/** One formatted price range; equal ends collapse and `-` means unpriceable. */
+function formatPriceRange(
+  low: number,
+  high: number,
+  options: DynamicPriceOptions
+): string {
+  const lowText = formatTaskUsageUnitPrice(low, options)
+  if (lowText === '-') return ''
+  if (low === high) return lowText
+  const highText = formatTaskUsageUnitPrice(high, options)
+  return highText === '-' ? '' : `${lowText} – ${highText}`
+}
+
+/**
+ * Price range of one run across the plugin's usage examples. A token-priced
+ * task model has no single unit price to show, so the menu hints at what the
+ * sample generations it publishes cost.
+ */
+function examplePriceRange(
+  model: PricingModel,
+  options: DynamicPriceOptions
+): string {
+  const priced = withFirstPricedVariant(model)
+  if (!priced) return ''
+  const totals = evaluateTaskUsageExamples(
+    priced.billing_expr,
+    priced.billing_usage_schema,
+    priced.billing_usage_examples
+  )
+    .map((row) => row.total)
+    .filter((total) => Number.isFinite(total) && total > 0)
+  if (totals.length === 0) return ''
+  return formatPriceRange(Math.min(...totals), Math.max(...totals), options)
+}
 
 /**
  * One short price for the model menu. Empty when the catalog has no price.
@@ -43,12 +91,13 @@ export function generationModelPrice(
   priceRate = 1,
   usdExchangeRate = 1
 ): string {
-  const dynamic = getDynamicPricingSummary(model, {
+  const priceOptions: DynamicPriceOptions = {
     tokenUnit: 'M',
     priceRate,
     usdExchangeRate,
     showCurrencySymbol: true,
-  })
+  }
+  const dynamic = getDynamicPricingSummary(model, priceOptions)
   if (dynamic?.isSpecialExpression) return t('Special billing expression')
   if (dynamic) {
     const parts = dynamic.primaryEntries.slice(0, 2).flatMap((entry) => {
@@ -65,6 +114,11 @@ export function generationModelPrice(
       )
       return [unit ? `${amount} / ${unit}` : amount]
     })
+    if (parts.length === 0) {
+      // A token-priced task model: show what its sample runs cost instead of
+      // one meaningless per-token figure.
+      return examplePriceRange(model, priceOptions)
+    }
     return parts.join(' · ')
   }
   if (isUnconfiguredTaskUsageModel(model)) return ''
@@ -128,7 +182,38 @@ export function generationUsageFacts(
   if (schema.count && usage.count === undefined) {
     usage.count = count !== undefined && count !== '' ? Number(count) : 1
   }
+  // The sample draft always renders at 480p and the plugin reports that tier,
+  // whatever resolution the composer still holds.
+  if (values.draft === 'true' && schema.resolution) {
+    usage.resolution = '480p'
+  }
   return Object.keys(usage).length > 0 ? usage : undefined
+}
+
+/**
+ * Tokens for the selected parameters, estimated from the plugin's examples: the
+ * example matching the chosen enum values is scaled to the selected duration.
+ * Null when the model does not bill tokens or publishes no examples.
+ */
+function estimatedTokens(
+  model: PricingModel,
+  usage: Record<string, string | number> | undefined,
+  seconds: number | undefined
+): number | null {
+  const schema = model.billing_usage_schema
+  const examples = model.billing_usage_examples
+  if (!schema?.tokens || !examples?.length) return null
+  const enumFields = getTaskEnumFields(schema)
+  const example = examples.find((item) =>
+    enumFields.every(([field]) => {
+      const selected = usage?.[field]
+      return selected === undefined || item.facts[field] === selected
+    })
+  )
+  const tokens = Number(example?.facts.tokens)
+  if (!Number.isFinite(tokens) || tokens <= 0) return null
+  const duration = seconds && seconds > 0 ? seconds : USAGE_EXAMPLE_SECONDS
+  return (tokens * duration) / USAGE_EXAMPLE_SECONDS
 }
 
 /**
@@ -191,9 +276,16 @@ export function generationRunPrice(
   priceRate = 1,
   usdExchangeRate = 1
 ): string {
+  // A token-priced model has no tokens in the composer facts; the run's
+  // estimate comes from the plugin's example for the selected parameters.
+  const usage = quantities.usage ? { ...quantities.usage } : undefined
+  if (usage && usage.tokens === undefined) {
+    const tokens = estimatedTokens(model, usage, quantities.seconds)
+    if (tokens !== null) usage.tokens = Math.round(tokens)
+  }
   const exact = exactTaskPrice(
     model,
-    quantities.usage,
+    usage,
     priceRate,
     usdExchangeRate
   )
@@ -227,18 +319,12 @@ export function generationRunPrice(
       priced += 1
     }
     if (priced === 0) return ''
-    const options = {
-      tokenUnit: 'M' as const,
+    return formatPriceRange(low, high, {
+      tokenUnit: 'M',
       priceRate,
       usdExchangeRate,
       showCurrencySymbol: true,
-    }
-    const lowText = formatTaskUsageUnitPrice(low, options)
-    if (lowText === '-') return ''
-    if (low === high) return lowText
-    const highText = formatTaskUsageUnitPrice(high, options)
-    if (highText === '-') return ''
-    return `${lowText} – ${highText}`
+    })
   }
   if (isUnconfiguredTaskUsageModel(model) || isTokenBasedModel(model)) return ''
   const unitPrice = model.model_price

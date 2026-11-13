@@ -25,8 +25,9 @@ import type { ModelCapability } from './capabilities'
  * Enum values of `field` that the model's expression gives a price to, e.g. the
  * resolutions whose tier is not zero. `null` means there is nothing to filter
  * on: the field is not a task usage enum, the expression is missing or could
- * not be understood, or every tier is zero — the caller then keeps the plugin's
- * full option list instead of guessing.
+ * not be understood, a priced fallback tier covers the values no condition
+ * names, or every tier is zero — the caller then keeps the plugin's full option
+ * list instead of guessing.
  */
 export function pricedUsageValues(
   model: PricingModel,
@@ -49,6 +50,9 @@ export function pricedUsageValues(
       tier.constant > 0 ||
       Object.values(tier.unitPrices).some((price) => price > 0)
     if (!priced) continue
+    // An unconditional tier is the fallback: it prices every value the tiers
+    // above it did not name, so no option can be dropped.
+    if (tier.conditions.length === 0) return null
     for (const condition of tier.conditions) {
       if (condition.field === field) values.add(condition.value)
     }

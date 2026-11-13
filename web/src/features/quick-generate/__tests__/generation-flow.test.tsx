@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -26,7 +26,11 @@ import type { GenerationSchema } from '@/features/pricing/types'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
 import { QuickGenerate } from '..'
-import { submitVideo, uploadQuickGenerateReferences } from '../api'
+import {
+  submitDraftUpgrade,
+  submitVideo,
+  uploadQuickGenerateReferences,
+} from '../api'
 import { useGenerationModels } from '../hooks/use-generation-models'
 import { capabilityFor } from '../lib/capabilities'
 import { downloadMedia } from '../lib/download-media'
@@ -54,6 +58,7 @@ vi.mock('../hooks/use-generation-models', () => ({
 
 vi.mock('../api', () => ({
   submitVideo: vi.fn(),
+  submitDraftUpgrade: vi.fn(),
   uploadQuickGenerateReferences: vi.fn(),
   fetchVideoTask: vi.fn(),
 }))
@@ -79,6 +84,7 @@ vi.mock('@/features/system-settings/components/form-navigation-guard', () => ({
 
 const generateImagesMock = vi.mocked(generateImages)
 const submitVideoMock = vi.mocked(submitVideo)
+const submitDraftUpgradeMock = vi.mocked(submitDraftUpgrade)
 const uploadReferencesMock = vi.mocked(uploadQuickGenerateReferences)
 const pollVideoTaskMock = vi.mocked(pollVideoTask)
 const guardMock = vi.mocked(FormNavigationGuard)
@@ -264,6 +270,10 @@ describe('quick generate', () => {
     const video = await screen.findByLabelText('a kiln at dusk')
     expect(video.tagName).toBe('VIDEO')
     expect(video).toHaveAttribute('src', 'https://cdn.example.com/one.mp4')
+    // An ordinary video is not a sample, so it has no final to upgrade.
+    expect(
+      screen.queryByRole('button', { name: 'Upgrade to 1080p' })
+    ).toBeNull()
     expect(submitVideoMock).toHaveBeenCalledWith({
       apiKey: 'sk-abc123',
       model: 'sora-2',
@@ -792,5 +802,66 @@ describe('quick generate', () => {
     const bar = await screen.findByRole('progressbar')
     expect(bar).toHaveAttribute('aria-valuenow', '0')
     expect(screen.getByText('0%')).toBeInTheDocument()
+  })
+
+  it('upgrades a finished 480p sample to a 1080p final', async () => {
+    mockModels([
+      {
+        name: 'Seedance2.5',
+        kind: 'video',
+        schema: {
+          fields: [
+            {
+              key: 'draft',
+              labelKey: '480p sample',
+              type: 'select',
+              defaultValue: 'true',
+              options: [
+                { value: 'false', label: 'Off' },
+                { value: 'true', label: 'On' },
+              ],
+              requestPath: ['metadata', 'draft'],
+              valueType: 'boolean',
+            },
+          ],
+        },
+      },
+    ])
+    submitVideoMock.mockResolvedValue('task-1')
+    submitDraftUpgradeMock.mockResolvedValue('task-2')
+    pollVideoTaskMock
+      .mockResolvedValueOnce('https://cdn.example.com/draft.mp4')
+      .mockResolvedValueOnce('https://cdn.example.com/final.mp4')
+
+    render(<QuickGenerate />)
+    await submitPrompt('a kiln at dusk')
+    await waitFor(() =>
+      expect(screen.getByLabelText('a kiln at dusk')).toHaveAttribute(
+        'src',
+        'https://cdn.example.com/draft.mp4'
+      )
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upgrade to 1080p' }))
+    const dialog = screen.getByRole('alertdialog')
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Upgrade to 1080p' })
+    )
+
+    // The final names the sample and the target tier only: its prompt, media
+    // and settings are inherited from the sample.
+    await waitFor(() =>
+      expect(submitDraftUpgradeMock).toHaveBeenCalledWith({
+        apiKey: 'sk-abc123',
+        model: 'Seedance2.5',
+        draftTaskId: 'task-1',
+      })
+    )
+    await waitFor(() =>
+      expect(screen.getByLabelText('a kiln at dusk')).toHaveAttribute(
+        'src',
+        'https://cdn.example.com/final.mp4'
+      )
+    )
   })
 })

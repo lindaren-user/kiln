@@ -336,30 +336,19 @@ const STATUS_MAP: Record<string, VideoTaskStatus> = {
   FAILURE: 'failed',
 }
 
-/**
- * Submit a video job on the generic task endpoint. Unlike the OpenAI-compatible
- * `/v1/videos`, its task DTO carries `result_url`. For a vendor task that is
- * the vendor's own signed address, which the browser plays directly; for a task
- * plugin it is this gateway's own content route, which needs the API key, so
- * the poller resolves the artifact address before handing it over.
- */
-export async function submitVideo(params: {
-  apiKey: string
-  model: string
-  prompt: string
-  request: Record<string, unknown>
-}): Promise<string> {
-  const response = await fetch('/v1/video/generations', {
+/** Posts one task request and returns the gateway task id. */
+async function submitTask(
+  url: string,
+  apiKey: string,
+  body: Record<string, unknown>
+): Promise<string> {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: params.model,
-      prompt: params.prompt,
-      ...params.request,
-    }),
+    body: JSON.stringify(body),
   })
 
   const payload = (await response
@@ -375,6 +364,47 @@ export async function submitVideo(params: {
     throw new Error(t('The model returned no task'))
   }
   return String(taskId)
+}
+
+/**
+ * Submit a video job on the generic task endpoint. Unlike the OpenAI-compatible
+ * `/v1/videos`, its task DTO carries `result_url`. For a vendor task that is
+ * the vendor's own signed address, which the browser plays directly; for a task
+ * plugin it is this gateway's own content route, which needs the API key, so
+ * the poller resolves the artifact address before handing it over.
+ */
+export async function submitVideo(params: {
+  apiKey: string
+  model: string
+  prompt: string
+  request: Record<string, unknown>
+}): Promise<string> {
+  return submitTask('/v1/video/generations', params.apiKey, {
+    model: params.model,
+    prompt: params.prompt,
+    ...params.request,
+  })
+}
+
+/**
+ * Ask for the 1080p final of a 480p sample. The final inherits the sample's
+ * prompt, media and parameters, so the body carries only the sample id and the
+ * target tier; a repeated prompt, ratio or duration is rejected upstream.
+ */
+export async function submitDraftUpgrade(params: {
+  apiKey: string
+  model: string
+  draftTaskId: string
+}): Promise<string> {
+  return submitTask('/v1/videos', params.apiKey, {
+    model: params.model,
+    metadata: {
+      resolution: '1080p',
+      content: [
+        { type: 'draft_task', draft_task: { id: params.draftTaskId } },
+      ],
+    },
+  })
 }
 
 /** Read one poll of a video task. */

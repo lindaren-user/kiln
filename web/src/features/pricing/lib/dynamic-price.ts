@@ -37,7 +37,7 @@ import {
 } from './billing-expr'
 import { compileBillingExpression } from './billing-expression/parser'
 import { getDisplayGroupRatio } from './model-helpers'
-import { withPluginPricing } from './plugin-pricing'
+import { withFirstPricedVariant, withPluginPricing } from './plugin-pricing'
 import {
   evaluateTaskVisualConfig,
   getTaskNumberFields,
@@ -614,21 +614,15 @@ export function getCardExamplePrice(
   model: PricingModel,
   options: DynamicPriceOptions
 ): CardExamplePrice | null {
-  if (model.billing_plugin_variants?.length) {
-    const variant = model.billing_plugin_variants.find(
-      (provider) => provider.billing_expr
-    )
-    return variant
-      ? getCardExamplePrice(withPluginPricing(model, variant), options)
-      : null
-  }
-  if (!isTaskUsagePricingModel(model)) return null
-  const schema = model.billing_usage_schema
-  const firstExample = model.billing_usage_examples?.[0]
+  const priced = withFirstPricedVariant(model)
+  if (!priced) return null
+  if (!isTaskUsagePricingModel(priced)) return null
+  const schema = priced.billing_usage_schema
+  const firstExample = priced.billing_usage_examples?.[0]
   if (!schema || !firstExample) return null
 
   const { billingExpr } = splitBillingExprAndRequestRules(
-    model.billing_expr || ''
+    priced.billing_expr || ''
   )
   const config = tryParseTaskVisualConfig(billingExpr, schema)
   if (!config) return null

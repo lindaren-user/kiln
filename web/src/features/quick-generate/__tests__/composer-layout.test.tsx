@@ -16,12 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import i18next from 'i18next'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import zh from '@/i18n/locales/zh.json'
 
 import { GenerateComposer } from '../components/generate-composer'
 import { capabilityFor, defaultValues } from '../lib/capabilities'
+import type { GenerationValues } from '../types'
 
 const imageSchema = {
   fields: [
@@ -164,5 +168,115 @@ describe('prompt character counter', () => {
 
     expect(screen.getByText('6,001 / 6,000')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+  })
+})
+
+const draftSchema = {
+  fields: [
+    {
+      key: 'resolution',
+      labelKey: 'Resolution',
+      type: 'select' as const,
+      defaultValue: '1080p',
+      options: ['480p', '720p', '1080p'].map((value) => ({
+        value,
+        label: value,
+      })),
+      requestPath: ['metadata', 'resolution'],
+    },
+    {
+      key: 'draft',
+      labelKey: '480p sample',
+      type: 'select' as const,
+      defaultValue: 'false',
+      options: [
+        { value: 'false', label: 'Off' },
+        { value: 'true', label: 'On' },
+      ],
+      requestPath: ['metadata', 'draft'],
+    },
+    {
+      key: 'image_mode',
+      labelKey: 'Image mode',
+      type: 'select' as const,
+      defaultValue: 'reference',
+      options: [
+        { value: 'reference', label: 'Reference' },
+        { value: 'first_frame', label: 'First frame' },
+        { value: 'first_last', label: 'First & last' },
+      ],
+      requestPath: ['metadata', 'image_mode'],
+    },
+    {
+      key: 'ratio',
+      labelKey: 'Aspect Ratio',
+      type: 'select' as const,
+      defaultValue: '16:9',
+      options: [
+        { value: '16:9', label: '16:9' },
+        { value: '9:16', label: '9:16' },
+        { value: 'adaptive', label: 'Adaptive' },
+      ],
+      requestPath: ['metadata', 'ratio'],
+    },
+  ],
+}
+
+function draftComposer(values: GenerationValues) {
+  return (
+    <GenerateComposer
+      modelItems={[{ value: 'seedance', label: 'seedance' }]}
+      model='seedance'
+      promptPlaceholder='Describe what you want to create'
+      onModelChange={vi.fn()}
+      capability={capabilityFor('video', draftSchema)}
+      prompt=''
+      onPromptChange={vi.fn()}
+      values={values}
+      onValueChange={vi.fn()}
+      onSubmit={() => true}
+      busy={false}
+      disabled={false}
+    />
+  )
+}
+
+describe('sample draft controls', () => {
+  afterEach(async () => {
+    await act(() => i18next.changeLanguage('en'))
+  })
+
+  it('hides the resolution control while the 480p sample is on', () => {
+    const view = render(
+      draftComposer({ resolution: '1080p', draft: 'true' })
+    )
+
+    expect(screen.queryByLabelText('Resolution')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('480p sample')).toBeInTheDocument()
+
+    view.rerender(draftComposer({ resolution: '1080p', draft: 'false' }))
+
+    expect(screen.getByLabelText('Resolution')).toBeInTheDocument()
+  })
+
+  it('hides the ratio control while a frame fixes the aspect ratio', () => {
+    const view = render(
+      draftComposer({ image_mode: 'first_last', ratio: '16:9' })
+    )
+
+    expect(screen.queryByLabelText('Aspect Ratio')).not.toBeInTheDocument()
+
+    view.rerender(draftComposer({ image_mode: 'reference', ratio: '16:9' }))
+
+    expect(screen.getByLabelText('Aspect Ratio')).toBeInTheDocument()
+  })
+
+  it('translates plugin option labels with the interface language', async () => {
+    i18next.addResourceBundle('zh', 'translation', zh.translation, true, true)
+    await act(() => i18next.changeLanguage('zh'))
+
+    render(draftComposer({ resolution: '1080p', draft: 'true' }))
+
+    expect(screen.getByText('开启')).toBeInTheDocument()
   })
 })

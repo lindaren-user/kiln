@@ -38,6 +38,8 @@ type ResultPanelProps = {
   onZoom: (index: number) => void
   onDownload: (index: number) => void
   onRetry: () => void
+  /** Offered only for a finished 480p sample the vendor still holds. */
+  onUpgradeDraft?: () => void
 }
 
 /** The wording a provider sends while it has no percentage to report. */
@@ -121,7 +123,7 @@ export function ResultPanel(props: ResultPanelProps) {
             {t('Describe what you want, pick a model, then generate.')}
           </p>
           <p className='text-xs leading-5'>
-            {t('Price for this run')}
+            {t('Estimated cost')}
             {props.runPrice ? (
               <span className='text-warning ml-1 font-semibold tabular-nums'>
                 {props.runPrice}
@@ -176,6 +178,19 @@ export function ResultPanel(props: ResultPanelProps) {
           >
             <Download className='size-3.5' aria-hidden='true' />
           </Button>
+          {/* A 480p sample can be turned into a 1080p final for seven days. */}
+          {props.onUpgradeDraft && (
+            <Button
+              type='button'
+              size='sm'
+              variant='secondary'
+              onClick={props.onUpgradeDraft}
+              className='absolute top-3 left-3'
+            >
+              <Sparkles className='mr-2 size-4' aria-hidden='true' />
+              {t('Upgrade to 1080p')}
+            </Button>
+          )}
         </div>
       )}
 

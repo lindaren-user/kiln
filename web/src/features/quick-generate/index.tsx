@@ -28,7 +28,11 @@ import { Button } from '@/components/ui/button'
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
 
-import { submitVideo, uploadQuickGenerateReferences } from './api'
+import {
+  submitDraftUpgrade,
+  submitVideo,
+  uploadQuickGenerateReferences,
+} from './api'
 import { GenerateComposer } from './components/generate-composer'
 import { MediaLightbox } from './components/media-lightbox'
 import { ResultPanel } from './components/result-panel'
@@ -95,6 +99,8 @@ export function QuickGenerate() {
     prompt: string
     references: ReferenceAttachment[]
   } | null>(null)
+  // Upgrading a sample starts a second, separately priced run, so it asks first.
+  const [confirmUpgrade, setConfirmUpgrade] = useState(false)
   // Identifies the generation that may still write to state; a newer one, or
   // leaving the page, cancels the video poll of an older one.
   const activeRunRef = useRef('')
@@ -284,17 +290,25 @@ export function QuickGenerate() {
           .map((reference) => reference.url)
 
         if (params.kind === 'video') {
-          const taskId = await submitVideo({
-            apiKey,
-            model: params.model,
-            prompt,
-            request: buildVideoRequest(
-              params.values,
-              params.capability,
-              imageReferences,
-              uploadedReferences
-            ),
-          })
+          // A draft upgrade inherits the sample's prompt and media, so only the
+          // sample id and the target tier are sent.
+          const taskId = params.draftTaskId
+            ? await submitDraftUpgrade({
+                apiKey,
+                model: params.model,
+                draftTaskId: params.draftTaskId,
+              })
+            : await submitVideo({
+                apiKey,
+                model: params.model,
+                prompt,
+                request: buildVideoRequest(
+                  params.values,
+                  params.capability,
+                  imageReferences,
+                  uploadedReferences
+                ),
+              })
           // The task now lives upstream: remember it before waiting, so even
           // leaving the page right now can be resumed. The stored references
           // are the uploaded ones, which still resolve after a reload.
@@ -305,6 +319,8 @@ export function QuickGenerate() {
             keyId,
           }
           saveRunningVideoTask(task)
+          // The settled task id stays on the result so a sample can be upgraded.
+          applyRunPatch(id, { taskId })
           await runVideoTask(task, apiKey)
           return
         }
@@ -378,10 +394,37 @@ export function QuickGenerate() {
         capability: generation.capability,
         values: generation.values,
         references: generation.references,
+        draftTaskId: generation.draftTaskId,
       },
       generation.prompt
     )
   }, [generation, runGeneration])
+
+  // A finished 480p sample can become a 1080p final while the vendor still
+  // holds it (seven days); the task id is the public gateway id.
+  const upgradeableTaskId =
+    generation?.kind === 'video' &&
+    generation.status === 'done' &&
+    generation.taskId &&
+    generation.values.draft === 'true'
+      ? generation.taskId
+      : null
+
+  const upgradeDraft = useCallback(() => {
+    if (!generation || !upgradeableTaskId) return
+    void runGeneration(
+      {
+        model: generation.model,
+        kind: 'video',
+        capability: generation.capability,
+        // The final is no longer a sample, so its own result offers no upgrade.
+        values: { ...generation.values, draft: 'false' },
+        references: [],
+        draftTaskId: upgradeableTaskId,
+      },
+      generation.prompt
+    )
+  }, [generation, runGeneration, upgradeableTaskId])
 
   /** Returns false when the prompt waits for the replace confirmation. */
   const submit = useCallback(
@@ -495,6 +538,9 @@ export function QuickGenerate() {
             }}
             onDownload={download}
             onRetry={retry}
+            onUpgradeDraft={
+              upgradeableTaskId ? () => setConfirmUpgrade(true) : undefined
+            }
           />
         </div>
       </div>
@@ -538,6 +584,20 @@ export function QuickGenerate() {
         kind='image'
         onDownload={() => {
           if (zoomIndex !== null) void download(zoomIndex)
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmUpgrade}
+        onOpenChange={setConfirmUpgrade}
+        title={t('Upgrade the sample to 1080p?')}
+        desc={t(
+          "The 1080p final inherits this sample's prompt, media and settings, is billed at the 1080p price, and replaces the sample here."
+        )}
+        confirmText={t('Upgrade to 1080p')}
+        handleConfirm={() => {
+          setConfirmUpgrade(false)
+          upgradeDraft()
         }}
       />
 

@@ -120,7 +120,7 @@ describe('priced option filtering', () => {
     ).toEqual(['1080P'])
   })
 
-  it('replaces a default that was filtered out', () => {
+  it('keeps every option a priced fallback tier covers', () => {
     const capability = restrictToPricedOptions(
       model({
         billing_mode: 'tiered_expr',
@@ -133,8 +133,27 @@ describe('priced option filtering', () => {
 
     expect(
       capability.fields[0]?.options?.map((option) => option.value)
-    ).toEqual(['1080P'])
-    expect(capability.fields[0]?.defaultValue).toBe('1080P')
+    ).toEqual(['480P', '720P', '1080P'])
+    expect(capability.fields[0]?.defaultValue).toBe('480P')
+  })
+
+  it('keeps all three resolutions of a token-priced tier chain', () => {
+    const capability = videoCapability(['480p', '720p', '1080p'])
+    expect(
+      restrictToPricedOptions(
+        model({
+          billing_mode: 'tiered_expr',
+          billing_expr:
+            'u("video_input") == "video" && u("resolution") == "1080p" ? tier("1080p-video", u("tokens") * 5.6 / 1000000) : u("video_input") == "video" ? tier("video", u("tokens") * 5.12 / 1000000) : u("resolution") == "1080p" ? tier("1080p", u("tokens") * 9.36 / 1000000) : tier("base", u("tokens") * 8.56 / 1000000)',
+          billing_usage_schema: {
+            tokens: { type: 'number', unit: 'token' },
+            resolution: { enum: ['480p', '720p', '1080p'] },
+            video_input: { enum: ['none', 'video'] },
+          },
+        }),
+        capability
+      )
+    ).toBe(capability)
   })
 
   it('leaves the capability untouched without a usable expression', () => {

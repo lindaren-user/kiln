@@ -66,6 +66,8 @@ function normalizeRunningTask(raw: unknown): RunningVideoTask | null {
     capability: raw.capability as unknown as ModelCapability,
     values: stringValues(raw.values),
     references,
+    draftTaskId:
+      typeof raw.draftTaskId === 'string' ? raw.draftTaskId : undefined,
     // An older record has no start time; its clock starts at the reload.
     startedAt: typeof raw.startedAt === 'number' ? raw.startedAt : Date.now(),
     // A stored task is by definition one still waiting for its poll.

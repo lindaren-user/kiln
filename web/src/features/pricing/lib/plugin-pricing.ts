@@ -74,6 +74,21 @@ export function withPluginPricing(
   }
 }
 
+/**
+ * The model as priced by the first plugin variant that declares an expression.
+ * A model without plugin variants is returned unchanged; null means none of its
+ * variants is priced.
+ */
+export function withFirstPricedVariant(
+  model: PricingModel
+): PricingModel | null {
+  if (!model.billing_plugin_variants?.length) return model
+  const variant = model.billing_plugin_variants.find(
+    (item) => item.billing_expr
+  )
+  return variant ? withPluginPricing(model, variant) : null
+}
+
 export function pluginExpressionsEqual(
   left: Record<string, string> = {},
   right: Record<string, string> = {}

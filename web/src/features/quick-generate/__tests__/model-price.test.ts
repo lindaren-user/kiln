@@ -239,6 +239,92 @@ describe('generation model price', () => {
     ).toBe('$0.2')
   })
 
+  it('hints a token-priced task model with its sample run range', () => {
+    expect(
+      generationModelPrice(
+        model({
+          billing_mode: 'tiered_expr',
+          billing_expr: 'tier("base", u("tokens") * 10 / 1000000)',
+          billing_usage_schema: { tokens: { type: 'number', unit: 'token' } },
+          billing_usage_examples: [
+            { label: '480p · 5s', facts: { tokens: 100000 } },
+            { label: '1080p · 5s', facts: { tokens: 400000 } },
+          ],
+        }),
+        t,
+        'en'
+      )
+    ).toBe('$1 – $4')
+  })
+
+  it('estimates a token-priced run from the example for the selected resolution', () => {
+    const source = model({
+      billing_mode: 'tiered_expr',
+      billing_expr: 'tier("base", u("tokens") * 10 / 1000000)',
+      billing_usage_schema: {
+        tokens: { type: 'number', unit: 'token' },
+        resolution: { enum: ['480p', '1080p'] },
+      },
+      billing_usage_examples: [
+        { label: '480p · 5s', facts: { tokens: 100000, resolution: '480p' } },
+        { label: '1080p · 5s', facts: { tokens: 400000, resolution: '1080p' } },
+      ],
+    })
+
+    expect(
+      generationRunPrice(source, {
+        seconds: 10,
+        usage: { resolution: '1080p' },
+      })
+    ).toBe('$8')
+    expect(
+      generationRunPrice(source, {
+        seconds: 5,
+        usage: { resolution: '480p' },
+      })
+    ).toBe('$1')
+  })
+
+  it('prices a sample draft at 480p whatever resolution is selected', () => {
+    const capability: ModelCapability = {
+      kind: 'video',
+      fields: [
+        {
+          key: 'resolution',
+          labelKey: 'Resolution',
+          type: 'select',
+          requestPath: ['metadata', 'resolution'],
+          defaultValue: '1080p',
+          options: [{ value: '1080p', label: '1080p' }],
+        },
+        {
+          key: 'draft',
+          labelKey: '480p sample',
+          type: 'select',
+          requestPath: ['metadata', 'draft'],
+          defaultValue: 'false',
+          options: [
+            { value: 'false', label: 'Off' },
+            { value: 'true', label: 'On' },
+          ],
+        },
+      ],
+      referenceImages: null,
+      mediaNotice: false,
+    }
+
+    expect(
+      generationUsageFacts(
+        {
+          tokens: { type: 'number', unit: 'token' },
+          resolution: { enum: ['480p', '1080p'] },
+        },
+        capability,
+        { resolution: '1080p', draft: 'true' }
+      )
+    ).toEqual({ resolution: '480p' })
+  })
+
   it('leaves the hint empty when no price is configured', () => {
     expect(
       generationModelPrice(

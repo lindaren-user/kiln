@@ -376,10 +376,18 @@ function ParamFieldControl(props: {
           : props.field.labelKey
       )
   if (props.field.type === 'select') {
+    // Option labels come from the plugin schema as its own English strings
+    // ("Reference", "First & last", "auto"); the key doubles as the English
+    // source. Separators are off so values like "1:1" stay whole, and values
+    // with no translation ("480p", "1K") pass through unchanged.
+    const items = (props.field.options ?? []).map((option) => ({
+      ...option,
+      label: t(option.label, { nsSeparator: false, keySeparator: false }),
+    }))
     return (
       <ParamSelect
         label={label}
-        items={props.field.options ?? []}
+        items={items}
         value={props.value}
         onValueChange={props.onValueChange}
         disabled={props.disabled}
@@ -407,6 +415,14 @@ export function GenerateComposer(props: GenerateComposerProps) {
   const { t } = useTranslation()
 
   const fields = props.capability.fields
+  // The 480p sample fixes the output tier, so there is no resolution to pick
+  // while it is on; showing both controls reads as two competing answers.
+  const draftOn = props.values.draft === 'true'
+  // A first or last frame fixes the clip's aspect ratio, so a ratio picker
+  // would only contradict the image.
+  const frameMode =
+    props.values.image_mode === 'first_frame' ||
+    props.values.image_mode === 'first_last'
   const ready =
     !props.disabled && props.model !== '' && props.prompt.trim() !== ''
 
@@ -484,15 +500,18 @@ export function GenerateComposer(props: GenerateComposerProps) {
             placeholder={t('Select a model')}
             className='max-w-52 min-w-0'
           />
-          {fields.map((field) => (
-            <ParamFieldControl
-              key={field.key}
-              field={field}
-              value={props.values[field.key] ?? String(field.defaultValue)}
-              onValueChange={(next) => props.onValueChange(field.key, next)}
-              disabled={props.disabled}
-            />
-          ))}
+          {fields.map((field) =>
+            (draftOn && field.key === 'resolution') ||
+            (frameMode && field.key === 'ratio') ? null : (
+              <ParamFieldControl
+                key={field.key}
+                field={field}
+                value={props.values[field.key] ?? String(field.defaultValue)}
+                onValueChange={(next) => props.onValueChange(field.key, next)}
+                disabled={props.disabled}
+              />
+            )
+          )}
         </PromptInputTools>
 
         <PromptFooterActions

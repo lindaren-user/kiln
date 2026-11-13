@@ -49,6 +49,11 @@ export type GenerationParams = {
   values: GenerationValues
   /** Local attachments before upload, and temporary object URLs afterward. */
   references: ReferenceAttachment[]
+  /**
+   * The 480p sample this run upgrades to a 1080p final. The final request
+   * carries only the sample id and the target tier.
+   */
+  draftTaskId?: string
 }
 
 /**
@@ -64,6 +69,8 @@ export type Generation = GenerationParams & {
   saved: boolean
   /** When the run started, so the elapsed clock survives a reload. */
   startedAt: number
+  /** The gateway task id, kept after the task settles so a sample can be upgraded. */
+  taskId?: string
   /** Upstream progress text while a video task is running, e.g. `45%`. */
   progress?: string
   error?: string
