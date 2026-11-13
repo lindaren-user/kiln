@@ -267,3 +267,53 @@ func TestIP233OpenAIVideoDecode(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "duration must be one of 5, 10, 15")
 }
+
+// The host publishes uploaded files to object storage and hands over read URLs;
+// the plugin forwards them as the reference list IP233 documents.
+func TestIP233MultipartReferencesUsePublishedURLs(t *testing.T) {
+	plugin := loadIP233Plugin(t)
+	value, err := plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{
+		"body": map[string]any{
+			"kind":   "multipart",
+			"fields": map[string][]string{"prompt": {"a dog"}, "seconds": {"4"}},
+			"files": []map[string]any{
+				{"ref": "request_file:image[]", "field": "image[]", "filename": "a.png", "mimeType": "image/png", "size": 3, "url": "https://cdn.example/a.png"},
+			},
+		},
+		"model":         "ip233-minimax-h3",
+		"upstreamModel": "ip233-minimax-h3",
+	})
+	require.NoError(t, err)
+	intent := decodePluginValue(t, value)
+	assert.Equal(t, "image_to_video", intent["action"])
+	request, ok := intent["requestBody"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"https://cdn.example/a.png"}, request["image"])
+
+	// The driver hook turns the normalized body into the vendor request.
+	value, err = plugin.Engine.Call(t.Context(), "buildSubmitRequest", map[string]any{
+		"requestBody":   request,
+		"model":         "ip233-minimax-h3",
+		"upstreamModel": "ip233-minimax-h3",
+		"baseUrl":       "https://api-new.ip233.example",
+		"apiKey":        "sk-redeem",
+	})
+	require.NoError(t, err)
+	descriptor := decodePluginValue(t, value)
+	vendorBody, ok := descriptor["body"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"https://cdn.example/a.png"}, vendorBody["reference_image_urls"])
+
+	_, err = plugin.Engine.CallPath(t.Context(), "protocols", []string{"openai_video", "decodeRequest"}, map[string]any{
+		"body": map[string]any{
+			"kind":   "multipart",
+			"fields": map[string][]string{"prompt": {"a dog"}, "seconds": {"4"}},
+			"files": []map[string]any{
+				{"ref": "request_file:image[]", "field": "image[]", "filename": "a.png", "mimeType": "image/png", "size": 3},
+			},
+		},
+		"model":         "ip233-minimax-h3",
+		"upstreamModel": "ip233-minimax-h3",
+	})
+	require.ErrorContains(t, err, "http or https URLs")
+}
