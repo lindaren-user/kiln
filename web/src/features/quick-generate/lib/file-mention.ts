@@ -113,6 +113,8 @@ export function numberMentionTokens(
   fallback: string,
   label: (kind: ReferenceKind, index: number) => string
 ): string {
+  // Most prompts carry no mention; skip the map and the scan for those.
+  if (!text.includes('@')) return text
   const labels = new Map<string, string>()
   const counts: Record<ReferenceKind, number> = {
     image: 0,
