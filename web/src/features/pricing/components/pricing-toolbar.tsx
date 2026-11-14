@@ -79,7 +79,7 @@ export interface PricingToolbarProps {
 
 export function PricingToolbar(props: PricingToolbarProps) {
   const { t } = useTranslation()
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const sortLabels = getSortLabels(t)
 
   return (
@@ -90,8 +90,8 @@ export function PricingToolbar(props: PricingToolbarProps) {
             type='button'
             variant='outline'
             size='sm'
-            onClick={() => setMobileFiltersOpen(true)}
-            className='gap-1.5 xl:hidden'
+            onClick={() => setFiltersOpen(true)}
+            className='gap-1.5'
           >
             <Filter className='size-4' />
             {t('Filter')}
@@ -183,7 +183,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
         </div>
       </div>
 
-      <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetContent
           side='left'
           className={sideDrawerContentClassName('sm:max-w-md')}
