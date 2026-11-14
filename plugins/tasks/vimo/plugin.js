@@ -47,6 +47,7 @@ const VIDEO_MODELS = {
   "JT-seedance2.0【官】": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_6, modes: MODES_ALL, images: 9, audios: 3, videos: 3 },
   "V-SD2.0": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_3, modes: MODES_TEXT_REF, images: 9, audios: 3, videos: 0 },
   "V-SD2.0【满血】": { min: 5, max: 15, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 9, audios: 3, videos: 3 },
+  "V-SD2.5【官方】【自家号池】": { min: 5, max: 30, resolutions: ["480P", "720P", "1080P"], aspects: ASPECTS_3, modes: MODES_ALL, images: 30, audios: 10, videos: 0, perSecond: true },
   "JT-seedance-2.5【总数不超30】": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 30, audios: 10, videos: 10 },
   "SD2.5-【超级特价】-JTv4": { min: 5, max: 30, resolutions: ["720P"], aspects: ASPECTS_2, modes: MODES_TEXT_REF, images: 9, audios: 3, videos: 0 },
 };
@@ -74,6 +75,15 @@ const SECONDS_FIELD = {
   unit: "second",
   description: { en: "Video generation unit price", zh: "视频生成单价" },
 };
+// Every tier publishes its resolutions from this set, so one enum covers the
+// whole catalog; the expression prices a resolution by comparing the fact.
+const RESOLUTION_FIELD = {
+  enum: ["480P", "720P", "1080P"],
+  description: { en: "Output video resolution", zh: "输出视频分辨率" },
+};
+
+const PER_SECOND_VIDEO_USAGE = { seconds: SECONDS_FIELD, resolution: RESOLUTION_FIELD };
+const PER_CALL_VIDEO_USAGE = { count: COUNT_FIELD, resolution: RESOLUTION_FIELD };
 
 export const meta = {
   apiVersion: 1,
@@ -84,7 +94,7 @@ export const meta = {
     en: "Video generation through Vimo AI",
     zh: "通过 Vimo AI 生成视频",
   },
-  version: "1.1.0",
+  version: "1.3.0",
   author: { name: "Kiln" },
   website: "https://vimo.asia",
   baseUrl: "https://vimo.asia/api/v1",
@@ -93,17 +103,20 @@ export const meta = {
   // Union of both profiles, used for an alias that resolves to several models.
   // Examples are per profile; a plugin-level vector would have to cover both
   // billing quantities.
-  usageSchema: { count: COUNT_FIELD, seconds: SECONDS_FIELD },
+  usageSchema: Object.assign({}, PER_SECOND_VIDEO_USAGE, PER_CALL_VIDEO_USAGE),
   usageProfiles: [
     {
       models: PER_SECOND_MODELS,
-      schema: { seconds: SECONDS_FIELD },
-      examples: [{ label: "720P 10s", facts: { seconds: 10 } }],
+      schema: PER_SECOND_VIDEO_USAGE,
+      examples: [
+        { label: "480P 10s", facts: { seconds: 10, resolution: "480P" } },
+        { label: "720P 10s", facts: { seconds: 10, resolution: "720P" } },
+      ],
     },
     {
       models: VIDEO_MODEL_NAMES.filter((name) => !PER_SECOND_MODELS.includes(name)),
-      schema: { count: COUNT_FIELD },
-      examples: [{ label: "one video 720P", facts: { count: 1 } }],
+      schema: PER_CALL_VIDEO_USAGE,
+      examples: [{ label: "one video 720P", facts: { count: 1, resolution: "720P" } }],
     },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
@@ -354,8 +367,12 @@ export function parseSubmitResponse(_ctx, resp) {
 // metadata is bounded exactly like a top-level one.
 export function extractUsage(ctx) {
   const { spec } = videoModel(ctx);
-  if (!spec.perSecond) return { count: 1 };
-  return { seconds: videoSeconds(flatRequest(ctx), spec) };
+  const request = flatRequest(ctx);
+  // The resolution travels with the request, so the fact is the one the order
+  // is sent with, defaults included.
+  const resolution = videoResolution(request, spec);
+  if (!spec.perSecond) return { count: 1, resolution };
+  return { seconds: videoSeconds(request, spec), resolution };
 }
 
 // The terminal reply reports credits, not seconds, so the task settles on the

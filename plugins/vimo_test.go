@@ -143,6 +143,13 @@ func TestVimoVideoSubmitRequest(t *testing.T) {
 			wantBody:   `{"model":"JT-seedance-2.5","prompt":"p","seconds":10,"aspect_ratio":"16:9","resolution":"480P","mode":"text"}`,
 			wantAction: "text_to_video",
 		},
+		{
+			name:       "the SD2.5 official tier offers all three resolutions",
+			model:      "V-SD2.5【官方】【自家号池】",
+			request:    map[string]any{"prompt": "p", "duration": 10, "metadata": map[string]any{"aspect_ratio": "1:1", "resolution": "1080P"}},
+			wantBody:   `{"model":"V-SD2.5【官方】【自家号池】","prompt":"p","seconds":10,"aspect_ratio":"1:1","resolution":"1080P","mode":"text"}`,
+			wantAction: "text_to_video",
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			descriptor := callVimoHook(t, plugin, "buildSubmitRequest", vimoSubmitContext(testCase.model, testCase.request))
@@ -216,13 +223,19 @@ func TestVimoUsageFacts(t *testing.T) {
 			name:    "per-second video reserves the requested seconds",
 			model:   "JT-seedance-2.5",
 			request: map[string]any{"prompt": "p", "duration": 12},
-			want:    map[string]any{"seconds": float64(12)},
+			want:    map[string]any{"seconds": float64(12), "resolution": "480P"},
 		},
 		{
 			name:    "per-call video reserves one generation",
 			model:   "V-稳定seadanco2.5-720【主打】",
 			request: map[string]any{"prompt": "p", "duration": 20},
-			want:    map[string]any{"count": float64(1)},
+			want:    map[string]any{"count": float64(1), "resolution": "720P"},
+		},
+		{
+			name:    "the requested resolution is the billed fact",
+			model:   "V-SD2.5【官方】【自家号池】",
+			request: map[string]any{"prompt": "p", "duration": 10, "resolution": "1080P"},
+			want:    map[string]any{"seconds": float64(10), "resolution": "1080P"},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -315,8 +328,8 @@ func TestVimoResponsesProtocol(t *testing.T) {
 		requestBody:         map[string]any{"input": "a cat", "seconds": 8},
 		wantAction:          "text_to_video",
 		wantRequest:         map[string]any{"seconds": float64(8)},
-		wantUsageKeys:       []string{"count", "seconds"},
-		wantSubmitUsageKeys: []string{"count"},
+		wantUsageKeys:       []string{"count", "resolution", "seconds"},
+		wantSubmitUsageKeys: []string{"count", "resolution"},
 		wantVendorName:      "vimo",
 	})
 }
