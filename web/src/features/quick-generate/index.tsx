@@ -47,6 +47,10 @@ import {
 import { downloadMedia, mediaFilename } from './lib/download-media'
 import { loadComposerDraft, saveComposerDraft } from './lib/draft-storage'
 import { referenceKind } from './lib/file-mention'
+import {
+  notifyGenerationFinished,
+  requestNotificationPermission,
+} from './lib/notify'
 import { pollVideoTask } from './lib/poll-video'
 import { resolveQuickGenerateKey } from './lib/quick-generate-key'
 import {
@@ -178,6 +182,15 @@ export function QuickGenerate() {
     saveComposerDraft({ prompt, model: preferredModel, values })
   }, [preferredModel, prompt, values])
 
+  // A run that settles while the tab is in the background raises a browser
+  // notification. The effect depends on the settled run only, so a progress
+  // update never re-enters it and an on-screen result never notifies twice.
+  const finishedRun =
+    generation && generation.status !== 'running' ? generation : null
+  useEffect(() => {
+    if (finishedRun) notifyGenerationFinished(finishedRun)
+  }, [finishedRun])
+
   const busy = generation?.status === 'running'
   const noModels = !modelsLoading && models.length === 0
 
@@ -253,6 +266,8 @@ export function QuickGenerate() {
   const runGeneration = useCallback(
     async (params: GenerationParams, prompt: string) => {
       if (!params.model) return
+      // The submit click is the user gesture browsers require for this prompt.
+      requestNotificationPermission()
 
       const id = nanoid()
       activeRunRef.current = id
