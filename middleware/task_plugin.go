@@ -1681,9 +1681,11 @@ func RespondTaskPluginError(c *gin.Context, taskErr *dto.TaskError) bool {
 		message = common.MessageWithRequestId(sanitized.Message, requestID)
 	}
 	c.JSON(sanitized.HTTPStatus, &dto.TaskError{
-		Code:       sanitized.Code,
-		Message:    message,
-		StatusCode: sanitized.HTTPStatus,
+		Code:          sanitized.Code,
+		Message:       message,
+		MessageKey:    taskErr.MessageKey,
+		MessageParams: taskErr.MessageParams,
+		StatusCode:    sanitized.HTTPStatus,
 	})
 	return true
 }

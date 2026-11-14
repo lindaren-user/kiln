@@ -6,13 +6,18 @@ import (
 
 type TaskError struct {
 	// NoRetry prevents duplicate upstream work after a response has been accepted.
-	NoRetry    bool   `json:"-"`
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	Data       any    `json:"data"`
-	StatusCode int    `json:"-"`
-	LocalError bool   `json:"-"`
-	Error      error  `json:"-"`
+	NoRetry bool   `json:"-"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	// MessageKey and MessageParams carry the web console copy: the key is an
+	// English source string that is also its locale key, and the params fill
+	// its {{name}} placeholders. Message keeps the text for API clients.
+	MessageKey    string         `json:"message_key,omitempty"`
+	MessageParams map[string]any `json:"message_params,omitempty"`
+	Data          any            `json:"data"`
+	StatusCode    int            `json:"-"`
+	LocalError    bool           `json:"-"`
+	Error         error          `json:"-"`
 }
 
 type TaskData interface {

@@ -74,4 +74,6 @@ export type Generation = GenerationParams & {
   /** Upstream progress text while a video task is running, e.g. `45%`. */
   progress?: string
   error?: string
+  /** Stable server error code, so the panel can offer the right next step. */
+  errorCode?: string
 }

@@ -113,9 +113,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					"error": newAPIError.ToClaudeError(upstreamURLs...),
 				})
 			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(upstreamURLs...),
-				})
+				c.JSON(newAPIError.StatusCode, relayErrorBody(newAPIError, upstreamURLs))
 			}
 		}
 	}()
@@ -252,8 +250,22 @@ func writeRelayStreamError(c *gin.Context, format types.RelayFormat, apiError *t
 		_ = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: apiError.ToClaudeError(upstreamURLs...)})
 		return
 	}
-	_ = helper.ObjectData(c, gin.H{"error": apiError.ToOpenAIError(upstreamURLs...)})
+	_ = helper.ObjectData(c, relayErrorBody(apiError, upstreamURLs))
 	helper.Done(c)
+}
+
+// relayErrorBody is the OpenAI-format error envelope. The web console reads the
+// top-level message_key/message_params to render its own copy; API clients keep
+// the protocol's error object unchanged.
+func relayErrorBody(apiError *types.NewAPIError, upstreamURLs []string) gin.H {
+	body := gin.H{"error": apiError.ToOpenAIError(upstreamURLs...)}
+	if message := apiError.GetConsoleMessage(); message != nil {
+		body["message_key"] = message.Key
+		if len(message.Params) > 0 {
+			body["message_params"] = message.Params
+		}
+	}
+	return body
 }
 
 // CountClaudeTokens implements Anthropic's token-counting utility endpoint.

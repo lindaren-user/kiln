@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -157,4 +158,34 @@ func withDebugEnabled(t *testing.T, enabled bool) {
 	t.Cleanup(func() {
 		common.DebugEnabled = oldDebug
 	})
+}
+
+func TestTaskErrorFromAPIErrorCarriesConsoleMessage(t *testing.T) {
+	t.Parallel()
+
+	apiErr := types.NewErrorWithStatusCode(
+		errors.New("Not enough quota to pre-consume for this request"),
+		types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+		types.ErrOptionWithConsoleMessage(balanceShortMessage, map[string]any{
+			"required":  "¥10.00",
+			"remaining": "¥4.52",
+		}),
+	)
+
+	taskErr := TaskErrorFromAPIError(apiErr)
+
+	require.Equal(t, string(types.ErrorCodeInsufficientUserQuota), taskErr.Code)
+	require.Equal(t, balanceShortMessage, taskErr.MessageKey)
+	require.Equal(t, map[string]any{"required": "¥10.00", "remaining": "¥4.52"}, taskErr.MessageParams)
+	require.Equal(t, http.StatusForbidden, taskErr.StatusCode)
+}
+
+func TestTaskErrorFromAPIErrorLeavesPlainErrorsWithoutConsoleMessage(t *testing.T) {
+	t.Parallel()
+
+	taskErr := TaskErrorFromAPIError(types.NewErrorWithStatusCode(
+		errors.New("upstream refused"), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway))
+
+	require.Empty(t, taskErr.MessageKey)
+	require.Nil(t, taskErr.MessageParams)
 }

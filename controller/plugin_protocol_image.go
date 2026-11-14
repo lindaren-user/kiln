@@ -252,9 +252,16 @@ func respondTaskPluginImageError(c *gin.Context, taskErr *dto.TaskError) {
 	if status < http.StatusInternalServerError {
 		errorType = "invalid_request_error"
 	}
-	c.JSON(status, gin.H{"error": gin.H{
+	body := gin.H{"error": gin.H{
 		"message": common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),
 		"type":    errorType,
 		"code":    code,
-	}})
+	}}
+	if taskErr.MessageKey != "" {
+		body["message_key"] = taskErr.MessageKey
+		if len(taskErr.MessageParams) > 0 {
+			body["message_params"] = taskErr.MessageParams
+		}
+	}
+	c.JSON(status, body)
 }

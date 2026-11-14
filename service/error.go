@@ -223,10 +223,15 @@ func TaskErrorFromAPIError(apiErr *types.NewAPIError) *taskdto.TaskError {
 	if apiErr == nil {
 		return nil
 	}
-	return &taskdto.TaskError{
+	taskErr := &taskdto.TaskError{
 		Code:       string(apiErr.GetErrorCode()),
 		Message:    apiErr.Err.Error(),
 		StatusCode: apiErr.StatusCode,
 		Error:      apiErr.Err,
 	}
+	if message := apiErr.GetConsoleMessage(); message != nil {
+		taskErr.MessageKey = message.Key
+		taskErr.MessageParams = message.Params
+	}
+	return taskErr
 }

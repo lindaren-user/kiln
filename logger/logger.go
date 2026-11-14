@@ -149,29 +149,37 @@ func LogQuota(quota int) string {
 	}
 }
 
+// FormatQuotaShort renders a quota amount for web console copy: the same
+// currency as FormatQuota, rounded to cents because the reader sees a balance
+// or a price, not a ledger value.
+func FormatQuotaShort(quota int) string {
+	return formatQuotaAmount(quota, 2)
+}
+
 func FormatQuota(quota int) string {
+	return formatQuotaAmount(quota, 6)
+}
+
+func formatQuotaAmount(quota int, decimals int) string {
 	q := float64(quota)
 	switch operation_setting.GetQuotaDisplayType() {
 	case operation_setting.QuotaDisplayTypeCNY:
-		usd := q / common.QuotaPerUnit
-		cny := usd * operation_setting.USDExchangeRate
-		return fmt.Sprintf("¥%.6f", cny)
+		return fmt.Sprintf("¥%.*f", decimals, q/common.QuotaPerUnit*operation_setting.USDExchangeRate)
 	case operation_setting.QuotaDisplayTypeCustom:
-		usd := q / common.QuotaPerUnit
-		rate := operation_setting.GetGeneralSetting().CustomCurrencyExchangeRate
-		symbol := operation_setting.GetGeneralSetting().CustomCurrencySymbol
+		general := operation_setting.GetGeneralSetting()
+		symbol := general.CustomCurrencySymbol
 		if symbol == "" {
 			symbol = "¤"
 		}
+		rate := general.CustomCurrencyExchangeRate
 		if rate <= 0 {
 			rate = 1
 		}
-		v := usd * rate
-		return fmt.Sprintf("%s%.6f", symbol, v)
+		return fmt.Sprintf("%s%.*f", symbol, decimals, q/common.QuotaPerUnit*rate)
 	case operation_setting.QuotaDisplayTypeTokens:
 		return fmt.Sprintf("%d", quota)
 	default:
-		return fmt.Sprintf("＄%.6f", q/common.QuotaPerUnit)
+		return fmt.Sprintf("＄%.*f", decimals, q/common.QuotaPerUnit)
 	}
 }
 

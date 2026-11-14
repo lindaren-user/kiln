@@ -22,7 +22,10 @@ import i18next from 'i18next'
 
 export const safeServerErrorMessage = Symbol('safeServerErrorMessage')
 
-const serverErrorMessageKeys = {
+const serverProblemMessage =
+  'The server ran into a problem. Please try again later or contact your administrator.'
+
+export const serverErrorMessageKeys = {
   TELEGRAM_OAUTH_NOT_CONFIGURED:
     'Telegram OAuth is not configured or enabled. Please contact your administrator.',
   TELEGRAM_OAUTH_CONFLICT:
@@ -84,6 +87,23 @@ const serverErrorMessageKeys = {
   TELEGRAM_BIND_USER_DELETED: 'This user account no longer exists.',
   TELEGRAM_BIND_USER_DISABLED: 'This user account is disabled.',
   TELEGRAM_BIND_INTERNAL_ERROR: 'Telegram binding failed. Please try again.',
+
+  // Relay and task failures whose text the console owns. The server keeps the
+  // detailed message for API callers and logs; the reader here gets wording in
+  // their own language. Keep specific codes such as insufficient_user_quota out
+  // of this map: their message_key carries the amounts.
+  model_not_found:
+    'This model is not available. Choose another model or contact your administrator.',
+  prompt_blocked:
+    'The provider blocked this prompt. Rephrase it and try again.',
+  sensitive_words_detected:
+    'The request contains blocked words. Edit it and try again.',
+  'channel:no_available_key':
+    'No channel can serve this model right now. Try again later.',
+  // Gateway-side failures the reader cannot act on, so point them at the
+  // administrator instead of leaving a bare status or an internal message.
+  query_data_error: serverProblemMessage,
+  update_data_error: serverProblemMessage,
 } as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -122,14 +142,28 @@ export function getServerErrorMessageKey(value: unknown): string | null {
   return null
 }
 
-export function getServerErrorStatus(value: unknown): number | undefined {
+/** The stable error code, wherever the payload or relay body keeps it. */
+export function getServerErrorCode(value: unknown): string | undefined {
   for (const source of getServerErrorSources(value)) {
+    if (typeof source.code === 'string' && source.code) return source.code
+  }
+  return undefined
+}
+
+function statusFromSources(
+  sources: Record<string | symbol, unknown>[]
+): number | undefined {
+  for (const source of sources) {
     const status = isRecord(source.response)
       ? source.response.status
       : source.status
     if (typeof status === 'number') return status
   }
   return undefined
+}
+
+export function getServerErrorStatus(value: unknown): number | undefined {
+  return statusFromSources(getServerErrorSources(value))
 }
 
 export function isServerErrorCancelled(value: unknown): boolean {
@@ -216,9 +250,15 @@ export function getServerErrorMessage(
       getServerMessage(source) || detail || messageText(source.title)
     if (message) return message
   }
-  const status = getServerErrorStatus(value)
+  const status = statusFromSources(sources)
   if (status === 304) return i18next.t('Content not modified!')
   if (status === 204) return i18next.t('Content not found.')
+  // A 5xx with nothing readable to show is the gateway's own failure. This runs
+  // before the raw-message pass below, which would otherwise surface a client
+  // library's "Request failed with status code 502".
+  if (status !== undefined && status >= 500) {
+    return i18next.t(serverProblemMessage)
+  }
   for (const source of sources) {
     const message = messageText(source.message)
     if (message) return message

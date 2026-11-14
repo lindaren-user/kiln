@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Download, RotateCcw, Sparkles } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Download, RotateCcw, Sparkles, Wallet } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -152,10 +153,18 @@ export function ResultPanel(props: ResultPanelProps) {
           <p className='text-destructive text-sm' role='alert'>
             {generation.error}
           </p>
-          <Button variant='outline' size='sm' onClick={props.onRetry}>
-            <RotateCcw className='mr-2 size-4' aria-hidden='true' />
-            {t('Retry')}
-          </Button>
+          {/* An empty wallet is not retryable: the next step is a top-up. */}
+          {generation.errorCode === 'insufficient_user_quota' ? (
+            <Button variant='outline' size='sm' render={<Link to='/wallet' />}>
+              <Wallet className='mr-2 size-4' aria-hidden='true' />
+              {t('Top-up')}
+            </Button>
+          ) : (
+            <Button variant='outline' size='sm' onClick={props.onRetry}>
+              <RotateCcw className='mr-2 size-4' aria-hidden='true' />
+              {t('Retry')}
+            </Button>
+          )}
         </div>
       )}
 

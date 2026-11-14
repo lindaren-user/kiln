@@ -96,6 +96,17 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	consoleMessage *ConsoleMessage
+}
+
+// ConsoleMessage is the web console copy for a failure: the relaykit twin of
+// common.Message, which cannot be reached from this module. Key is an English
+// source string that is also its key in the console locale files; Params fill
+// its {{name}} placeholders with display-ready text. API clients keep Err's
+// text, so a caller that wants both sets this alongside the English error.
+type ConsoleMessage struct {
+	Key    string
+	Params map[string]any
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -111,6 +122,12 @@ func (e *NewAPIError) GetErrorCode() ErrorCode {
 		return ""
 	}
 	return e.errorCode
+}
+
+// GetConsoleMessage returns the web console copy, or nil when Err's text is
+// already what the console should show.
+func (e *NewAPIError) GetConsoleMessage() *ConsoleMessage {
+	return e.consoleMessage
 }
 
 func (e *NewAPIError) GetErrorType() ErrorType {
@@ -398,6 +415,17 @@ func ErrOptionWithNoRecordErrorLog() NewAPIErrorOptions {
 func ErrOptionWithStatusCode(statusCode int) NewAPIErrorOptions {
 	return func(e *NewAPIError) {
 		e.StatusCode = statusCode
+	}
+}
+
+// ErrOptionWithConsoleMessage attaches the web console copy for this error.
+func ErrOptionWithConsoleMessage(key string, params ...map[string]any) NewAPIErrorOptions {
+	var values map[string]any
+	if len(params) > 0 {
+		values = params[0]
+	}
+	return func(e *NewAPIError) {
+		e.consoleMessage = &ConsoleMessage{Key: key, Params: values}
 	}
 }
 

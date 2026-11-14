@@ -27,6 +27,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { generateImages, resolveApiKey } from '@/features/image-generation/api'
 import { FormNavigationGuard } from '@/features/system-settings/components/form-navigation-guard'
+import { getServerErrorCode } from '@/lib/server-error-message'
 
 import {
   submitDraftUpgrade,
@@ -257,6 +258,7 @@ export function QuickGenerate() {
           status: 'error',
           error:
             error instanceof Error ? error.message : t('Generation failed'),
+          errorCode: getServerErrorCode(error),
         })
       }
     },
@@ -366,6 +368,7 @@ export function QuickGenerate() {
           status: 'error',
           error:
             error instanceof Error ? error.message : t('Generation failed'),
+          errorCode: getServerErrorCode(error),
         })
       }
     },

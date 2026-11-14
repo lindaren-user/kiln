@@ -30,13 +30,16 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { saveModelPricing } from '@/features/model-pricing/api'
 import { useUpdateOption } from '@/features/system-settings/hooks/use-update-option'
+import en from '@/i18n/locales/en.json'
 import { handleServerError } from '@/lib/handle-server-error'
 import { api } from '@/lib/http-client'
 import { createAppQueryClient } from '@/lib/query-client'
 import { AuthOperationError } from '@/lib/secure-verification'
 import {
   createServerError,
+  getServerErrorCode,
   getServerErrorMessage,
+  serverErrorMessageKeys,
 } from '@/lib/server-error-message'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
 
@@ -238,6 +241,26 @@ it.each([
   [{ message: ' ' }, 'Operation failed'],
   [null, 'Operation failed'],
   [{ response: { data: '<html>proxy error</html>' } }, 'Operation failed'],
+  [
+    {
+      response: {
+        data: { error: { code: 'model_not_found', message: 'raw' } },
+      },
+    },
+    'This model is not available. Choose another model or contact your administrator.',
+  ],
+  [
+    { code: 'channel:no_available_key', message: 'raw' },
+    'No channel can serve this model right now. Try again later.',
+  ],
+  [
+    {
+      message_key:
+        'Insufficient balance: this request needs {{required}}, but only {{remaining}} is available. Top up and try again.',
+      message_params: { required: '¥10.00', remaining: '¥4.52' },
+    },
+    'Insufficient balance: this request needs ¥10.00, but only ¥4.52 is available. Top up and try again.',
+  ],
 ])('extracts a useful message or fallback from %j', (error, expected) => {
   expect(getServerErrorMessage(error, 'Operation failed')).toBe(expected)
 })
@@ -441,4 +464,47 @@ it('rejects an unsuccessful setting update so callers cannot proceed as if it sa
   expect(success).not.toHaveBeenCalled()
   unmount()
   client.clear()
+})
+
+it('points the reader at the administrator when the server itself failed', () => {
+  const serverProblem =
+    'The server ran into a problem. Please try again later or contact your administrator.'
+
+  expect(getServerErrorMessage({ response: { status: 502, data: {} } })).toBe(
+    serverProblem
+  )
+  expect(
+    getServerErrorMessage({ code: 'query_data_error', message: 'raw' })
+  ).toBe(serverProblem)
+  // The HTTP client's own wording is not what the reader needs.
+  expect(
+    getServerErrorMessage({
+      isAxiosError: true,
+      message: 'Request failed with status code 502',
+      response: { status: 502, data: {} },
+    })
+  ).toBe(serverProblem)
+  // A status the reader can do something about keeps its own message.
+  expect(
+    getServerErrorMessage({ response: { status: 400, data: {} } })
+  ).not.toBe(serverProblem)
+})
+
+it('reads the stable error code from a task payload or a relay error body', () => {
+  expect(getServerErrorCode({ code: 'insufficient_user_quota' })).toBe(
+    'insufficient_user_quota'
+  )
+  expect(
+    getServerErrorCode({
+      response: { data: { error: { code: 'insufficient_user_quota' } } },
+    })
+  ).toBe('insufficient_user_quota')
+  expect(getServerErrorCode({ message: 'no code here' })).toBeUndefined()
+})
+
+it('keeps every console failure copy in the English locale', () => {
+  const keys = new Set(Object.keys(en.translation))
+  for (const copy of Object.values(serverErrorMessageKeys)) {
+    expect(keys.has(copy)).toBe(true)
+  }
 })

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { act, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ResultPanel } from '../components/result-panel'
@@ -39,6 +40,13 @@ function running(kind: GenerationKind, overrides: Partial<Generation> = {}) {
     ...overrides,
   } satisfies Generation
 }
+
+// The top-up action navigates; the panel itself only needs a link.
+vi.mock('@tanstack/react-router', () => ({
+  Link: (props: { to: string; children: ReactNode }) => (
+    <a href={props.to}>{props.children}</a>
+  ),
+}))
 
 const panelProps = {
   runPrice: '',
@@ -105,6 +113,42 @@ describe('result panel', () => {
       />
     )
 
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '0'
+    )
+  })
+
+  it('offers a top-up instead of a retry when the wallet is short', () => {
+    render(
+      <ResultPanel
+        generation={running('video', {
+          status: 'error',
+          error: 'Insufficient balance. Top up and try again.',
+          errorCode: 'insufficient_user_quota',
+        })}
+        {...panelProps}
+      />
+    )
+
+    expect(screen.getByRole('link', { name: 'Top-up' })).toHaveAttribute(
+      'href',
+      '/wallet'
+    )
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+  })
+
+  it('keeps the retry action for a failed run that is worth retrying', () => {
+    render(
+      <ResultPanel
+        generation={running('video', {
+          status: 'error',
+          error: 'Upstream refused the request',
+        })}
+        {...panelProps}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
   })
 })

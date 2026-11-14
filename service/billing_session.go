@@ -21,6 +21,38 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Web console copy for the balance failures below. The English text is also its
+// key in web/src/i18n/locales, so the console translates it; API clients get the
+// localized i18n text instead.
+const (
+	balanceShortMessage        = "Insufficient balance: this request needs {{required}}, but only {{remaining}} is available. Top up and try again."
+	balanceInsufficientMessage = "Insufficient balance. Top up and try again."
+)
+
+// insufficientBalanceError builds the wallet's insufficient-quota failure. The
+// API text is localized by the request language; the console copy is the English
+// locale key, with the amounts when required is known.
+func insufficientBalanceError(c *gin.Context, userQuota, required int) *types.NewAPIError {
+	messageKey := i18n.MsgQuotaUserInsufficient
+	messageParams := map[string]any{"Remaining": logger.FormatQuota(userQuota)}
+	consoleKey := balanceInsufficientMessage
+	var consoleParams map[string]any
+	if required > 0 {
+		messageKey = i18n.MsgQuotaPreConsumeInsufficient
+		messageParams["Required"] = logger.FormatQuota(required)
+		consoleKey = balanceShortMessage
+		consoleParams = map[string]any{
+			"required":  logger.FormatQuotaShort(required),
+			"remaining": logger.FormatQuotaShort(userQuota),
+		}
+	}
+	return types.NewErrorWithStatusCode(
+		errors.New(i18n.T(c, messageKey, messageParams)),
+		types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+		types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog(),
+		types.ErrOptionWithConsoleMessage(consoleKey, consoleParams))
+}
+
 // ---------------------------------------------------------------------------
 // BillingSession — 统一计费会话
 // ---------------------------------------------------------------------------
@@ -241,10 +273,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 			if quotaErr != nil {
 				userQuota = 0
 			}
-			return types.NewErrorWithStatusCode(
-				errors.New(i18n.T(c, i18n.MsgQuotaUserInsufficient, map[string]any{"Remaining": logger.FormatQuota(userQuota)})),
-				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
-				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			return insufficientBalanceError(c, userQuota, 0)
 		}
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
@@ -269,7 +298,9 @@ func (s *BillingSession) reserveFunding(delta int, requireAvailableQuota bool) e
 			// submission. Reserve atomically instead of admitting wallet debt.
 			if err := funding.PreConsume(delta); err != nil {
 				if errors.Is(err, ErrInsufficientWalletQuota) {
-					return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+					return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+						types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog(),
+						types.ErrOptionWithConsoleMessage(balanceInsufficientMessage))
 				}
 				return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 			}
@@ -400,16 +431,10 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 		}
 		if userQuota <= 0 {
-			return nil, types.NewErrorWithStatusCode(
-				errors.New(i18n.T(c, i18n.MsgQuotaUserInsufficient, map[string]any{"Remaining": logger.FormatQuota(userQuota)})),
-				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
-				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			return nil, insufficientBalanceError(c, userQuota, 0)
 		}
 		if userQuota-preConsumedQuota < 0 {
-			return nil, types.NewErrorWithStatusCode(
-				errors.New(i18n.T(c, i18n.MsgQuotaPreConsumeInsufficient, map[string]any{"Remaining": logger.FormatQuota(userQuota), "Required": logger.FormatQuota(preConsumedQuota)})),
-				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
-				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			return nil, insufficientBalanceError(c, userQuota, preConsumedQuota)
 		}
 		relayInfo.UserQuota = userQuota
 
