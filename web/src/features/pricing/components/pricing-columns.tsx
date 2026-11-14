@@ -21,7 +21,6 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
-import { DataTableColumnHeader } from '@/components/data-table'
 import {
   formatLatencyClock,
   formatUptimePct,
@@ -30,6 +29,11 @@ import {
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
+import {
+  AVERAGE_LATENCY_HINT,
+  PRICE_HINT,
+  SUCCESS_RATE_HINT,
+} from '../lib/column-hints'
 import type { PricingModel } from '../types'
 import { ModelPriceCell, type ModelPriceCellOptions } from './model-price-cell'
 
@@ -74,6 +78,7 @@ export function usePricingColumns(
     {
       id: 'avg_latency',
       header: t('Average latency'),
+      meta: { description: t(AVERAGE_LATENCY_HINT) },
       cell: ({ row }) => {
         const perf = options.perfByModel?.get(row.original.model_name)
         return (
@@ -89,6 +94,7 @@ export function usePricingColumns(
     {
       id: 'success_rate',
       header: t('Success rate'),
+      meta: { description: t(SUCCESS_RATE_HINT) },
       cell: ({ row }) => {
         const rate =
           options.perfByModel?.get(row.original.model_name)?.success_rate ??
@@ -110,10 +116,7 @@ export function usePricingColumns(
 
     {
       accessorKey: 'price',
-      meta: { label: t('Price') },
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('Price')} />
-      ),
+      meta: { label: t('Price'), description: t(PRICE_HINT) },
       cell: ({ row }) => (
         <ModelPriceCell model={row.original} options={options} />
       ),

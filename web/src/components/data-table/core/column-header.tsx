@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type Column } from '@tanstack/react-table'
+import type { Column } from '@tanstack/react-table'
 import {
   ArrowDown as ArrowDownIcon,
   ArrowUp as ArrowUpIcon,
@@ -35,6 +35,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
+import { ColumnHint } from './column-hint'
+
 type DataTableColumnHeaderProps<TData, TValue> =
   React.HTMLAttributes<HTMLDivElement> & {
     column: Column<TData, TValue>
@@ -48,7 +50,22 @@ export function DataTableColumnHeader<TData, TValue>({
 }: DataTableColumnHeaderProps<TData, TValue>) {
   const { t } = useTranslation()
   if (!column.getCanSort()) {
-    return <div className={cn(className)}>{title}</div>
+    // meta.description explains how the column is derived. Sortable headers
+    // leave it unused: nesting a hint trigger inside the sort button would put
+    // one interactive element inside another.
+    const description = column.columnDef.meta?.description
+    return (
+      <div className={cn(className)}>
+        {description ? <ColumnHint title={title} hint={description} /> : title}
+      </div>
+    )
+  }
+
+  let sortIcon = <CaretSortIcon className='ms-2 h-4 w-4' />
+  if (column.getIsSorted() === 'desc') {
+    sortIcon = <ArrowDownIcon className='ms-2 h-4 w-4' />
+  } else if (column.getIsSorted() === 'asc') {
+    sortIcon = <ArrowUpIcon className='ms-2 h-4 w-4' />
   }
 
   return (
@@ -64,13 +81,7 @@ export function DataTableColumnHeader<TData, TValue>({
           }
         >
           <span>{title}</span>
-          {column.getIsSorted() === 'desc' ? (
-            <ArrowDownIcon className='ms-2 h-4 w-4' />
-          ) : column.getIsSorted() === 'asc' ? (
-            <ArrowUpIcon className='ms-2 h-4 w-4' />
-          ) : (
-            <CaretSortIcon className='ms-2 h-4 w-4' />
-          )}
+          {sortIcon}
         </DropdownMenuTrigger>
         <DropdownMenuContent align='start'>
           <DropdownMenuItem onClick={() => column.toggleSorting(false)}>

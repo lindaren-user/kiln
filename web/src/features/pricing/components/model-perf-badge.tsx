@@ -27,6 +27,8 @@ import {
 import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { cn } from '@/lib/utils'
 
+import { SUCCESS_RATE_HINT } from '../lib/column-hints'
+
 export type ModelPerfBadgeData = {
   window_start?: number
   window_end?: number
@@ -87,9 +89,7 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
       <dl className='flex min-w-0 items-start gap-5 text-xs tabular-nums'>
         <div className='w-24 shrink-0'>
           <dt
-            title={t(
-              'Success rate excludes business rejections and includes the current partial hour.'
-            )}
+            title={t(SUCCESS_RATE_HINT)}
             className='text-muted-foreground flex items-center justify-between gap-1 text-[11px] leading-4'
           >
             <span>{t('Status')}</span>

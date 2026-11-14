@@ -273,7 +273,7 @@ export function ModelDetailsPerformance(props: { model: PricingModel }) {
           icon={HeartPulse}
           title={t('Availability (last 24h)')}
           description={t(
-            'Success rate excludes business rejections and includes the current partial hour.'
+            'The share of measured requests that succeeded. Requests rejected for business reasons (insufficient balance, blocked content, invalid requests) and ones the user cancelled are not counted, and the current hour is included.'
           )}
           accent={
             incidentCount > 0 ? (
