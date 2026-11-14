@@ -7614,6 +7614,19 @@
     "Reference videos: public URLs or assets:// IDs.": "參考影片：公開可存取的 URL 或 assets:// 素材 ID。",
     "Reference audios: public URLs or assets:// IDs.": "參考音訊：公開可存取的 URL 或 assets:// 素材 ID。",
     "Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.": "參考素材可以是公開可存取的 URL，也可以是 POST /assets 回傳的素材 ID。閘道會在轉送前於內部將素材 ID 解析為簽章 URL，該位址不會回傳給呼叫方。每個模型接受的圖片、影片、音訊數量不同，詳見模型列表。",
-    "Video with reference media": "帶參考素材的影片生成"
+    "Video with reference media": "帶參考素材的影片生成",
+    "Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.": "輸出解析度檔位：480p、720p、1080p 或 4k，依模型而定。",
+    "Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.": "畫面比例，例如 16:9 或 adaptive。Seedance 2.5 的首/尾幀請求必須使用 adaptive。",
+    "Generate audio (default true); audio and silent video are priced the same.": "是否生成聲音（預設開啟）；有聲與無聲影片價格相同。",
+    "Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.": "先產生 480p 樣片（Seedance 2.5）。將樣片任務 ID 傳回以渲染正式影片。",
+    "Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.": "方舟風格的內容列表。參考素材使用 URL 項目；draft_task 項目用於升級已完成的樣片。",
+    "Role of attached images: reference, first_frame or first_last.": "附加圖片的角色：reference、first_frame 或 first_last。",
+    "Return the last frame as an image.": "將最後一幀作為圖片傳回。",
+    "Add a watermark to the output.": "在輸出中加上浮水印。",
+    "Seed for reproducible generations.": "用於重現生成結果的隨機種子。",
+    "480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.": "480p 樣片（Seedance 2.5）：用 POST /video/generations 並傳 metadata.draft=true 建立，像一般影片任務一樣輪詢。然後 POST /videos，傳 metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<樣片任務 ID>\"}}] 和 metadata.resolution 渲染正式影片。正式影片會繼承樣片的提示詞、素材和參數，因此不要重複傳 prompt、seconds、ratio 或 seed。樣片任務必須屬於同一個 Key 和同一個渠道。",
+    "Video sample, then final render ({{model}})": "影片樣片與正式渲染（{{model}}）",
+    "Seedance parameters": "Seedance 參數",
+    "These fields apply to Seedance video models on the official channel, such as {{model}}.": "以下欄位僅適用於官方渠道的 Seedance 影片模型，例如 {{model}}。"
   }
 }

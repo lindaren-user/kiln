@@ -29,12 +29,17 @@ import { resolvePublicOrigin } from '@/lib/public-origin'
 import {
   DOCS_ENDPOINTS,
   DOCS_ENDPOINT_GROUPS,
+  DOCS_SEEDANCE_PARAMETERS,
   DOCS_VIDEO_PARAMETERS,
+  type DocsVideoParameter,
 } from './lib/endpoints'
 import { buildDocsMarkdown, downloadMarkdownFile } from './lib/export-markdown'
 
 const linkClassName =
   'text-primary font-medium underline-offset-4 hover:underline'
+
+/** Model ID the official-channel Seedance examples use. */
+const SEEDANCE_OFFICIAL_MODEL = 'kiln-seedance2.5【官】'
 
 const modelsResponse = `{
   "success": true,
@@ -145,6 +150,16 @@ function Section(props: {
   )
 }
 
+/** Translates the description keys of a list of documented items. */
+function describeKeys(
+  items: { descriptionKey: string }[],
+  t: (key: string) => string
+): Record<string, string> {
+  return Object.fromEntries(
+    items.map((item) => [item.descriptionKey, t(item.descriptionKey)])
+  )
+}
+
 function EndpointGroups() {
   const { t } = useTranslation()
   return (
@@ -194,8 +209,8 @@ function EndpointGroups() {
   )
 }
 
-/** The video creation body, including the reference media lists. */
-function VideoParameterTable() {
+/** One parameter table; the generic body and the Seedance options share it. */
+function ParameterTable(props: { parameters: DocsVideoParameter[] }) {
   const { t } = useTranslation()
   return (
     <div className='overflow-x-auto rounded-lg border'>
@@ -215,7 +230,7 @@ function VideoParameterTable() {
           </tr>
         </thead>
         <tbody>
-          {DOCS_VIDEO_PARAMETERS.map((parameter) => (
+          {props.parameters.map((parameter) => (
             <tr key={parameter.field} className='border-t'>
               <td className='px-3 py-2 font-mono text-xs whitespace-nowrap'>
                 {parameter.field}
@@ -272,6 +287,13 @@ export function DocsPage() {
   )
   const referenceMediaNote = t(
     'Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.'
+  )
+  const videoSampleNote = t(
+    '480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{"type":"draft_task","draft_task":{"id":"<sample task id>"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.'
+  )
+  const seedanceModelNote = t(
+    'These fields apply to Seedance video models on the official channel, such as {{model}}.',
+    { model: SEEDANCE_OFFICIAL_MODEL }
   )
   const assetNote = t(
     'Uploading the same file twice returns the same asset ID.'
@@ -377,6 +399,31 @@ curl ${baseUrl}/videos \\
     "reference_audios": ["https://cdn.example/voice.mp3"]
   }'`
 
+  const videoSampleExample = `# 1) Render a 480p sample
+curl ${baseUrl}/video/generations \\
+  -H "Authorization: Bearer sk-your-key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${SEEDANCE_OFFICIAL_MODEL}",
+    "prompt": "A kiln at dusk",
+    "seconds": 4,
+    "metadata": {"draft": true}
+  }'
+
+# 2) Poll the sample, then render the final 1080p video
+curl ${baseUrl}/videos \\
+  -H "Authorization: Bearer sk-your-key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "${SEEDANCE_OFFICIAL_MODEL}",
+    "metadata": {
+      "resolution": "1080p",
+      "content": [
+        {"type": "draft_task", "draft_task": {"id": "task_01J8Z9Q2X7"}}
+      ]
+    }
+  }'`
+
   const videoPollExample = `curl ${baseUrl}/video/generations/task_xxx \\
   -H "Authorization: Bearer sk-your-key"
 
@@ -421,6 +468,12 @@ curl ${baseUrl}/videos/task_xxx/content \\
       request: videoReferenceExample,
     },
     {
+      title: t('Video sample, then final render ({{model}})', {
+        model: SEEDANCE_OFFICIAL_MODEL,
+      }),
+      request: videoSampleExample,
+    },
+    {
       title: t('Poll video task'),
       request: videoPollExample,
       response: videoPollResponse,
@@ -443,29 +496,27 @@ curl ${baseUrl}/videos/task_xxx/content \\
       method: t('Method'),
       path: t('Path (relative to Base URL)'),
       description: t('Description'),
-      endpointDescriptions: Object.fromEntries(
-        DOCS_ENDPOINTS.map((endpoint) => [
-          endpoint.descriptionKey,
-          t(endpoint.descriptionKey),
-        ])
-      ),
+      endpointDescriptions: describeKeys(DOCS_ENDPOINTS, t),
       groupTitles: Object.fromEntries(
         DOCS_ENDPOINT_GROUPS.flatMap((group) =>
           group.titleKey ? [[group.titleKey, t(group.titleKey)]] : []
         )
       ),
-      videoParameters: t('Video parameters'),
+      videoParameters: {
+        title: t('Video parameters'),
+        descriptions: describeKeys(DOCS_VIDEO_PARAMETERS, t),
+        footnote: referenceMediaNote,
+      },
       field: t('Field'),
       type: t('Type'),
       required: t('Required'),
       optional: t('Optional'),
-      videoParameterDescriptions: Object.fromEntries(
-        DOCS_VIDEO_PARAMETERS.map((parameter) => [
-          parameter.descriptionKey,
-          t(parameter.descriptionKey),
-        ])
-      ),
-      referenceMediaNote,
+      seedanceParameters: {
+        title: t('Seedance parameters'),
+        descriptions: describeKeys(DOCS_SEEDANCE_PARAMETERS, t),
+        leadNote: seedanceModelNote,
+        footnote: videoSampleNote,
+      },
       notes,
       examples: t('Examples'),
       response: t('Response'),
@@ -532,8 +583,14 @@ curl ${baseUrl}/videos/task_xxx/content \\
         </Section>
 
         <Section id='video-parameters' title={t('Video parameters')}>
-          <VideoParameterTable />
+          <ParameterTable parameters={DOCS_VIDEO_PARAMETERS} />
           <p className='text-muted-foreground text-sm'>{referenceMediaNote}</p>
+        </Section>
+
+        <Section id='seedance-parameters' title={t('Seedance parameters')}>
+          <p className='text-muted-foreground text-sm'>{seedanceModelNote}</p>
+          <ParameterTable parameters={DOCS_SEEDANCE_PARAMETERS} />
+          <p className='text-muted-foreground text-sm'>{videoSampleNote}</p>
         </Section>
 
         <Section id='examples' title={t('Examples')}>

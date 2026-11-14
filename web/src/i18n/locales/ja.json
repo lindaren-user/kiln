@@ -7614,6 +7614,19 @@
     "Reference videos: public URLs or assets:// IDs.": "参照動画: 公開 URL または assets:// の素材 ID。",
     "Reference audios: public URLs or assets:// IDs.": "参照音声: 公開 URL または assets:// の素材 ID。",
     "Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.": "参照素材には、公開されている URL か、POST /assets が返す素材 ID を使用できます。ゲートウェイは転送前に素材 ID を内部で署名付き URL に解決するため、その URL が呼び出し元に公開されることはありません。各モデルが受け付ける画像・動画・音声の数は異なります。詳細はモデル一覧を参照してください。",
-    "Video with reference media": "参照メディア付きの動画生成"
+    "Video with reference media": "参照メディア付きの動画生成",
+    "Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.": "出力解像度: 480p、720p、1080p、4k（モデルによって異なります）。",
+    "Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.": "アスペクト比（16:9 や adaptive など）。Seedance 2.5 の先頭/末尾フレーム指定リクエストでは adaptive が必須です。",
+    "Generate audio (default true); audio and silent video are priced the same.": "音声を生成する（デフォルトは有効）。音声ありとなしの動画は同じ料金です。",
+    "Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.": "先に 480p サンプルを作成します（Seedance 2.5）。サンプルのタスク ID を送り返して最終動画をレンダリングします。",
+    "Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.": "Ark 形式のコンテンツリスト。参照メディアは URL 項目で指定し、draft_task 項目で完成したサンプルをアップグレードします。",
+    "Role of attached images: reference, first_frame or first_last.": "添付画像の役割: reference、first_frame、first_last。",
+    "Return the last frame as an image.": "最後のフレームを画像として返します。",
+    "Add a watermark to the output.": "出力にウォーターマークを追加します。",
+    "Seed for reproducible generations.": "再現可能な生成のためのシード。",
+    "480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.": "480p サンプル（Seedance 2.5）: POST /video/generations に metadata.draft=true を付けて作成し、通常の動画タスクと同様にポーリングします。次に POST /videos に metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] と metadata.resolution を付けて最終動画をレンダリングします。最終動画はサンプルのプロンプト、メディア、パラメータを引き継ぐため、prompt、seconds、ratio、seed を再度送らないでください。サンプルのタスクは同じキーと同じチャネルに属している必要があります。",
+    "Video sample, then final render ({{model}})": "動画サンプルと最終レンダリング（{{model}}）",
+    "Seedance parameters": "Seedance パラメータ",
+    "These fields apply to Seedance video models on the official channel, such as {{model}}.": "これらのフィールドは公式チャネルの Seedance 動画モデル（例: {{model}}）に適用されます。"
   }
 }

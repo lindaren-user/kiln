@@ -7614,6 +7614,19 @@
     "Reference videos: public URLs or assets:// IDs.": "Video tham chiếu: URL công khai hoặc ID assets://.",
     "Reference audios: public URLs or assets:// IDs.": "Âm thanh tham chiếu: URL công khai hoặc ID assets://.",
     "Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.": "Tư liệu tham chiếu có thể là URL truy cập công khai hoặc ID tài nguyên do POST /assets trả về. Cổng sẽ phân giải ID thành URL có chữ ký ở bên trong trước khi chuyển tiếp, nên URL đó không bao giờ lộ ra cho bên gọi. Mỗi mô hình chấp nhận số lượng ảnh, video và âm thanh riêng; danh sách mô hình cho biết giới hạn.",
-    "Video with reference media": "Video có tư liệu tham chiếu"
+    "Video with reference media": "Video có tư liệu tham chiếu",
+    "Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.": "Mức phân giải đầu ra: 480p, 720p, 1080p hoặc 4k, tùy theo mô hình.",
+    "Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.": "Tỷ lệ khung hình, ví dụ 16:9 hoặc adaptive. Yêu cầu khung đầu/cuối của Seedance 2.5 phải dùng adaptive.",
+    "Generate audio (default true); audio and silent video are priced the same.": "Tạo âm thanh (mặc định bật); video có tiếng và không tiếng có cùng giá.",
+    "Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.": "Tạo trước một mẫu 480p (Seedance 2.5). Gửi lại ID tác vụ mẫu để render video cuối cùng.",
+    "Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.": "Danh sách nội dung kiểu Ark. Tư liệu tham chiếu là các mục URL; mục draft_task dùng để nâng cấp một mẫu đã hoàn tất.",
+    "Role of attached images: reference, first_frame or first_last.": "Vai trò của ảnh đính kèm: reference, first_frame hoặc first_last.",
+    "Return the last frame as an image.": "Trả về khung hình cuối dưới dạng ảnh.",
+    "Add a watermark to the output.": "Thêm hình mờ vào đầu ra.",
+    "Seed for reproducible generations.": "Seed để tái tạo kết quả sinh.",
+    "480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.": "Mẫu 480p (Seedance 2.5): tạo trên POST /video/generations với metadata.draft=true và thăm dò như mọi tác vụ video. Sau đó gửi POST /videos với metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] và metadata.resolution để render video cuối cùng. Video cuối cùng kế thừa prompt, tư liệu và tham số của mẫu, nên không gửi lại prompt, seconds, ratio hoặc seed. Tác vụ mẫu phải thuộc cùng key và cùng kênh.",
+    "Video sample, then final render ({{model}})": "Video mẫu, sau đó render cuối ({{model}})",
+    "Seedance parameters": "Tham số Seedance",
+    "These fields apply to Seedance video models on the official channel, such as {{model}}.": "Các trường này áp dụng cho các mô hình video Seedance trên kênh chính thức, ví dụ {{model}}."
   }
 }

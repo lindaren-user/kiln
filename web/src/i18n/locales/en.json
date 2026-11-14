@@ -7614,6 +7614,19 @@
     "Reference videos: public URLs or assets:// IDs.": "Reference videos: public URLs or assets:// IDs.",
     "Reference audios: public URLs or assets:// IDs.": "Reference audios: public URLs or assets:// IDs.",
     "Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.": "Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.",
-    "Video with reference media": "Video with reference media"
+    "Video with reference media": "Video with reference media",
+    "Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.": "Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.",
+    "Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.": "Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.",
+    "Generate audio (default true); audio and silent video are priced the same.": "Generate audio (default true); audio and silent video are priced the same.",
+    "Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.": "Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.",
+    "Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.": "Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.",
+    "Role of attached images: reference, first_frame or first_last.": "Role of attached images: reference, first_frame or first_last.",
+    "Return the last frame as an image.": "Return the last frame as an image.",
+    "Add a watermark to the output.": "Add a watermark to the output.",
+    "Seed for reproducible generations.": "Seed for reproducible generations.",
+    "480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.": "480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.",
+    "Video sample, then final render ({{model}})": "Video sample, then final render ({{model}})",
+    "Seedance parameters": "Seedance parameters",
+    "These fields apply to Seedance video models on the official channel, such as {{model}}.": "These fields apply to Seedance video models on the official channel, such as {{model}}."
   }
 }

@@ -7614,6 +7614,19 @@
     "Reference videos: public URLs or assets:// IDs.": "Vidéos de référence : URL publiques ou ID assets://.",
     "Reference audios: public URLs or assets:// IDs.": "Audios de référence : URL publiques ou ID assets://.",
     "Reference media can be a publicly reachable URL or an asset ID returned by POST /assets. The gateway resolves an asset ID to a signed URL internally before forwarding, so the URL is never exposed to callers. Each model accepts its own number of images, videos and audios; the model list shows the limit.": "Les médias de référence peuvent être des URL accessibles publiquement ou un ID de ressource renvoyé par POST /assets. La passerelle résout l'ID en URL signée en interne avant de transmettre la requête : cette URL n'est jamais exposée aux appelants. Chaque modèle accepte son propre nombre d'images, de vidéos et d'audios ; la liste des modèles indique la limite.",
-    "Video with reference media": "Vidéo avec médias de référence"
+    "Video with reference media": "Vidéo avec médias de référence",
+    "Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.": "Niveau de résolution de sortie : 480p, 720p, 1080p ou 4k, selon le modèle.",
+    "Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.": "Ratio d'image, par exemple 16:9 ou adaptive. Les requêtes Seedance 2.5 avec première/dernière image doivent utiliser adaptive.",
+    "Generate audio (default true); audio and silent video are priced the same.": "Générer l'audio (activé par défaut) ; une vidéo avec ou sans audio est facturée au même prix.",
+    "Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.": "Créez d'abord un échantillon 480p (Seedance 2.5). Renvoyez l'ID de la tâche d'échantillon pour générer la vidéo finale.",
+    "Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.": "Liste de contenu au format Ark. Les médias de référence sont des entrées URL ; une entrée draft_task permet de finaliser un échantillon terminé.",
+    "Role of attached images: reference, first_frame or first_last.": "Rôle des images jointes : reference, first_frame ou first_last.",
+    "Return the last frame as an image.": "Renvoyer la dernière image sous forme d'image.",
+    "Add a watermark to the output.": "Ajouter un filigrane à la sortie.",
+    "Seed for reproducible generations.": "Graine pour des générations reproductibles.",
+    "480p sample (Seedance 2.5): create it on POST /video/generations with metadata.draft=true and poll it like any video task. Then POST /videos with metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] and metadata.resolution to render the final video. The final inherits the sample prompt, media and parameters, so do not repeat prompt, seconds, ratio or seed. The sample task must belong to the same key and channel.": "Échantillon 480p (Seedance 2.5) : créez-le sur POST /video/generations avec metadata.draft=true et interrogez-le comme n'importe quelle tâche vidéo. Envoyez ensuite POST /videos avec metadata.content=[{\"type\":\"draft_task\",\"draft_task\":{\"id\":\"<sample task id>\"}}] et metadata.resolution pour générer la vidéo finale. La vidéo finale hérite du prompt, des médias et des paramètres de l'échantillon ; ne répétez donc pas prompt, seconds, ratio ni seed. La tâche d'échantillon doit appartenir à la même clé et au même canal.",
+    "Video sample, then final render ({{model}})": "Échantillon vidéo, puis rendu final ({{model}})",
+    "Seedance parameters": "Paramètres Seedance",
+    "These fields apply to Seedance video models on the official channel, such as {{model}}.": "Ces champs s'appliquent aux modèles vidéo Seedance du canal officiel, par exemple {{model}}."
   }
 }

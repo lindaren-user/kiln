@@ -18,7 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, it } from 'vitest'
 
-import { DOCS_ENDPOINTS, DOCS_VIDEO_PARAMETERS } from '../lib/endpoints'
+import {
+  DOCS_ENDPOINTS,
+  DOCS_SEEDANCE_PARAMETERS,
+  DOCS_VIDEO_PARAMETERS,
+} from '../lib/endpoints'
 import { buildDocsMarkdown } from '../lib/export-markdown'
 
 function labels() {
@@ -39,13 +43,21 @@ function labels() {
     description: 'Description',
     endpointDescriptions: {},
     groupTitles: { Assets: 'Assets', Image: 'Image', Video: 'Video' },
-    videoParameters: 'Video parameters',
+    videoParameters: {
+      title: 'Video parameters',
+      descriptions: {},
+      footnote: 'reference media note',
+    },
     field: 'Field',
     type: 'Type',
     required: 'Required',
     optional: 'Optional',
-    videoParameterDescriptions: {},
-    referenceMediaNote: 'reference media note',
+    seedanceParameters: {
+      title: 'Seedance parameters',
+      descriptions: {},
+      leadNote: 'seedance model note',
+      footnote: 'video sample note',
+    },
     notes: [
       'asset note',
       'image note',
@@ -112,6 +124,12 @@ describe('docs markdown', () => {
     expect(markdown).toContain('`reference_videos`')
     expect(markdown).toContain('`reference_audios`')
     expect(markdown).toContain('reference media note')
+    expect(markdown).toContain('## Seedance parameters')
+    expect(markdown).toContain('seedance model note')
+    for (const parameter of DOCS_SEEDANCE_PARAMETERS) {
+      expect(markdown).toContain(`\`${parameter.field}\``)
+    }
+    expect(markdown).toContain('video sample note')
     // Reference lists accept asset IDs, not only public URLs.
     expect(markdown).toContain('public URLs or assets:// IDs.')
   })

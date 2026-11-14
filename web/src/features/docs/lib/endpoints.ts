@@ -167,3 +167,70 @@ export const DOCS_VIDEO_PARAMETERS: DocsVideoParameter[] = [
     descriptionKey: 'Reference audios: public URLs or assets:// IDs.',
   },
 ]
+
+/**
+ * Creation options of the Seedance video models. They travel inside
+ * `metadata`; other models do not read them.
+ */
+export const DOCS_SEEDANCE_PARAMETERS: DocsVideoParameter[] = [
+  {
+    field: 'metadata.resolution',
+    type: 'string',
+    required: false,
+    descriptionKey:
+      'Output resolution tier: 480p, 720p, 1080p or 4k, depending on the model.',
+  },
+  {
+    field: 'metadata.ratio',
+    type: 'string',
+    required: false,
+    descriptionKey:
+      'Aspect ratio such as 16:9 or adaptive. Seedance 2.5 first/last-frame requests must use adaptive.',
+  },
+  {
+    field: 'metadata.image_mode',
+    type: 'string',
+    required: false,
+    descriptionKey:
+      'Role of attached images: reference, first_frame or first_last.',
+  },
+  {
+    field: 'metadata.generate_audio',
+    type: 'boolean',
+    required: false,
+    descriptionKey:
+      'Generate audio (default true); audio and silent video are priced the same.',
+  },
+  {
+    field: 'metadata.return_last_frame',
+    type: 'boolean',
+    required: false,
+    descriptionKey: 'Return the last frame as an image.',
+  },
+  {
+    field: 'metadata.watermark',
+    type: 'boolean',
+    required: false,
+    descriptionKey: 'Add a watermark to the output.',
+  },
+  {
+    field: 'metadata.seed',
+    type: 'int',
+    required: false,
+    descriptionKey: 'Seed for reproducible generations.',
+  },
+  {
+    field: 'metadata.draft',
+    type: 'boolean',
+    required: false,
+    descriptionKey:
+      'Create a 480p sample first (Seedance 2.5). Send the sample task ID back to render the final video.',
+  },
+  {
+    field: 'metadata.content',
+    type: 'object[]',
+    required: false,
+    descriptionKey:
+      'Ark-style content list. Reference media are URL items; a draft_task item upgrades a finished sample.',
+  },
+]

@@ -16,7 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { DOCS_ENDPOINT_GROUPS, DOCS_VIDEO_PARAMETERS } from './endpoints'
+import {
+  DOCS_ENDPOINT_GROUPS,
+  DOCS_SEEDANCE_PARAMETERS,
+  DOCS_VIDEO_PARAMETERS,
+  type DocsVideoParameter,
+} from './endpoints'
 
 export type DocsMarkdownLabels = {
   title: string
@@ -35,13 +40,12 @@ export type DocsMarkdownLabels = {
   description: string
   endpointDescriptions: Record<string, string>
   groupTitles: Record<string, string>
-  videoParameters: string
+  videoParameters: DocsParameterSectionLabels
   field: string
   type: string
   required: string
   optional: string
-  videoParameterDescriptions: Record<string, string>
-  referenceMediaNote: string
+  seedanceParameters: DocsParameterSectionLabels
   /** Notes for the endpoints section, in the order they are shown. */
   notes: string[]
   examples: string
@@ -65,6 +69,38 @@ export type DocsMarkdownInput = {
 
 function fence(code: string) {
   return `\`\`\`\n${code}\n\`\`\``
+}
+
+/** One parameter table's heading and surrounding notes. */
+export type DocsParameterSectionLabels = {
+  title: string
+  descriptions: Record<string, string>
+  leadNote?: string
+  footnote?: string
+}
+
+/** Appends one titled parameter table, with an optional lead note and footnote. */
+function pushParameterTable(
+  lines: string[],
+  labels: DocsMarkdownLabels,
+  section: DocsParameterSectionLabels,
+  parameters: DocsVideoParameter[]
+) {
+  lines.push(`## ${section.title}`, '')
+  if (section.leadNote) lines.push(section.leadNote, '')
+  lines.push(
+    `| ${labels.field} | ${labels.type} | ${labels.required} | ${labels.description} |`,
+    '| --- | --- | --- | --- |'
+  )
+  for (const parameter of parameters) {
+    const description =
+      section.descriptions[parameter.descriptionKey] ?? parameter.descriptionKey
+    lines.push(
+      `| \`${parameter.field}\` | ${parameter.type} | ${parameter.required ? labels.required : labels.optional} | ${description} |`
+    )
+  }
+  if (section.footnote) lines.push('', section.footnote)
+  lines.push('')
 }
 
 export function buildDocsMarkdown(input: DocsMarkdownInput): string {
@@ -119,21 +155,18 @@ export function buildDocsMarkdown(input: DocsMarkdownInput): string {
     lines.push('')
   }
 
-  lines.push(
-    `## ${labels.videoParameters}`,
-    '',
-    `| ${labels.field} | ${labels.type} | ${labels.required} | ${labels.description} |`,
-    '| --- | --- | --- | --- |'
+  pushParameterTable(
+    lines,
+    labels,
+    labels.videoParameters,
+    DOCS_VIDEO_PARAMETERS
   )
-  for (const parameter of DOCS_VIDEO_PARAMETERS) {
-    const description =
-      labels.videoParameterDescriptions[parameter.descriptionKey] ??
-      parameter.descriptionKey
-    lines.push(
-      `| \`${parameter.field}\` | ${parameter.type} | ${parameter.required ? labels.required : labels.optional} | ${description} |`
-    )
-  }
-  lines.push('', labels.referenceMediaNote, '')
+  pushParameterTable(
+    lines,
+    labels,
+    labels.seedanceParameters,
+    DOCS_SEEDANCE_PARAMETERS
+  )
 
   for (const note of labels.notes) {
     lines.push(note, '')
