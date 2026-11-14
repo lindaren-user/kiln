@@ -742,47 +742,112 @@ func TestWriteVideoDataURLRejectsOversizedPayloadBeforeDecode(t *testing.T) {
 	assert.Empty(t, recorder.Header().Get("Content-Type"))
 }
 
-func TestProxyTaskMediaAllowsOnlyCredentiallessCrossOriginRedirect(t *testing.T) {
+// A vendor can answer a content request with a redirect to a pre-signed URL on
+// another origin. That hop must leave without the plugin's credentials, later
+// hops on that origin must not restore them, and Range must still address the
+// media. A redirect that stays on the descriptor's own origin keeps them, and a
+// 307 that would replay a body to the other origin is refused.
+func TestProxyTaskMediaDropsCredentialsOnCrossOriginRedirect(t *testing.T) {
 	task := setupGenericTaskTest(t)
-	var destinationAuthorization, destinationRange string
+	allowPrivateTaskMediaTest(t)
+
+	var sourceURL string
+	seen := map[string]http.Header{}
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		destinationAuthorization = r.Header.Get("Authorization")
-		destinationRange = r.Header.Get("Range")
+		seen[r.URL.Path] = r.Header.Clone()
+		switch r.URL.Path {
+		case "/hop":
+			// Same-origin inside the untrusted origin: the credentials dropped
+			// by the first hop must stay dropped.
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		case "/bounce":
+			// The chain returns to the trusted origin, which must not receive
+			// the credentials again.
+			http.Redirect(w, r, sourceURL+"/back", http.StatusFound)
+			return
+		}
 		_, _ = w.Write([]byte("redirected"))
 	}))
 	defer destination.Close()
+
+	var sameOriginAuthorization, returnAuthorization string
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, destination.URL, http.StatusFound)
+		switch r.URL.Path {
+		case "/start-same":
+			http.Redirect(w, r, "/same", http.StatusFound)
+			return
+		case "/same":
+			sameOriginAuthorization = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte("same-origin"))
+			return
+		case "/back":
+			returnAuthorization = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte("back"))
+			return
+		case "/start-bounce":
+			http.Redirect(w, r, destination.URL+"/bounce", http.StatusFound)
+			return
+		case "/start-post":
+			// 307 keeps the method and the body, so the body must decide the hop.
+			http.Redirect(w, r, destination.URL+"/post", http.StatusTemporaryRedirect)
+			return
+		}
+		http.Redirect(w, r, destination.URL+"/hop", http.StatusFound)
 	}))
 	defer source.Close()
-	allowPrivateTaskMediaTest(t)
+	sourceURL = source.URL
 
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodGet, "/content", nil)
-	c.Request.Header.Set("Range", "bytes=0-3")
+	credentialed := &relaychannel.TaskContentRequest{
+		URL:     source.URL,
+		Method:  http.MethodGet,
+		Headers: map[string]string{"Authorization": "Bearer provider-secret", "X-Upstream-Key": "provider-key"},
+	}
 
-	err := proxyTaskMedia(c, task, &relaychannel.TaskContentRequest{
-		URL: source.URL, Method: http.MethodGet, Credentialless: true,
-	})
+	// Every request carries the same Range, so each hop it reaches can assert it.
+	fetch := func(descriptor relaychannel.TaskContentRequest) (*httptest.ResponseRecorder, error) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(descriptor.Method, "/content", nil)
+		c.Request.Header.Set("Range", "bytes=0-3")
+		return recorder, proxyTaskMedia(c, task, &descriptor)
+	}
+	recorder, err := fetch(*credentialed)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, "redirected", recorder.Body.String())
-	assert.Empty(t, destinationAuthorization)
-	assert.Equal(t, "bytes=0-3", destinationRange)
 
-	destinationRange = ""
-	rejectedRecorder := httptest.NewRecorder()
-	rejectedContext, _ := gin.CreateTestContext(rejectedRecorder)
-	rejectedContext.Request = httptest.NewRequest(http.MethodGet, "/content", nil)
-	err = proxyTaskMedia(rejectedContext, task, &relaychannel.TaskContentRequest{
-		URL: source.URL, Method: http.MethodGet,
-		Headers: map[string]string{"Authorization": "Bearer provider-secret"},
-	})
+	bounced := *credentialed
+	bounced.URL = source.URL + "/start-bounce"
+	bounceRecorder, err := fetch(bounced)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, bounceRecorder.Code)
+	assert.Equal(t, "back", bounceRecorder.Body.String())
+	// Coming back to the trusted origin does not hand the credentials over again.
+	assert.Empty(t, returnAuthorization)
+
+	for _, path := range []string{"/hop", "/final", "/bounce"} {
+		assert.Empty(t, seen[path].Get("Authorization"), path)
+		assert.Empty(t, seen[path].Get("X-Upstream-Key"), path)
+		assert.Equal(t, "bytes=0-3", seen[path].Get("Range"), path)
+	}
+
+	posted := *credentialed
+	posted.URL = source.URL + "/start-post"
+	posted.Method = http.MethodPost
+	posted.Body = []byte(`{"operation":"op"}`)
+	_, err = fetch(posted)
 	var proxyErr *taskMediaProxyError
 	require.ErrorAs(t, err, &proxyErr)
 	assert.Equal(t, "artifact_request_rejected", proxyErr.code)
-	assert.Empty(t, destinationRange)
+
+	sameOrigin := *credentialed
+	sameOrigin.URL = source.URL + "/start-same"
+	sameOriginRecorder, err := fetch(sameOrigin)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, sameOriginRecorder.Code)
+	assert.Equal(t, "same-origin", sameOriginRecorder.Body.String())
+	assert.Equal(t, "Bearer provider-secret", sameOriginAuthorization)
 }
 
 func TestTaskMediaRequestHeaderPolicy(t *testing.T) {

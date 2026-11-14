@@ -264,7 +264,7 @@ func proxyTaskMedia(c *gin.Context, task *model.Task, descriptor *relaychannel.T
 		req.Header.Set(name, value)
 	}
 
-	client = taskMediaRedirectClient(client, proxy, c, clientHeaders, descriptor.Credentialless)
+	client = taskMediaRedirectClient(client, proxy, c, clientHeaders)
 	clientWithoutBodyTimeout := *client
 	clientWithoutBodyTimeout.Timeout = 0
 	resp, err := doTaskMediaRequest(&clientWithoutBodyTimeout, req, taskMediaResponseHeaderTimeout)
@@ -493,8 +493,14 @@ func applyTaskMediaRequestHeaders(destination http.Header, headers map[string]st
 	return nil
 }
 
-func taskMediaRedirectClient(base *http.Client, proxy string, c *gin.Context, clientHeaders map[string]string, credentialless bool) *http.Client {
+func taskMediaRedirectClient(base *http.Client, proxy string, c *gin.Context, clientHeaders map[string]string) *http.Client {
 	cloned := *base
+	// A credential belongs to the origin that issued it. A vendor that answers
+	// with a redirect to a pre-signed URL elsewhere needs no header there, and
+	// the chain never restores them: net/http re-copies headers from the initial
+	// request on every hop, so returning to a trusted origin would otherwise
+	// bring them back after they crossed an untrusted one.
+	credentialsStripped := false
 	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return fmt.Errorf("%w: too many redirects", errTaskMediaRequestRejected)
@@ -503,19 +509,29 @@ func taskMediaRedirectClient(base *http.Client, proxy string, c *gin.Context, cl
 			req.URL.Host == "" || req.URL.User != nil || req.URL.Fragment != "" {
 			return fmt.Errorf("%w: invalid redirect URL", errTaskMediaRequestRejected)
 		}
+		// A query redirect refuses to downgrade transport; media follows the same
+		// rule so a credentialed request never lands on plain HTTP.
+		if strings.EqualFold(via[len(via)-1].URL.Scheme, "https") && !strings.EqualFold(req.URL.Scheme, "https") {
+			return fmt.Errorf("%w: redirect cannot downgrade HTTPS", errTaskMediaRequestRejected)
+		}
 		if err := validateTaskMediaURL(req.URL.String(), proxy); err != nil {
 			return fmt.Errorf("%w: %v", errTaskMediaRequestRejected, err)
 		}
 		if isSelfTaskMediaURL(c, req.URL) {
 			return fmt.Errorf("%w: proxy loop", errTaskMediaRequestRejected)
 		}
-		if len(via) > 0 && !sameTaskMediaOrigin(via[len(via)-1].URL, req.URL) {
-			if !credentialless {
-				return fmt.Errorf("%w: credentialed cross-origin redirect", errTaskMediaRequestRejected)
+		if !credentialsStripped && !sameTaskMediaOrigin(via[0].URL, req.URL) {
+			credentialsStripped = true
+		}
+		if credentialsStripped {
+			// A 307/308 can replay a body to an origin that never received the
+			// credential it was authorized with, so the chain stops there.
+			if req.Body != nil && req.Body != http.NoBody {
+				return fmt.Errorf("%w: redirect cannot replay a body across origins", errTaskMediaRequestRejected)
 			}
-			for name := range req.Header {
-				req.Header.Del(name)
-			}
+			clear(req.Header)
+			req.Host = ""
+			req.URL.User = nil
 			req.Body = http.NoBody
 			req.GetBody = nil
 			req.ContentLength = 0
